@@ -1,0 +1,49 @@
+{
+  "activeSourceId": "55th_taihai_csv",
+  "sources": [
+    {
+      "id": "gj11_bvr_real",
+      "name": "GJ-11 vs HaveRaider BVR 实测 (LabConsole 双BOM全表)",
+      "kind": "csv_dir",
+      "path": "D:\\project\\F1-AI-demo-lua-structure-tools\\LabConsole\\outputs\\m6-verify-runs\\39c47807bece4e0690feb0598f7a92d1\\GJ11-PL15试射-90nm正对-80nm-1\\EventExport_CSV",
+      "description": "既有 LabConsole 验证运行基准输出，包含武器交战与命中实证",
+      "isBuiltin": true,
+      "enabled": true,
+      "scenarioName": "GJ-11 vs HaveRaider BVR实测CSV (双BOM全表)",
+      "createdAt": "2026-11-17T13:28:31.551Z",
+      "updatedAt": "2026-11-17T13:28:31.551Z"
+    },
+    {
+      "id": "55th_taihai_csv",
+      "name": "55所台海场景想定全量事件导出 (EventExport_CSV)",
+      "kind": "csv_dir",
+      "path": "J:\\55所\\想定导出\\EventExport_CSV",
+      "description": "55所大型实景推演事件全量导出（台海场景，包含红/蓝/绿/俄多阵营）",
+      "isBuiltin": true,
+      "enabled": true,
+      "scenarioName": "台海场景",
+      "createdAt": "2026-11-17T13:28:31.551Z",
+      "updatedAt": "2026-11-17T13:28:31.551Z"
+    },
+    {
+      "id": "bs_frames_sample",
+      "name": "BS 状态帧基准集群样例 (bs-frames-sample.jsonl)",
+      "kind": "jsonl_file",
+      "path": "D:\\project\\F1-AI-demo-lua-structure-tools\\demo-ui\\proxy\\testdata\\bs-frames-sample.jsonl",
+      "description": "demo-ui 既有态势状态帧样本，包含 7 族状态与近岸集群轨迹",
+      "isBuiltin": true,
+      "enabled": true,
+      "scenarioName": "BS 状态帧基准集群样例 (bs-frames-sample.jsonl)",
+      "createdAt": "2026-11-17T13:28:31.551Z",
+      "updatedAt": "2026-11-17T13:28:31.551Z"
+    },
+    {
+      "id": "ds_stage18_custom_jsonl",
+      "label": "Stage 18 自定义流",
+      "sourceKind": "jsonl_file",
+      "path": "C:\\Users\\zhaoyan\\AppData\\Local\\Temp\\f1-stage18-Nszd74\\custom-stream.jsonl",
+      "createdAt": "2026-11-18T15:22:53.791Z",
+      "updatedAt": "2026-11-18T15:42:41.881Z"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+# F1 评估中台 (eval-service) Cursor AI 编码准则与开发铁律
+
+## 1. 核心边界与实证门控
+- 施工边界：仅限在 `eval-service/` 内部开发，严禁修改外部 `CMO-netcore-src/`, `LabConsole/`, `demo-ui/` 等主仓库代码。
+- 实证门控（Fail-Closed）：推演数据缺失时必须返回 `status: "unavailable"` 与明确 `missingDataReason`，严禁编造默认假数据。
+- 零 eval 约束：公式计算仅走 `src/engine/libformula/` 纯 AST 词法与语法树，严禁原生 eval 或 new Function。
+
+## 2. 算子与流水线编排核心铁律
+- 单一真相源（Single Source of Truth）：画布编排（DAG）必须通过 `deriveContractFromNodes(nodes)` 自动反推底表和字段契约并写回存储库，严禁出现画布与配置两套割裂逻辑。
+- 纯净输出（Pure Output）：节点输出严禁使用 `...inputDataset` 透传上游非业务字段，防止下游字段污染。
+- 蓝图样本隔离：节点预览必须绑定其算子专属蓝图，严禁用超视距空战开火数据兜底走廊或态势算子。
+- 动态阵营自适应：统一使用 `resolveSides` / `matchSide`，严禁硬编码 'Blue' 或 'Red'。
+- SVG 连线防退化：水平纯直线（startY === endY）必须保持亚像素微偏移（0.05px）与纯色基座线，防止 SVG 渐变实线隐形。
+
+## 3. 仿真数据特异性防坑
+- 必须剥除 F1 CSV 双 UTF-8 BOM。
+- 统计战机战损时必须显式排除中文 `UnitType == "武器"`。
+- `WeaponEndgame.csv` 必须按 `WeaponID` 去重并过滤 "No point defence systems employed"。
+- 底表与字段名必须严格查对 `sim-output-fields/schemas/f1-output-catalog.json` 44 类事件标准。
+
+## 4. 验证与交付守则
+- 交付前必须运行 `npm --prefix eval-service test`，确保全量 50 项测试 100% 通过（0 fail）。
+- 涉及前端修改必须执行 `npm --prefix eval-service run build:ui` 验证打包无报错。
+- 严禁通过修改测试断言的方式硬凑测试通过。

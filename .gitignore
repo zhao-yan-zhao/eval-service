@@ -1,0 +1,113 @@
+# F1-AI 仓库 .gitignore（2026-08-13 监理建库）
+# 原则：源码、文档、审查证据入库；游戏二进制、构建产物、运行时状态、密钥材料不入库。
+
+# === 构建产物 ===
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+poc/**/out/
+.nuget-packages/
+Tool/**/output/
+CMO-netcore-src/Command_Core/LSIP/protobuf/protoc.exe
+
+# === F1 游戏本体二进制（授权副本，约 196M，不入库）===
+F1/
+
+# === 运行时状态与密钥材料 ===
+*.db
+*.db3
+*.db-wal
+*.db-shm
+smoke-work/
+许可注册/
+WritableRoot.txt
+
+# === 场景二进制与自动备份（可再生的运行时产物）===
+*.scen
+*.partial
+# 例外：Smoke 测试固件必须入库，否则验收不可复现
+!test_assetsscenarios/**/*.scen
+
+# === PoC 演示运行产物（保留 md 记录，剔除运行时目录）===
+runs/**/demo-root/
+
+# === 大体积归档 ===
+*.zip
+*.7z
+*.rar
+
+# === 系统杂项 ===
+Thumbs.db
+Desktop.ini
+.aider*
+
+# === Python 缓存 ===
+__pycache__/
+*.pyc
+_patch_hn/
+_inspect_frontend/
+.ppt_build/node_modules/
+.chart-data-*/
+部署包-*/
+_待删除-*/
+编译产物-*/
+
+# === 2026-10-19 分拣收口（合并第 0 步）：临时构建/运行时状态/备份/垃圾 ===
+node_modules/
+/package.json
+/package-lock.json
+/_ppt_build/
+/tmp*
+/cursor-extract/
+/demo-ui-接入前备份-*/
+/交付包-*/
+/补充包-*/
+/部署-F1-AI-*/
+LabConsole/LabConsole/
+LabConsole/monitor-update-*.py
+LabConsole/tmp-*
+LabConsole/workorders/*.pid
+LabConsole/workorders/monitor-update-*.py
+LabConsole/outputs/node_modules/
+LabConsole/outputs/panel-sessions/
+LabConsole/outputs/_q042_*
+LabConsole/outputs/*-staging-*/
+LabConsole/outputs/*-rollback-*/
+LabConsole/outputs/*回滚备份-*/
+LabConsole/outputs/*编译暂存-*/
+runs/*/*.last.txt
+CMO-netcore-src/**/*.bak-*
+
+# IDE 配置不入库
+.idea/
+
+# A2 还原版独立仓库（gitee F1-BS-A2），不进主仓
+A2-repo/
+
+# 本机部署/工具残留不入库（2026-10-22 清理）
+部署备份/
+.workbuddy/
+.codex-backups/
+.artifacts/handoff-smoke/
+
+# === 2026-10-23 监理补充：联调/构建大体量产物 ===
+LabConsole/outputs/bs-frames/
+LabConsole/outputs/build-q*/
+LabConsole/outputs/build-wave*/
+LabConsole/outputs/.ck*
+LabConsole/outputs/bat-run*.log
+LabConsole/outputs/_q073_count_tmp.py
+
+# === 2026-10-27 监理：新增部署二进制与超大参考件不进仓（已跟踪的历史文件不受影响） ===
+*.dll
+*.exe
+*.pdb
+*.nupkg
+PPT汇报-20261023/风格参考-OKF一体化推演-20260918.pptx
+
+# 部署/恢复备份与评审scratch（2026-10-27，数百MB运行时拷贝）
+LabConsole/outputs/deploy-console-closure-*/
+LabConsole/outputs/restore-task-index-*/
+监理复验-BS-C-返修1/

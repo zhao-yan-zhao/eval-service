@@ -1,0 +1,7 @@
+# F1-AI 项目全局 Cursor 规则
+
+- 评估中台（eval-service/）开发规范：严格遵循 `eval-service/AGENTS.md` 与 `eval-service/.cursorrules`。
+- 施工边界：当前评估中台开发严格限定在 `eval-service/` 内，严禁篡改主仓库 `CMO-netcore-src/`, `LabConsole/`, `demo-ui/`。
+- 实证门控：数据缺失返回 `unavailable` 与原因，绝不造假默认值。
+- 单一真相源：画布编排与算子元数据强同步，禁止维护两套割裂逻辑。
+- 质量底线：改动后必须运行 `npm --prefix eval-service test` 确保 50 项测试全绿，前端必须通过 `npm --prefix eval-service run build:ui`。

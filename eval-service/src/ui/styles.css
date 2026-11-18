@@ -1,0 +1,262 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  accent-color: #3b82f6;
+  scrollbar-width: thin;
+  scrollbar-color: #1e293b #0b1120;
+  --wb-bg: #0b1120;
+  --wb-surface: #0f172a;
+  --wb-inset: #090e17;
+  --wb-border: #1e293b;
+  --wb-border-light: #334155;
+  --wb-text: #f1f5f9;
+  --wb-muted: #94a3b8;
+  --wb-accent: #0284c7;
+  --wb-accent-text: #38bdf8;
+}
+
+html {
+  scrollbar-gutter: stable;
+  background-color: var(--wb-bg);
+  color: var(--wb-text);
+}
+
+
+/* 隐藏原生滚动条但保持平滑滚动 */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+body {
+  min-height: 100dvh;
+  margin: 0;
+  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  background-color: var(--wb-bg);
+  color: var(--wb-text);
+  overflow-x: hidden;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 原生 <dialog> 滚动隔离规范 */
+dialog:modal {
+  overscroll-behavior: contain;
+  margin: auto;
+  max-width: min(92dvw, 920px);
+  max-height: 88dvh;
+  background: var(--wb-surface);
+  color: var(--wb-text);
+  border: 1px solid #374151;
+  border-radius: 8px;
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.75);
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(3, 6, 12, 0.72);
+}
+
+/* 响应式表格容器与键盘可滚动性 */
+.responsive-table-wrap {
+  container-type: inline-size;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+
+.responsive-table-wrap:focus-visible {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 2px;
+}
+
+@container (max-width: 640px) {
+  .hide-narrow-col {
+    display: none;
+  }
+}
+
+/* 交互后校验反馈 (:user-invalid) */
+input:user-invalid,
+select:user-invalid,
+textarea:user-invalid {
+  border-color: rgba(244, 63, 94, 0.85) !important;
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.22);
+}
+
+/* 复杂多面板渲染隔离 */
+.panel-isolate {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 420px;
+}
+
+/* 实时高亮动效 */
+@keyframes pulseRing {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.event-fresh {
+  border-left: 3px solid var(--wb-accent);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.live-dot {
+  animation: pulseRing 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Stage 7: 二级子标签与原生手风琴样式 (遵循 WCAG 非纯色选中指示与 forced-colors 安全边框) */
+.subtab-bar {
+  display: flex;
+  overflow-x: auto;
+  gap: 0.25rem;
+  scrollbar-width: thin;
+}
+
+.subtab-btn {
+  position: relative;
+  flex: none;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #94a3b8;
+  border-radius: 0.5rem 0.5rem 0 0;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.subtab-btn:hover {
+  color: #e2e8f0;
+  background-color: rgba(30, 41, 59, 0.55);
+}
+
+.subtab-btn[aria-selected='true'] {
+  color: #60a5fa;
+  background-color: rgba(59, 130, 246, 0.1);
+}
+
+.subtab-btn[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  border-block-end: 2px solid #3b82f6;
+}
+
+.source-accordion > details > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.source-accordion > details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.source-accordion > details > summary .accordion-chevron {
+  flex-shrink: 0;
+  rotate: 0deg;
+}
+
+.source-accordion > details[open] > summary .accordion-chevron {
+  rotate: 90deg;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .source-accordion > details > summary .accordion-chevron {
+    transition: rotate 0.18s ease;
+  }
+}
+
+.responsive-table-scroll-y {
+  max-block-size: min(460px, 68dvh);
+  overflow: auto;
+}
+
+.responsive-table-scroll-y table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.responsive-table-scroll-y thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background-color: #0f172a;
+}
+
+/* ──────────────────── 三库与流水线算子库专属规范 (Image 1/2/3) ──────────────────── */
+
+/* Image 1 类别徽章：数据输入 (blue), 行内计算 (gray/sky), 跨行聚合 (amber), 结果输出 (green) */
+.badge-data-input {
+  background-color: rgba(30, 58, 138, 0.35);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.badge-inline-calc {
+  background-color: rgba(12, 74, 110, 0.35);
+  color: #7dd3fc;
+  border: 1px solid rgba(14, 165, 233, 0.4);
+}
+
+.badge-group-agg {
+  background-color: rgba(120, 53, 15, 0.35);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.badge-result-output {
+  background-color: rgba(6, 78, 59, 0.35);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+/* 衍生列高亮单元格 */
+.derived-col-highlight {
+  background-color: rgba(14, 165, 233, 0.08);
+  border-inline: 1px solid rgba(14, 165, 233, 0.25);
+  color: #e0f2fe;
+}
+
+/* 聚合列高亮单元格 */
+.agg-col-highlight {
+  background-color: rgba(245, 158, 11, 0.08);
+  border-inline: 1px solid rgba(245, 158, 11, 0.25);
+  color: #fef3c7;
+}
+
+@media (forced-colors: active) {
+  .subtab-btn[aria-selected='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .subtab-btn[aria-selected='true']::after {
+    border-block-end-color: Highlight;
+  }
+  .event-fresh {
+    border-left-color: Highlight;
+  }
+  dialog:modal {
+    border: 2px solid CanvasText;
+  }
+}

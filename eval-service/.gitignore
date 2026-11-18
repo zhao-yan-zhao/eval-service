@@ -1,0 +1,7 @@
+node_modules/
+dist-ui/
+data/*.db
+data/*.db-*
+.tmp/
+*.log
+scratch/

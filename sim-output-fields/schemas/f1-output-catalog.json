@@ -1,0 +1,893 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "catalog_id": "f1-simulation-output-fields",
+  "catalog_version": "1.0.0",
+  "audit_basis": {
+    "source_trees": [
+      "CMO-netcore-src/Command_Core/",
+      "CMO-netcore-src/Mod/EventDataStreamOutput/",
+      "CMO-netcore-src/Dis/",
+      "CMO-netcore-src/AiAssistant*/",
+      "F1_Console/",
+      "integration/F1-BS/src/",
+      "demo-ui/proxy/",
+      "LabConsole/"
+    ],
+    "note": "Fact-checked directly against source code and captured real simulation artifacts; zero existing source files modified."
+  },
+  "channels": [
+    {
+      "id": "A_event_exporter",
+      "name": "EventExporter (CSV / XML / XLS / SQLite / MySQL)",
+      "entry_points": [
+        "CMO-netcore-src/Command_Core/IEventExporter.cs",
+        "CMO-netcore-src/Command_Core/EventExporterManager.cs",
+        "CMO-netcore-src/Command_Core/EventExporter_CSV.cs",
+        "CMO-netcore-src/Command_Core/EventExporter_XMLFile.cs",
+        "CMO-netcore-src/Command_Core/EventExporter_XLS.cs",
+        "CMO-netcore-src/Command_Core/EventExporter_Sqlite.cs",
+        "CMO-netcore-src/Command_Core/EventExporter_MySql.cs"
+      ],
+      "gating_sources": [
+        "F1Config/EventExportExtra.ini (static ctor; channel bools only read when ClientCore.RunInCmdMode==true)",
+        "GameGeneral.b_IsSchemeRun (CLI -M 1 forces all 20 exporter flags + IsExportTimeSpan + IsExportExperimentEvaluation = true in EventExporter_CSV.SetScenario)",
+        "CorePulseEngine.PrepareJobHost -> EventExporterManager.EnableCsvExport(isolateExportDir, true)"
+      ],
+      "recommended_primary_format": "csv",
+      "csv_quirks": [
+        "Double UTF-8 BOM (\\xEF\\xBB\\xBF\\xEF\\xBB\\xBF) written by EventExporter_CSV.WriteCSVHeader (UTF8Encoding(true) + explicit '\\uFEFF')",
+        "Filename uses result.EventType.ToString() with prefix YYYY-M-D_H.m.s_ (and optional Side prefix if SplitFilesBySide)",
+        "GUID casing can differ across tables; normalize UnitID/WeaponID with .lower()",
+        "WeaponName carries instance serial suffix like ' #107'; strip with /\\s+#\\d+$/ to aggregate weapon type"
+      ]
+    },
+    {
+      "id": "B_bs_mqtt",
+      "name": "BS Situational Awareness MQTT & WebSockets",
+      "publisher_location": "External BS/Java server (not present in CMO-netcore-src/ or F1_Console/)",
+      "consumer_entry_points": [
+        "integration/F1-BS/src/workers/mqtt.worker.js",
+        "integration/F1-BS/src/workers/websocket.js",
+        "integration/F1-BS/src/workers/websocketlt.js",
+        "demo-ui/proxy/bs-listener.mjs",
+        "demo-ui/proxy/bs-diff.mjs"
+      ],
+      "observed_rate_q077": "~0.8 MB/frame @ ~9 Hz (single-message JSON envelope {Time, Content} where Content is base64(gzip(bom + json)))"
+    },
+    {
+      "id": "C_tcp_and_cli",
+      "name": "TCP DataOutputServer NDJSON & F1-Console Progress",
+      "entry_points": [
+        "CMO-netcore-src/Mod/EventDataStreamOutput/DataOutputServer.cs",
+        "CMO-netcore-src/Mod/EventDataStreamOutput/DataMessage.cs",
+        "CMO-netcore-src/Command_Core/Scenario.cs:4687-4693",
+        "CMO-netcore-src/Command_Core/EventExporter_CSV.cs:247-251",
+        "F1_Console/MyConsoleApplication.cs"
+      ],
+      "gating_note": "DataOutputServer auto-starts only when F1Config/EventDataStreamOutput.ini [Server] AutoStart=true AND !GameGeneral.b_IsAIMode"
+    },
+    {
+      "id": "D_ai_bridge",
+      "name": "AiAssistant HTTP Bridge (127.0.0.1:9477)",
+      "entry_points": [
+        "CMO-netcore-src/AiAssistant.F1Core/Bridge/AiAssistantBridge.cs",
+        "CMO-netcore-src/AiAssistant/F1Integration/Simulation/SimulationContracts.cs",
+        "CMO-netcore-src/AiAssistant.F1Core/Simulation/CoreSimulationGateway.cs",
+        "CMO-netcore-src/AiAssistant.F1Core/Simulation/CorePulseEngine.cs",
+        "CMO-netcore-src/AiAssistant.F1Core/Simulation/MockResultGateway.cs",
+        "CMO-netcore-src/AiAssistant.F1Core/Simulation/RunMeasurementReader.cs",
+        "CMO-netcore-src/AiAssistant.F1Core/Facade/CoreF1AutomationFacade.ScenarioAudit.cs"
+      ]
+    },
+    {
+      "id": "E_lua_runtime",
+      "name": "Lua KeyValueStore (<LuaXml>), AAR & Runtime Inspection",
+      "entry_points": [
+        "CMO-netcore-src/Command_Core/Lua/LuaSandBox.cs",
+        "CMO-netcore-src/Command_Core/Lua/PrivateMethods.cs",
+        "CMO-netcore-src/Command_Core/Lua/LuaWrapper_Scenario.cs",
+        "CMO-netcore-src/Command_Core/Lua/LuaWrapper_Side.cs",
+        "CMO-netcore-src/Command_Core/Lua/F1_Middleware_State.cs"
+      ]
+    },
+    {
+      "id": "F_tacview_acmi",
+      "name": "Tacview ACMI 2.1 (File / Realtime TCP / Pipe)",
+      "entry_points": [
+        "CMO-netcore-src/Command_Core/EventExporter_Tacview2x.cs",
+        "CMO-netcore-src/Command_Core/EventExporter_TacviewRealtime.cs",
+        "CMO-netcore-src/Command_Core/EventExporter_TacviewPipe.cs"
+      ]
+    },
+    {
+      "id": "G_dis_pdus",
+      "name": "IEEE DIS UDP PDUs",
+      "entry_points": [
+        "CMO-netcore-src/Dis/IDISConnector.cs",
+        "CMO-netcore-src/Dis/DisConnector.cs",
+        "CMO-netcore-src/Dis/DISConnectManager.cs"
+      ]
+    }
+  ],
+  "event_exporter": {
+    "shared_make_paras_dict_prefix": [
+      { "name": "Scenario", "cs_type": "string", "max_len": 500, "db_included": false, "condition": "MonteCarloIteration > 0 (omitted in SimInfo)" },
+      { "name": "MC_Run", "cs_type": "int", "max_len": 0, "db_included": false, "condition": "MonteCarloIteration > 0 (omitted in SimInfo)" },
+      { "name": "TimelineID", "cs_type": "string", "max_len": 40, "db_included": true, "condition": "always" },
+      { "name": "Time", "cs_type": "TimeSpan|DateTime", "max_len": 30, "db_included": true, "condition": "addTimeCol==true (omitted in Factors); UseZeroHour ? TimeSpan 'c' : 'MM/dd/yyyy HH:mm:ss.fff'" }
+    ],
+    "events": [
+      { "id": 0, "name": "None", "status": "placeholder", "call_sites": [], "db_table": false, "tacview": false, "in_scan_31": false, "in_repo_samples": false, "fields": [] },
+      {
+        "id": 1, "name": "WeaponFired", "status": "active",
+        "call_sites": ["ActiveUnit_Weaponry.cs:11792"],
+        "gating": "theTarget != null && IsOperating && ExportWeaponFired",
+        "throttled": false, "side_split_key": "FiringUnitSide",
+        "db_table": true, "db_cols_count": 31, "tacview": true, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "FiringUnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "FiringUnitDBID", "cs_type": "string", "db_type": "string", "max_len": 10 },
+          { "name": "FiringUnitName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "FiringUnitType", "cs_type": "string", "db_type": "string", "max_len": 20 },
+          { "name": "FiringUnitClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "FiringUnitSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "FiringUnitLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "FiringUnitLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "FiringUnitCourse", "cs_type": "double", "db_type": "float", "unit": "deg" },
+          { "name": "FiringUnitSpeed_kts", "cs_type": "float", "db_type": "float", "unit": "kts" },
+          { "name": "FiringUnitAltitude_m", "cs_type": "float", "db_type": "float", "unit": "m" },
+          { "name": "FiringUnitAGL_m", "cs_type": "float", "db_type": "float", "unit": "m" },
+          { "name": "WeaponID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "WeaponDBID", "cs_type": "string", "db_type": "string", "max_len": 10 },
+          { "name": "WeaponName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "WeaponType", "cs_type": "string", "db_type": "string", "max_len": 200 },
+          { "name": "WeaponClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "TargetContactID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "TargetContactLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "TargetContactLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "TargetContactHeading", "cs_type": "float", "db_type": "float", "unit": "deg", "note": "empty string if unknown" },
+          { "name": "TargetContactSpeed", "cs_type": "float", "db_type": "float", "unit": "kts", "note": "empty string if unknown" },
+          { "name": "TargetContactAltitude", "cs_type": "float", "db_type": "float", "unit": "m", "note": "empty string if unknown" },
+          { "name": "TargetContactRangeHoriz_nm", "cs_type": "float", "db_type": "float", "unit": "nm" },
+          { "name": "TargetContactRangeSlant_nm", "cs_type": "float", "db_type": "float", "unit": "nm" },
+          { "name": "TargetContactActualUnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "TargetContactActualUnitName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "TargetContactActualUnitClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "TargetContactActualUnitSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "SalvoID", "cs_type": "string", "db_type": null },
+          { "name": "CountermeasuresRemaining", "cs_type": "string", "db_type": null }
+        ]
+      },
+      {
+        "id": 2, "name": "WeaponEndgame", "status": "active",
+        "call_sites": ["ActiveUnit_Weaponry.cs:7841", "UnguidedWeapon.cs:2721", "Weapon.cs:10130"],
+        "gating": "IsOperating && ExportWeaponEndgame",
+        "throttled": false, "side_split_key": "WeaponSide",
+        "db_table": true, "db_cols_count": 17, "tacview": true, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "WeaponID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "WeaponName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "WeaponSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "ParentFiringUnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "ParentFiringUnitName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "TargetID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "TargetName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "TargetSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "TargetLongitude", "cs_type": "double", "db_type": "double", "unit": "deg", "note": "PointDefence writes '-' if target null (SQL bug)" },
+          { "name": "TargetLatitude", "cs_type": "double", "db_type": "double", "unit": "deg", "note": "PointDefence writes '-' if target null" },
+          { "name": "TargetAltitude_ASL_m", "cs_type": "float", "db_type": "float", "unit": "m" },
+          { "name": "TargetAltitude_AGL_m", "cs_type": "float", "db_type": "float", "unit": "m" },
+          { "name": "DistanceFromFiringUnit_Horiz", "cs_type": "float", "db_type": "float", "unit": "nm" },
+          { "name": "Result", "cs_type": "string", "db_type": "string", "max_len": 20, "enum_values": ["KILL", "HIT", "MISS", "POINTDEF:SUCCESS", "POINTDEF:FAILURE", "UNDEFINED"] },
+          { "name": "EndgameMessage", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 3, "name": "FuelConsumed", "status": "active",
+        "call_sites": ["ActiveUnit.cs:7360"],
+        "gating": "IsExportFuelConsumedEvent && IsOperating && ExportFuelConsumed",
+        "throttled": true, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 6, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitName", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "UnitClass", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "UnitSide", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "FuelQuantity", "cs_type": "float", "db_type": "double" },
+          { "name": "FuelType", "cs_type": "int", "db_type": "int" },
+          { "name": "MiscInfo", "cs_type": "string", "db_type": "string", "max_len": 500 }
+        ]
+      },
+      {
+        "id": 4, "name": "UnitDestroyed", "status": "active",
+        "call_sites": ["Scenario.cs:5078", "UnguidedWeapon.cs:1521"],
+        "gating": "IsOperating && ExportUnitDestroyed",
+        "throttled": false, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 9, "tacview": true, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitSide", "cs_type": "string", "db_type": "string", "max_len": 500, "note": "Omitted by UnguidedWeapon.cs:1500-1521 (causes SQLite/MySQL INSERT mismatch)" },
+          { "name": "MiscInfo", "cs_type": "string", "db_type": "string" },
+          { "name": "Reason", "cs_type": "string", "db_type": "string" },
+          { "name": "Cause", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      { "id": 5, "name": "SensorDetectionAttempt", "status": "unused_enum", "call_sites": [], "gating": "IsExportSensorDetectionAttemptEvent (dead)", "db_table": false, "tacview": false, "in_scan_31": false, "in_repo_samples": false, "fields": [] },
+      { "id": 6, "name": "PointDefenceAndDECM", "status": "unused_enum", "call_sites": [], "gating": "IsExportPointDefenceAndDECMEvent (dead)", "db_table": false, "tacview": false, "in_scan_31": false, "in_repo_samples": false, "fields": [] },
+      {
+        "id": 7, "name": "UnitPositions", "status": "active",
+        "call_sites": ["ActiveUnit_Kinematics.cs:2811", "UnguidedWeapon.cs:2868"],
+        "gating": "IsOperating && ExportUnitPositions && (ForceUpdate || LocationExportPossibleThisTick)",
+        "throttled": true, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 10, "tacview": true, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitDBID", "cs_type": "string", "db_type": null, "max_len": 10 },
+          { "name": "UnitName", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "UnitType", "cs_type": "string", "db_type": null, "max_len": 20 },
+          { "name": "UnitClass", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "UnitSide", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "UnitLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "UnitLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "UnitCourse", "cs_type": "float", "db_type": "float", "unit": "deg" },
+          { "name": "UnitSpeed_kts", "cs_type": "float", "db_type": "float", "unit": "kts" },
+          { "name": "UnitAltitude_m", "cs_type": "float", "db_type": "float", "unit": "m" },
+          { "name": "UnitAttitude_Pitch", "cs_type": "float", "db_type": "float", "unit": "deg" },
+          { "name": "UnitAttitude_Roll", "cs_type": "float", "db_type": "float", "unit": "deg" },
+          { "name": "Status", "cs_type": "string", "db_type": null, "condition": "UsesUnitMissionAndStatus==true (currently false on all exporters)" },
+          { "name": "Condition_AirOps", "cs_type": "string", "db_type": null, "condition": "UsesUnitMissionAndStatus==true" },
+          { "name": "Condition_DockingOps", "cs_type": "string", "db_type": null, "condition": "UsesUnitMissionAndStatus==true" },
+          { "name": "AssignedMission", "cs_type": "string", "db_type": null, "condition": "UsesUnitMissionAndStatus==true" },
+          { "name": "DamagePercent", "cs_type": "float", "db_type": null, "condition": "UsesUnitDamage==true (currently false on all exporters)" },
+          { "name": "Fire", "cs_type": "string", "db_type": null, "condition": "UsesUnitDamage==true" },
+          { "name": "Flood", "cs_type": "string", "db_type": null, "condition": "UsesUnitDamage==true" },
+          { "name": "ComponentStatus", "cs_type": "string", "db_type": null, "max_len": 4000, "condition": "UsesUnitDamage==true" }
+        ]
+      },
+      {
+        "id": 8, "name": "EngagementCycle", "status": "active",
+        "call_sites": ["ActiveUnit_AI.cs:10290", "ActiveUnit_Sensory.cs:5357", "Contact.cs:3593", "Side.cs:5447"],
+        "gating": "IsOperating && ExportEngagementCycle (Side.cs omits IsOperating check)",
+        "throttled": false, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 19, "tacview": "selective", "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "CycleAction", "cs_type": "string", "db_type": "string", "max_len": 200 },
+          { "name": "ContactID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "ContactName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "ContactLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "ContactLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "ContactRangeHoriz_nm", "cs_type": "float", "db_type": "float", "unit": "nm" },
+          { "name": "ContactRangeSlant_nm", "cs_type": "float", "db_type": "float", "unit": "nm" },
+          { "name": "ContactActualUnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "ContactActualUnitName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "ContactActualUnitClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "ContactActualUnitSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "SalvoID", "cs_type": "string", "db_type": "string" },
+          { "name": "MiscInfo", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 9, "name": "FuelTransfer", "status": "active",
+        "call_sites": ["ActiveUnit.cs:7324"],
+        "gating": "IsExportFuelTransferEvent && IsOperating && ExportFuelTransfer",
+        "throttled": false, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 7, "tacview": false, "in_scan_31": false, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitName", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "UnitClass", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "UnitSide", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "ReceiverID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "ReceiverName", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "ReceiverClass", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "ReceiverSide", "cs_type": "string", "db_type": null, "max_len": 500 },
+          { "name": "FuelQuantity", "cs_type": "float", "db_type": "double" },
+          { "name": "FuelType", "cs_type": "int", "db_type": "int" },
+          { "name": "MiscInfo", "cs_type": "string", "db_type": "string", "max_len": 500 }
+        ]
+      },
+      {
+        "id": 10, "name": "WeaponImpact", "status": "active",
+        "call_sites": ["WeaponImpact.cs:198"],
+        "gating": "IsOperating && ExportExplosions (BUG: checks ExportExplosions, NOT ExportWeaponImpacts)",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 8, "tacview": true, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "UnitLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "UnitCourse", "cs_type": "float", "db_type": "float", "unit": "deg" },
+          { "name": "UnitSpeed_kts", "cs_type": "float", "db_type": "float", "unit": "kts" },
+          { "name": "UnitAltitude_m", "cs_type": "float", "db_type": "float", "unit": "m" }
+        ]
+      },
+      {
+        "id": 11, "name": "Explosion", "status": "active",
+        "call_sites": ["Explosion.cs:1979"],
+        "gating": "IsOperating && ExportExplosions",
+        "throttled": false, "side_split_key": null,
+        "db_table": false, "db_cols_count": 0, "tacview": true, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "note": "Missing from DBTablesDefine -> silently skipped by SQLite/MySQL exporters",
+        "fields": [
+          { "name": "ExplosionID", "cs_type": "string", "db_type": null, "max_len": 40 },
+          { "name": "ExplosionType", "cs_type": "int", "db_type": null, "note": "(int)WarheadType" },
+          { "name": "Longitude", "cs_type": "double", "db_type": null, "unit": "deg" },
+          { "name": "Latitude", "cs_type": "double", "db_type": null, "unit": "deg" },
+          { "name": "Altitude", "cs_type": "float", "db_type": null, "unit": "m" },
+          { "name": "EventType", "cs_type": "string", "db_type": null, "max_len": 40, "constant": "Explosion" }
+        ]
+      },
+      {
+        "id": 12, "name": "AirOps", "status": "active",
+        "call_sites": ["Aircraft_AirOps.cs:3968"],
+        "gating": "IsOperating && ExportAirOps && GetUnitSide() != null",
+        "throttled": false, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 19, "tacview": true, "in_scan_31": false, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitClass", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitSide", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "UnitLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "Action", "cs_type": "string", "db_type": "string", "enum_values": ["Landing", "TakingOff"] },
+          { "name": "DepartureHostID", "cs_type": "string", "db_type": "string" },
+          { "name": "DepartureHostName", "cs_type": "string", "db_type": "string" },
+          { "name": "ArrivalHostID", "cs_type": "string", "db_type": "string" },
+          { "name": "ArrivalHostName", "cs_type": "string", "db_type": "string" },
+          { "name": "MissionID", "cs_type": "string", "db_type": "string" },
+          { "name": "MissionName", "cs_type": "string", "db_type": "string" },
+          { "name": "TotalFuel", "cs_type": "int", "db_type": "int" },
+          { "name": "LoadoutID", "cs_type": "string", "db_type": "string" },
+          { "name": "LoadoutName", "cs_type": "string", "db_type": "string" },
+          { "name": "LoadoutStores", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 13, "name": "DockingOps", "status": "active",
+        "call_sites": ["ActiveUnit_DockingOps.cs:4467"],
+        "gating": "IsOperating && ExportDockingOps && GetUnitSide() != null",
+        "throttled": false, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 16, "tacview": true, "in_scan_31": false, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitClass", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitSide", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "UnitLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "Action", "cs_type": "string", "db_type": "string", "constant": "Docking" },
+          { "name": "DepartureHostID", "cs_type": "string", "db_type": "string" },
+          { "name": "DepartureHostName", "cs_type": "string", "db_type": "string" },
+          { "name": "ArrivalHostID", "cs_type": "string", "db_type": "string" },
+          { "name": "ArrivalHostName", "cs_type": "string", "db_type": "string" },
+          { "name": "MissionID", "cs_type": "string", "db_type": "string" },
+          { "name": "MissionName", "cs_type": "string", "db_type": "string" },
+          { "name": "TotalFuel", "cs_type": "int", "db_type": "int" }
+        ]
+      },
+      { "id": 14, "name": "WaterSplash", "status": "unused_enum", "call_sites": [], "db_table": false, "tacview": false, "in_scan_31": false, "in_repo_samples": false, "fields": [] },
+      {
+        "id": 15, "name": "ContactPositions", "status": "active",
+        "call_sites": ["ActiveUnit_Sensory.cs:2717"],
+        "gating": "CanExportContactPositions && LocationExportPossibleThisTick && ObserverSide != null",
+        "throttled": true, "side_split_key": "ObserverSide",
+        "db_table": true, "db_cols_count": 15, "tacview": true, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "ContactID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitDBID", "cs_type": "string", "db_type": "string", "max_len": 10 },
+          { "name": "ContactName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitType", "cs_type": "string", "db_type": "string", "max_len": 20 },
+          { "name": "UnitClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "ObserverSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "ContactLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "ContactLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "ContactCourse", "cs_type": "float", "db_type": "float", "unit": "deg" },
+          { "name": "ContactSpeed_kts", "cs_type": "float", "db_type": "float", "unit": "kts" },
+          { "name": "ContactAltitude_m", "cs_type": "float", "db_type": "float", "unit": "m" },
+          { "name": "UnitAttitude_Pitch", "cs_type": "float", "db_type": "float", "unit": "deg" },
+          { "name": "UnitAttitude_Roll", "cs_type": "float", "db_type": "float", "unit": "deg" }
+        ]
+      },
+      { "id": 16, "name": "SimExecution", "status": "unused_enum", "call_sites": [], "db_table": false, "tacview": false, "in_scan_31": false, "in_repo_samples": false, "fields": [] },
+      {
+        "id": 17, "name": "UnitDamaged", "status": "active",
+        "call_sites": ["Scenario.cs:5040"],
+        "gating": "IsOperating && ExportUnitDamaged",
+        "throttled": false, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 13, "tacview": "remapped_to_UnitPositions", "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "Longitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "Latitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "DamagePercent", "cs_type": "string", "db_type": "string", "max_len": 10, "unit": "percent_F6" },
+          { "name": "Fire", "cs_type": "string", "db_type": "string" },
+          { "name": "Flooding", "cs_type": "string", "db_type": "string" },
+          { "name": "Reason", "cs_type": "string", "db_type": "string" },
+          { "name": "Cause", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      { "id": 18, "name": "CargoTransfer", "status": "unused_enum", "call_sites": [], "db_table": false, "tacview": false, "in_scan_31": false, "in_repo_samples": false, "fields": [] },
+      { "id": 19, "name": "Max", "status": "placeholder", "call_sites": [], "db_table": false, "tacview": false, "in_scan_31": false, "in_repo_samples": false, "fields": [] },
+      {
+        "id": 20, "name": "SimInfo", "status": "active",
+        "call_sites": ["EventExporterManager.cs:976"],
+        "gating": "IsOperating && !IsBaseInfoExported",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 6, "tacview": false, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": false, "has_time_col": true,
+        "fields": [
+          { "name": "TimelineID", "cs_type": "string", "db_type": "string" },
+          { "name": "Time", "cs_type": "string", "db_type": "string", "note": "StartTime MM/dd/yyyy HH:mm:ss" },
+          { "name": "MonteCarloID", "cs_type": "string", "db_type": "string" },
+          { "name": "MonteCarloIteration", "cs_type": "int", "db_type": "int" },
+          { "name": "ScnName", "cs_type": "string", "db_type": "string" },
+          { "name": "ReferenceTime", "cs_type": "string", "db_type": "string", "note": "ZeroHour MM/dd/yyyy HH:mm:ss" }
+        ]
+      },
+      {
+        "id": 21, "name": "UnitCreated", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1310"],
+        "gating": "IsOperating && (ignoreBaseInfoExported || !IsBaseInfoExported)",
+        "throttled": false, "side_split_key": "UnitSide",
+        "db_table": true, "db_cols_count": 12, "tacview": false, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "note": "MySQL exporter typo in EventExporter_MySql.cs:236: INSERT INTO UnitCreate",
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "UnitDBID", "cs_type": "string", "db_type": "string", "max_len": 10 },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitType", "cs_type": "string", "db_type": "string", "max_len": 20 },
+          { "name": "UnitClass", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitSide", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "UnitLongitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "UnitLatitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "UnitCourse", "cs_type": "float", "db_type": "float", "unit": "deg" },
+          { "name": "UnitAltitude_m", "cs_type": "float", "db_type": "float", "unit": "m" }
+        ]
+      },
+      {
+        "id": 22, "name": "Expenditures", "status": "active",
+        "call_sites": ["Side.cs:89"],
+        "gating": "IsOperating && ExportExpenditures (default true, not in INI)",
+        "throttled": false, "side_split_key": "Side",
+        "db_table": true, "db_cols_count": 6, "tacview": false, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "DBID", "cs_type": "int", "db_type": "string" },
+          { "name": "WeaponName", "cs_type": "int", "db_type": "string", "note": "Code labels typeof(int) while Value is string" },
+          { "name": "Side", "cs_type": "string", "db_type": "string" },
+          { "name": "Num", "cs_type": "int", "db_type": "int" }
+        ]
+      },
+      {
+        "id": 23, "name": "Losses", "status": "active",
+        "call_sites": ["Side.cs:181"],
+        "gating": "IsOperating && ExportLosses (default true, not in INI)",
+        "throttled": false, "side_split_key": "Side",
+        "db_table": true, "db_cols_count": 8, "tacview": false, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "SubjectID", "cs_type": "string", "db_type": "string" },
+          { "name": "DBID", "cs_type": "string", "db_type": "string" },
+          { "name": "SubjectName", "cs_type": "string", "db_type": "string" },
+          { "name": "Side", "cs_type": "string", "db_type": "string" },
+          { "name": "Type", "cs_type": "string", "db_type": "string" },
+          { "name": "Class", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 24, "name": "WeaponLost", "status": "active",
+        "call_sites": ["Side.cs:130"],
+        "gating": "IsOperating && ExportWeaponLost (default true, not in INI)",
+        "throttled": false, "side_split_key": "Side",
+        "db_table": true, "db_cols_count": 6, "tacview": false, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "DBID", "cs_type": "int", "db_type": "string" },
+          { "name": "WeaponName", "cs_type": "int", "db_type": "string", "note": "Code labels typeof(int) while Value is string" },
+          { "name": "Side", "cs_type": "string", "db_type": "string" },
+          { "name": "Num", "cs_type": "int", "db_type": "int" }
+        ]
+      },
+      {
+        "id": 25, "name": "MissionChanged", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1425"],
+        "gating": "IsOperating",
+        "throttled": false, "side_split_key": "Side",
+        "db_table": true, "db_cols_count": 13, "tacview": false, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "MissionName", "cs_type": "string", "db_type": "string", "max_len": 100 },
+          { "name": "MissionID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "Side", "cs_type": "string", "db_type": "string", "max_len": 100 },
+          { "name": "Category", "cs_type": "string", "db_type": "string", "max_len": 20 },
+          { "name": "MissionClass", "cs_type": "string", "db_type": "string", "max_len": 20 },
+          { "name": "IsActive", "cs_type": "string", "db_type": "string", "max_len": 20 },
+          { "name": "SubClass", "cs_type": "string", "db_type": "string", "max_len": 20 },
+          { "name": "StartTime", "cs_type": "DateTime", "db_type": "string" },
+          { "name": "EndTime", "cs_type": "DateTime", "db_type": "string" },
+          { "name": "TakeOffTime", "cs_type": "DateTime", "db_type": "string" },
+          { "name": "TimeOnTarget", "cs_type": "DateTime", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 26, "name": "MissionUnitRelationChanged", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1431", "EventExporterManager.cs:1469"],
+        "gating": "IsOperating",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 5, "tacview": false, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "MissionID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "Type", "cs_type": "string", "db_type": "string", "max_len": 20, "enum_values": ["Assigned", "StrikeContact", "StrikeActiveUnit", "StrikeUndefinedType"] }
+        ]
+      },
+      {
+        "id": 27, "name": "MissionRefPointRelationChanged", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1445", "EventExporterManager.cs:1478"],
+        "gating": "IsOperating",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 6, "tacview": false, "in_scan_31": true, "in_repo_samples": true,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "MissionID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "Type", "cs_type": "string", "db_type": "string", "max_len": 20, "enum_values": ["Patrol", "Prosecution", "NavigationCourse"] },
+          { "name": "Longitude", "cs_type": "double", "db_type": "double", "unit": "deg" },
+          { "name": "Latitude", "cs_type": "double", "db_type": "double", "unit": "deg" }
+        ]
+      },
+      {
+        "id": 28, "name": "Factors", "status": "active",
+        "call_sites": ["EventExporterManager.cs:845"],
+        "gating": "IsOperating && !IsBaseInfoExported && IsExportExperimentEvaluation",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 9, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": false,
+        "fields": [
+          { "name": "ScenarioFileName", "cs_type": "string", "db_type": "string" },
+          { "name": "ScenarioFilePath", "cs_type": "string", "db_type": "string" },
+          { "name": "CurrentDataSet", "cs_type": "string", "db_type": "string" },
+          { "name": "CurrentSchemeName", "cs_type": "string", "db_type": "string" },
+          { "name": "CurrentSchemeTimes", "cs_type": "string", "db_type": "int" },
+          { "name": "CurrentXmlContent", "cs_type": "string", "db_type": "string" },
+          { "name": "CurrentJsonContent", "cs_type": "string", "db_type": "string" },
+          { "name": "CurrentTxtContent", "cs_type": "string", "db_type": null },
+          { "name": "CurrentDetailsTxtContent", "cs_type": "string", "db_type": null },
+          { "name": "CurrentDatabase", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 29, "name": "DetectionIdentificationChanged", "status": "active",
+        "call_sites": ["Contact.cs:3491"],
+        "gating": "ExportStatusIDChange && IsExportExperimentEvaluation && IsOperating",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 17, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "ContactID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "ContactName", "cs_type": "string", "db_type": "string", "max_len": 500 },
+          { "name": "IdentificationStatus", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "SensorName", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "SensorID", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "SensorDBID", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "SensorType", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "SensorRole", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "SensorPlatformName", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "SensorPlatformID", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "HasUncertaintyArea", "cs_type": "string", "db_type": "string", "max_len": 10 },
+          { "name": "UncertaintyArea", "cs_type": "string", "db_type": "float", "max_len": 10 },
+          { "name": "ContactRangeHoriz_nm", "cs_type": "float", "db_type": "float", "unit": "nm" },
+          { "name": "ContactRangeSlant_nm", "cs_type": "float", "db_type": "float", "unit": "nm" },
+          { "name": "EstimatedDistance", "cs_type": "float", "db_type": "float" }
+        ]
+      },
+      {
+        "id": 30, "name": "GroupUnitRelationChanged", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1325"],
+        "gating": "IsExportExperimentEvaluation && ActiveUnit_val.IsGroup",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 4, "tacview": false, "in_scan_31": false, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "GroupUnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "ChildUnitID", "cs_type": "string", "db_type": "string", "max_len": 40 }
+        ]
+      },
+      {
+        "id": 31, "name": "UnitJammed", "status": "active",
+        "call_sites": ["EventExporterManager.cs:2000"],
+        "gating": "SecondIsChangingOnThisPulse && oldState != null && IsExportExperimentEvaluation && IsOperating",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 4, "tacview": false, "in_scan_31": false, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string", "max_len": 40 },
+          { "name": "Status", "cs_type": "string", "db_type": "string", "max_len": 20, "enum_values": ["jammed", "unjammed"] }
+        ]
+      },
+      {
+        "id": 32, "name": "SensorCreated", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1196"],
+        "gating": "IsExportExperimentEvaluation && !IsGroup",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 25, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorID", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorName", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorDBID", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorStatus", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorIsActive", "cs_type": "string", "db_type": "string" },
+          { "name": "PS1", "cs_type": "string", "db_type": "string" },
+          { "name": "PMA1", "cs_type": "string", "db_type": "string" },
+          { "name": "PMF1", "cs_type": "string", "db_type": "string" },
+          { "name": "PB1", "cs_type": "string", "db_type": "string" },
+          { "name": "SS1", "cs_type": "string", "db_type": "string" },
+          { "name": "SMA1", "cs_type": "string", "db_type": "string" },
+          { "name": "SMF1", "cs_type": "string", "db_type": "string" },
+          { "name": "SB1", "cs_type": "string", "db_type": "string" },
+          { "name": "PS2", "cs_type": "string", "db_type": "string" },
+          { "name": "PMA2", "cs_type": "string", "db_type": "string" },
+          { "name": "PMF2", "cs_type": "string", "db_type": "string" },
+          { "name": "PB2", "cs_type": "string", "db_type": "string" },
+          { "name": "SS2", "cs_type": "string", "db_type": "string" },
+          { "name": "SMA2", "cs_type": "string", "db_type": "string" },
+          { "name": "SMF2", "cs_type": "string", "db_type": "string" },
+          { "name": "SB2", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 33, "name": "SensorClassUsed", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1158"],
+        "gating": "IsExportExperimentEvaluation && !IsGroup (dedup by SensorDBID)",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 10, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "SensorDBID", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorName", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorType", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorRole", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorTechGeneration", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorHas360Coverage", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorHasVariableMaxRange", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorMaxRange", "cs_type": "float", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 34, "name": "CommCreated", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1246"],
+        "gating": "IsExportExperimentEvaluation && !IsGroup",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 8, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string" },
+          { "name": "CommID", "cs_type": "string", "db_type": "string" },
+          { "name": "CommName", "cs_type": "string", "db_type": "string" },
+          { "name": "CommDBID", "cs_type": "string", "db_type": "string" },
+          { "name": "CommStatus", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 35, "name": "CommClassUsed", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1234"],
+        "gating": "IsExportExperimentEvaluation && !IsGroup (dedup by CommDBID)",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 16, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "CommDBID", "cs_type": "string", "db_type": "string" },
+          { "name": "CommName", "cs_type": "string", "db_type": "string" },
+          { "name": "CommType", "cs_type": "string", "db_type": "string" },
+          { "name": "ELF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "SLF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "ULF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "VLF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "LF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "MF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "HF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "VHF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "UHF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "SHF_Radio", "cs_type": "string", "db_type": "string" },
+          { "name": "EHF_Radio", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 36, "name": "WeaponRecordCreated", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1039"],
+        "gating": "IsExportExperimentEvaluation && !IsGroup",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 8, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string" },
+          { "name": "WeaponRecordName", "cs_type": "string", "db_type": "string" },
+          { "name": "WeaponRecordNumber", "cs_type": "int", "db_type": "int" },
+          { "name": "WeaponRecordDBID", "cs_type": "int", "db_type": "string" },
+          { "name": "WeaponRecordType", "cs_type": "string", "db_type": "string", "enum_values": ["Loadout", "LoadoutSensorPod", "Magazine", "Mount"] }
+        ]
+      },
+      {
+        "id": 37, "name": "ComponentStatusChanged", "status": "active",
+        "call_sites": ["EventExporterManager.cs:870"],
+        "gating": "Subscribed in ExportBaseInfo when IsExportExperimentEvaluation (handler does NOT check IsOperating)",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 9, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "ComponentID", "cs_type": "string", "db_type": "string" },
+          { "name": "ComponentName", "cs_type": "string", "db_type": "string" },
+          { "name": "ComponentStatus", "cs_type": "string", "db_type": "string" },
+          { "name": "SensorIsActive", "cs_type": "string", "db_type": "string" },
+          { "name": "ComponentDamageSeverity", "cs_type": "string", "db_type": "string" },
+          { "name": "PlatformID", "cs_type": "string", "db_type": "string" },
+          { "name": "PlatformName", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 38, "name": "CommIsJammedChanged", "status": "active",
+        "call_sites": ["EventExporterManager.cs:897"],
+        "gating": "Subscribed in ExportBaseInfo when IsExportExperimentEvaluation (handler does NOT check IsOperating)",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 5, "tacview": false, "in_scan_31": false, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "CommID", "cs_type": "string", "db_type": "string" },
+          { "name": "CommName", "cs_type": "string", "db_type": "string" },
+          { "name": "IsJammed", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 39, "name": "LandUnitCreated", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1268"],
+        "gating": "IsExportExperimentEvaluation && (IsFacility || IsMobileGroundUnit)",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 5, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "UnitID", "cs_type": "string", "db_type": "string" },
+          { "name": "UnitName", "cs_type": "string", "db_type": "string" },
+          { "name": "MobileUnitCategory", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 40, "name": "Tick", "status": "active",
+        "call_sites": ["EventExporterManager.cs:2057"],
+        "gating": "SecondIsChangingOnThisPulse && oldState != null && IsExportExperimentEvaluation && IsOperating",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 2, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": []
+      },
+      {
+        "id": 41, "name": "SideCreated", "status": "active",
+        "call_sites": ["EventExporterManager.cs:1382"],
+        "gating": "IsOperating && !IsBaseInfoExported && IsExportExperimentEvaluation",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 4, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "SideName", "cs_type": "string", "db_type": "string" },
+          { "name": "SideID", "cs_type": "string", "db_type": "string", "max_len": 40 }
+        ]
+      },
+      {
+        "id": 42, "name": "ContactCreated", "status": "active",
+        "call_sites": ["EventExporterManager.cs:918"],
+        "gating": "Initial export when IsExportExperimentEvaluation; subsequent Side.ContactAdded2 checks IsOperating",
+        "throttled": false, "side_split_key": "Side",
+        "db_table": true, "db_cols_count": 7, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "ContactID", "cs_type": "string", "db_type": "string" },
+          { "name": "ContactName", "cs_type": "string", "db_type": "string" },
+          { "name": "ActualUnitID", "cs_type": "string", "db_type": "string" },
+          { "name": "ActualUnitName", "cs_type": "string", "db_type": "string" },
+          { "name": "Side", "cs_type": "string", "db_type": "string" }
+        ]
+      },
+      {
+        "id": 43, "name": "FirstSensorToUnitRecordCreated", "status": "active",
+        "call_sites": ["ActiveUnit_Sensory.cs:2934"],
+        "gating": "IsExportExperimentEvaluation && oldState != null && IsOperating (dedup per (SensorID, TargetID))",
+        "throttled": false, "side_split_key": null,
+        "db_table": true, "db_cols_count": 5, "tacview": false, "in_scan_31": true, "in_repo_samples": false,
+        "has_make_paras_prefix": true, "has_time_col": true,
+        "fields": [
+          { "name": "SensorID", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "TargetID", "cs_type": "string", "db_type": "string", "max_len": 50 },
+          { "name": "Distance", "cs_type": "float", "db_type": "double" }
+        ]
+      }
+    ]
+  },
+  "bs_mqtt": {
+    "topics": [
+      "FrameData_{serverId}",
+      "process_{serverId}",
+      "victory_{serverId}",
+      "ReceiveLog_{serverId}",
+      "scenarioTime",
+      "SaveScenarioXml_{serverId}",
+      "ResponseResult_{serverId}_{clientTopicId}",
+      "setWebsocketPort_{serverId}",
+      "DBFileName",
+      "side/transmit/range",
+      "server_zhs_{serverId}"
+    ],
+    "scenario_paths": {
+      "root": ["ObjectID", "Time(.NET ticks string)", "StartTime", "Duration", "StepTime", "DBUsed", "CurrentSideID", "CurrentSide", "GlobalWeather.WeatherProfile", "UndeterminedAreas"],
+      "side_wrapper": "Sides[].Side",
+      "side_fields": ["ID", "Name", "Color", "MapCenter.GPoint", "CameraAlt", "Postures[].Posture.{SideID,Value}", "Doctrine", "ReferencePoints[]._wrap.{ID,Lon,Lat}", "Missions[]._wrap.{ID,Area|PatrolArea|ProsecutionArea|NavigationCourse}", "NoNavZones", "ExclusionZones", "StandardZones", "Contacts[].Contact.{ID,ActualUnitID,IDStatus,Type,SIK,Position}"],
+      "unit_wrapper": "ActiveUnits[].<Ship|Aircraft|Facility|Weapon|Submarine|Group|...>",
+      "unit_fields": ["ID", "DBID", "Name", "Piname", "UnitTyper", "GroupType", "ParentGroup", "SideID", "GroupLead", "UnitChildren", "Description", "Catalog", "LonLR", "LatLR", "Longitude", "Latitude", "Lon", "Lat", "CA", "CurrentAltitude", "CH", "CurrentHeading", "CS", "CurrentSpeed", "Status", "StatusRemark", "Base", "AssignedMission", "IsHasAirOrShip", "CargoType", "DamageState", "FuelRemark", "Fuel[].FuelRec.{FT,CQ,MQ}", "Sensors[].Sensor.{ID,Name,Type,SensorType,Description,RangeMax,Active,CanBeActive}", "ARWedge[]", "LRWedge[]", "URWedge[]", "AirRangeMax", "SurfaceRangeMax", "LandRangeMax", "SubsurfaceRangeMax", "Mounts[].Mount.{Name,DBID,MW,MMW,Weapons}", "Magazines[].Weapons"],
+      "non_active": ["NonActiveUnits.WeaponImpacts[].WeaponImpact.{ID,Longitude,Latitude,CurrentAltitude}", "NonActiveUnits.UnguidedWeapons[]._wrap.{ID,Longitude,Latitude,CurrentAltitude,CurrentHeading,Type}"],
+      "scenario_events": ["EventTriggers[]._wrap.ID", "EventConditions[]._wrap.ID", "EventActions[]._wrap.ID", "SimEvents|SimEvent.{Triggers,Conditions,Actions}"]
+    }
+  },
+  "bridge_and_auxiliary": {
+    "http_bridge_default_url": "http://127.0.0.1:9477/",
+    "bridge_tools": {
+      "simulation.run_status": ["ok", "status", "phase", "requested_pulses", "completed_pulses", "used_process_kill", "partial", "edit_blocked", "job_id", "run_id", "timeline_id", "error_code", "stop_reason", "export_dir_ref", "stop_diagnostics", "failure_reason", "duration_semantics", "target_game_seconds", "resolution_at_start", "start_clock", "target_clock", "end_clock", "elapsed_game_seconds", "resolution_at_end", "termination_reason"],
+      "result.read": ["ok", "run_id", "source('csv')", "partial", "metrics.{event_rows_this_run,event_rows_other_run,csv_file_count,empty_metrics}", "aggregation", "sample_rows", "csv_file_refs[].{path,event_type,bytes}", "export_dir_ref", "error_code", "user_message", "retryable", "lock_retry_attempts", "scenario_clock"],
+      "measurement.read": ["ok", "run_id", "measurement_status", "artifact_path", "artifact_sha256", "artifact_bytes", "artifact_files", "rows_this_run", "rows_other_run", "clock_anomalies", "units[].{unit_id,unit_name,unit_side,unit_class,sample_count,first_time_seconds,last_time_seconds,time_span_seconds,has_position_columns,clock_anomalies,distance_nm,displacement_nm,speed_reported_mean_kts,speed_reported_last_kts,speed_derived_mean_kts,speed_derived_segment_mean_kts,speed_derived_max_kts}"],
+      "scenario.audit": ["schema_version('scenario-audit/v1')", "collection", "offset", "max_items", "total", "returned_count", "truncated", "next_offset", "snapshot_generation", "recognized_spawn_unit_plans", "database.{bound,path,file_size_bytes,mtime,hash,db_name,file_name,dbid,db_registry_status}"]
+    },
+    "tcp_data_output_server": {
+      "config": "F1Config/EventDataStreamOutput.ini",
+      "wire_format": "UTF-8 NDJSON { DataStreamType: 0|1(MessageLog)|2(EventOutput), MessageEventType: byte, MessageContent: string }"
+    },
+    "dis_pdus_sent": ["EntityStatePdu", "SeesPdu", "FirePdu", "DetonationPdu", "UaPdu", "StartResumePdu", "StopFreezePdu", "ActionRequestPdu"],
+    "dis_pdus_absent": ["EePdu", "SideForceIDMapPDU"]
+  },
+  "join_graph": [
+    { "recipe": "weapon_hit_rate", "left": "WeaponFired.WeaponID", "right": "WeaponEndgame.WeaponID", "scope": "same run (TimelineID + MC_Run); lowercase normalized GUID; strip /\\s+#\\d+$/ on WeaponName; pick last Time per WeaponID" },
+    { "recipe": "unit_survival", "left": "UnitCreated.UnitID", "right": "UnitDestroyed.UnitID", "scope": "same run; note UnitCreated includes some guided munitions" },
+    { "recipe": "detection_chain_accuracy", "path": "ContactCreated.(ContactID -> ActualUnitID) + ContactPositions.(ContactID,Time) <-> UnitPositions.(UnitID,Time)" },
+    { "recipe": "cost_effectiveness", "inputs": ["Expenditures.(DBID,Side,Num)", "Losses.(SubjectID,DBID,Side,Type,Class)", "external unit price table"] },
+    { "recipe": "sensor_attribution", "left": "DetectionIdentificationChanged.SensorID", "right": "SensorCreated.SensorID", "then": "SensorCreated.UnitID -> UnitCreated.UnitID" },
+    { "recipe": "component_kill_chain", "left": "UnitDamaged.UnitID", "right": "ComponentStatusChanged.PlatformID" },
+    { "recipe": "bs_frame_side_lookup", "left": "ActiveUnits[].SideID", "right": "Sides[].Side.ID" },
+    { "recipe": "bs_contact_truth_lookup", "left": "Sides[].Side.Contacts[].Contact.ActualUnitID", "right": "ActiveUnits[].ID" }
+  ],
+  "doc_discrepancies": [
+    "D1: Raw CSV exporter emits UnitDamaged.csv, never Damage.csv.",
+    "D2: BS MQTT scalars are stringified (CH/CS/Count), entities have single-key wrappers, Scenario.Time is .NET ticks, events live under SimEvents/EventTriggers not Events.",
+    "D3: Real BS Q-077 frames arrive as whole-frame single messages (~0.8 MB @ ~9 Hz) with gunzipped BOM JSON.",
+    "D4: process_<sid> Status=0 observed after EndTime while stream keeps flowing; termination requires victory_<sid> / clock check.",
+    "D5: 5 ExportedEventType enums (SensorDetectionAttempt, PointDefenceAndDECM, WaterSplash, SimExecution, CargoTransfer) have zero call sites; WeaponImpact checks ExportExplosions; Explosion is missing from DBTablesDefine while UnitJammed..FirstSensorToUnitRecordCreated ARE in DBTablesDefine.",
+    "D6: F1Config/EventExport.ini is unused; real INI is EventExportExtra.ini; b_IsSchemeRun forces all CSV flags on while Bridge Run does not.",
+    "D7: Raw CSVs have double UTF-8 BOM; DB exporters drop fields and fail on Explosion / UnguidedWeapon UnitDestroyed / MySQL UnitCreate typo.",
+    "D8: Lua KeyValueStore throws on ':' in XML tag names (must use '.'); no ScenEdit_GetUnits() exists.",
+    "D9: BS MQTT publisher is not in CMO-netcore-src/ or F1_Console/."
+  ]
+}
