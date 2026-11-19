@@ -1,0 +1,2428 @@
+﻿<?xml version="1.0" encoding="utf-8"?><Scenario><TimelineID>48e54907-bc46-470f-b0b3-17600ba55a72</TimelineID><ObjectID>1970b9be-93a1-4dbc-843f-53c6b874c1cd</ObjectID><ContentTag /><CampaignID /><CampaignSessionID /><CampaignScore>0</CampaignScore><Title>打击lucas-红方任务制</Title><Description /><Description_Encrypted>EAAAAGl6CoAaJpM8E872GcAF4u/dF9KTcEweG6pocJwu3pLS</Description_Encrypted><Meta_Complexity>0</Meta_Complexity><Meta_Difficulty>0</Meta_Difficulty><Meta_ScenSetting /><FileName>打击lucas-3-8-i17-20260721-2157-attrition.xml</FileName><FileNamePath>D:\soft\F1\F1-测试\Scenarios</FileNamePath><Time>5250877858479150984</Time><ZeroHour>5250877858479150984</ZeroHour><StartTime>5250877858467839923</StartTime><Duration>864000000000</Duration><DaylightSavingTime>False</DaylightSavingTime><DaylightSavingTime_Start>00.00</DaylightSavingTime_Start><DaylightSavingTime_End>00.00</DaylightSavingTime_End><Sides><Side><ID>XYI0W5-0HNMTITIFP7BQ</ID><Name>红方</Name><Nature>False</Nature><Operation><ID>XYI0W5-0HNMTITIFP9AJ</ID><HHourMissionTime>0</HHourMissionTime><LHourMissionTime>0</LHourMissionTime><HHourEffectiveStartTime>0</HHourEffectiveStartTime><LHourEffectiveStartTime>0</LHourEffectiveStartTime><H_LHourAreRelative>False</H_LHourAreRelative></Operation><Postures><Posture_XYI0W5-0HNMTITIFP7BS>3</Posture_XYI0W5-0HNMTITIFP7BS></Postures><ReferencePoints><RPoint><ID>XYI0W5-0HNMTITIFP7DV</ID><Lon>120.97026467460411</Lon><Lat>18.17049107706207</Lat><Name>RP-1</Name><IH>True</IH><ColorR>255</ColorR><ColorG>255</ColorG><ColorB>255</ColorB><RGroup>0</RGroup></RPoint><RPoint><ID>XYI0W5-0HNMTITIFP7E0</ID><Lon>121.80562561108901</Lon><Lat>18.14589179372697</Lat><Name>RP-2</Name><IH>True</IH><ColorR>255</ColorR><ColorG>255</ColorG><ColorB>255</ColorB><RGroup>0</RGroup></RPoint><RPoint><ID>XYI0W5-0HNMTITIFP7E1</ID><Lon>121.83983546351249</Lon><Lat>17.507936856827573</Lat><Name>RP-3</Name><IH>True</IH><ColorR>255</ColorR><ColorG>255</ColorG><ColorB>255</ColorB><RGroup>0</RGroup></RPoint><RPoint><ID>XYI0W5-0HNMTITIFP7E2</ID><Lon>120.96895703288821</Lon><Lat>17.565641464550968</Lat><Name>RP-4</Name><IH>True</IH><ColorR>255</ColorR><ColorG>255</ColorG><ColorB>255</ColorB><RGroup>0</RGroup></RPoint></ReferencePoints><Doctrine><Nukes>0</Nukes><WCS_Air>1</WCS_Air><WCS_Air_Player>True</WCS_Air_Player><WCS_Surface>1</WCS_Surface><WCS_Surface_Player>True</WCS_Surface_Player><WCS_Submarine>1</WCS_Submarine><WCS_Submarine_Player>True</WCS_Submarine_Player><WCS_Land>1</WCS_Land><WCS_Land_Player>True</WCS_Land_Player><IPCWA>0</IPCWA><IPCWA_Player>True</IPCWA_Player><WinchesterShotgunRTB>1</WinchesterShotgunRTB><WinchesterShotgunRTB_Player>True</WinchesterShotgunRTB_Player><BingoJokerRTB>2</BingoJokerRTB><BingoJokerRTB_Player>True</BingoJokerRTB_Player><JettisonOrdnance>0</JettisonOrdnance><JettisonOrdnance_Player>True</JettisonOrdnance_Player><BVRLogic>1</BVRLogic><BVRLogic_Player>True</BVRLogic_Player><BTAT>2</BTAT><BTAT_Player>True</BTAT_Player><AE>1</AE><AE_Player>True</AE_Player><MS>1</MS><MS_Player>True</MS_Player><GS>0</GS><GS_Player>True</GS_Player><UR>0</UR><UR_Player>True</UR_Player><RS>0</RS><RS_Player>True</RS_Player><ST>0</ST><ST_Player>True</ST_Player><SAM_ASUW>0</SAM_ASUW><SAM_ASUW_Player>True</SAM_ASUW_Player><E_Radar>0</E_Radar><E_Sonar>0</E_Sonar><E_OECM>0</E_OECM><QuickTurnAround>1</QuickTurnAround><AirOpsTempo>0</AirOpsTempo><BingoJoker>0</BingoJoker><BingoJoker_Player>True</BingoJoker_Player><WinchesterShotgun>0</WinchesterShotgun><WinchesterShotgun_Player>True</WinchesterShotgun_Player><WithdrawDamageThreshold>0</WithdrawDamageThreshold><WithdrawFuelThreshold>1</WithdrawFuelThreshold><WithdrawAttackThreshold>0</WithdrawAttackThreshold><WithdrawDefenceThreshold>0</WithdrawDefenceThreshold><RedeployDamageThreshold>1</RedeployDamageThreshold><RedeployFuelThreshold>5</RedeployFuelThreshold><RedeployAttackThreshold>5</RedeployAttackThreshold><RedeployDefenceThreshold>5</RedeployDefenceThreshold><IgnoreEMCONUnderAttack>1</IgnoreEMCONUnderAttack><IgnoreEMCONUnderAttack_Player>True</IgnoreEMCONUnderAttack_Player><UseTorpedoesKinematicRange>2</UseTorpedoesKinematicRange><UseTorpedoesKinematicRange_Player>True</UseTorpedoesKinematicRange_Player><RefuelAllies>0</RefuelAllies><RefuelAllies_Player>True</RefuelAllies_Player><BingoThreshold>3</BingoThreshold><BingoThreshold_Player>True</BingoThreshold_Player><AvoidContact>0</AvoidContact><AvoidContact_Player>True</AvoidContact_Player><DiveWhenThreatsDetected>0</DiveWhenThreatsDetected><DiveWhenThreatsDetected_Player>True</DiveWhenThreatsDetected_Player><RechargePercentagePatrol>60</RechargePercentagePatrol><RechargePercentagePatrol_Player>True</RechargePercentagePatrol_Player><RechargePercentageAttack>10</RechargePercentageAttack><RechargePercentageAttack_Player>True</RechargePercentageAttack_Player><AIPUsage>1</AIPUsage><AIPUsage_Player>True</AIPUsage_Player><DippingSonar>0</DippingSonar><DippingSonar_Player>True</DippingSonar_Player><SurfNav>0</SurfNav><SurfNav_Player>True</SurfNav_Player><SubNav>0</SubNav><SubNav_Player>True</SubNav_Player><LandNav>0</LandNav><LandNav_Player>True</LandNav_Player></Doctrine><StandardZones><Zone><ID>XYI0W5-0HNMTITIFP7E3</ID><Description>任务区</Description><Color_A>60</Color_A><Color_R>100</Color_R><Color_G>100</Color_G><Color_B>100</Color_B><Layer>0</Layer><Area><RPoint><ID>XYI0W5-0HNMTITIFP7DV</ID></RPoint><RPoint><ID>XYI0W5-0HNMTITIFP7E0</ID></RPoint><RPoint><ID>XYI0W5-0HNMTITIFP7E1</ID></RPoint><RPoint><ID>XYI0W5-0HNMTITIFP7E2</ID></RPoint></Area></Zone></StandardZones><CollectiveResponsibility>True</CollectiveResponsibility><Defcon>0</Defcon><MapCenter><GPoint><ID>Q31JQI-0HNN1EPDE2IEE</ID><Lon>120.42793277224204</Lon><Lat>18.12605863939372</Lat></GPoint></MapCenter><CameraAlt>466489</CameraAlt><TotalScore>0</TotalScore><AwarenessLevel>0</AwarenessLevel><ContactAutoIncrement>0</ContactAutoIncrement><Prof>2</Prof><PackageID>0</PackageID><MapProfile><ShowLatLonGrid>False</ShowLatLonGrid><ShowBaseEarth>True</ShowBaseEarth><ShowDynamicNoiseSignature>True</ShowDynamicNoiseSignature><Layer_Sentinel2>False</Layer_Sentinel2><Layer_BMNG>True</Layer_BMNG><Layer_Relief>False</Layer_Relief><Layer_StamenTerrain>False</Layer_StamenTerrain><Layer_StamenRoads>False</Layer_StamenRoads><Layer_Borders>False</Layer_Borders><Layer_Placenames>False</Layer_Placenames><Layer_LandCover>False</Layer_LandCover><Layer_MapboxPlaceName>False</Layer_MapboxPlaceName><Layer_MapboxAdminBoundary>False</Layer_MapboxAdminBoundary><Layer_MapboxRoad>False</Layer_MapboxRoad><Layer_MapboxContour>False</Layer_MapboxContour><Layer_MapboxWater>False</Layer_MapboxWater><Layer_VirtualEarth>False</Layer_VirtualEarth><DayNightLighting>False</DayNightLighting><RSVisible_AASensor>0</RSVisible_AASensor><RSVisible_ASSensor>0</RSVisible_ASSensor><RSVisible_ASWSensor>0</RSVisible_ASWSensor><RSVisible_AAWeapon>0</RSVisible_AAWeapon><RSVisible_ASWeapon>0</RSVisible_ASWeapon><RSVisible_AGWeapon>0</RSVisible_AGWeapon><RSVisible_ASWWeapon>0</RSVisible_ASWWeapon><RSVisible_ACRange>1</RSVisible_ACRange><ShowRangeSymbols>0</ShowRangeSymbols><MergeRangeSymbols>True</MergeRangeSymbols><ShowNonFriendly>True</ShowNonFriendly><ShowTargetingVectors>2</ShowTargetingVectors><ShowDatalinks>2</ShowDatalinks><ShowDatablocks>1</ShowDatablocks><ShowIlluminationVectors>0</ShowIlluminationVectors><ShowContactEmissions>0</ShowContactEmissions><ShowContactEmissions_Details>0</ShowContactEmissions_Details><ViewMode>0</ViewMode><RPColor>-1</RPColor><WPColor>-1</WPColor></MapProfile><AAR><WeaponsLost><Weapon_4142>750</Weapon_4142></WeaponsLost></AAR></Side><Side><ID>XYI0W5-0HNMTITIFP7BS</ID><Name>蓝方</Name><Nature>False</Nature><Operation><ID>XYI0W5-0HNMTITIFP9AK</ID><HHourMissionTime>0</HHourMissionTime><LHourMissionTime>0</LHourMissionTime><HHourEffectiveStartTime>0</HHourEffectiveStartTime><LHourEffectiveStartTime>0</LHourEffectiveStartTime><H_LHourAreRelative>False</H_LHourAreRelative></Operation><Postures><Posture_XYI0W5-0HNMTITIFP7BQ>3</Posture_XYI0W5-0HNMTITIFP7BQ></Postures><Doctrine><Nukes>0</Nukes><WCS_Air>1</WCS_Air><WCS_Air_Player>True</WCS_Air_Player><WCS_Surface>1</WCS_Surface><WCS_Surface_Player>True</WCS_Surface_Player><WCS_Submarine>1</WCS_Submarine><WCS_Submarine_Player>True</WCS_Submarine_Player><WCS_Land>1</WCS_Land><WCS_Land_Player>True</WCS_Land_Player><IPCWA>0</IPCWA><IPCWA_Player>True</IPCWA_Player><WinchesterShotgunRTB>1</WinchesterShotgunRTB><WinchesterShotgunRTB_Player>True</WinchesterShotgunRTB_Player><BingoJokerRTB>2</BingoJokerRTB><BingoJokerRTB_Player>True</BingoJokerRTB_Player><JettisonOrdnance>0</JettisonOrdnance><JettisonOrdnance_Player>True</JettisonOrdnance_Player><BVRLogic>1</BVRLogic><BVRLogic_Player>True</BVRLogic_Player><BTAT>2</BTAT><BTAT_Player>True</BTAT_Player><AE>1</AE><AE_Player>True</AE_Player><MS>1</MS><MS_Player>True</MS_Player><GS>0</GS><GS_Player>True</GS_Player><UR>0</UR><UR_Player>True</UR_Player><RS>0</RS><RS_Player>True</RS_Player><ST>0</ST><ST_Player>True</ST_Player><SAM_ASUW>0</SAM_ASUW><SAM_ASUW_Player>True</SAM_ASUW_Player><E_Radar>0</E_Radar><E_Sonar>0</E_Sonar><E_OECM>0</E_OECM><QuickTurnAround>1</QuickTurnAround><AirOpsTempo>0</AirOpsTempo><BingoJoker>0</BingoJoker><BingoJoker_Player>True</BingoJoker_Player><WinchesterShotgun>0</WinchesterShotgun><WinchesterShotgun_Player>True</WinchesterShotgun_Player><WithdrawDamageThreshold>0</WithdrawDamageThreshold><WithdrawFuelThreshold>1</WithdrawFuelThreshold><WithdrawAttackThreshold>0</WithdrawAttackThreshold><WithdrawDefenceThreshold>0</WithdrawDefenceThreshold><RedeployDamageThreshold>1</RedeployDamageThreshold><RedeployFuelThreshold>5</RedeployFuelThreshold><RedeployAttackThreshold>5</RedeployAttackThreshold><RedeployDefenceThreshold>5</RedeployDefenceThreshold><IgnoreEMCONUnderAttack>1</IgnoreEMCONUnderAttack><IgnoreEMCONUnderAttack_Player>True</IgnoreEMCONUnderAttack_Player><UseTorpedoesKinematicRange>2</UseTorpedoesKinematicRange><UseTorpedoesKinematicRange_Player>True</UseTorpedoesKinematicRange_Player><RefuelAllies>0</RefuelAllies><RefuelAllies_Player>True</RefuelAllies_Player><BingoThreshold>3</BingoThreshold><BingoThreshold_Player>True</BingoThreshold_Player><AvoidContact>0</AvoidContact><AvoidContact_Player>True</AvoidContact_Player><DiveWhenThreatsDetected>0</DiveWhenThreatsDetected><DiveWhenThreatsDetected_Player>True</DiveWhenThreatsDetected_Player><RechargePercentagePatrol>60</RechargePercentagePatrol><RechargePercentagePatrol_Player>True</RechargePercentagePatrol_Player><RechargePercentageAttack>10</RechargePercentageAttack><RechargePercentageAttack_Player>True</RechargePercentageAttack_Player><AIPUsage>1</AIPUsage><AIPUsage_Player>True</AIPUsage_Player><DippingSonar>0</DippingSonar><DippingSonar_Player>True</DippingSonar_Player><SurfNav>0</SurfNav><SurfNav_Player>True</SurfNav_Player><SubNav>0</SubNav><SubNav_Player>True</SubNav_Player><LandNav>0</LandNav><LandNav_Player>True</LandNav_Player></Doctrine><CollectiveResponsibility>True</CollectiveResponsibility><Defcon>0</Defcon><CameraAlt>0</CameraAlt><TotalScore>0</TotalScore><AwarenessLevel>0</AwarenessLevel><ContactAutoIncrement>0</ContactAutoIncrement><Prof>2</Prof><PackageID>0</PackageID><MapProfile><ShowLatLonGrid>False</ShowLatLonGrid><ShowBaseEarth>True</ShowBaseEarth><ShowDynamicNoiseSignature>True</ShowDynamicNoiseSignature><Layer_Sentinel2>False</Layer_Sentinel2><Layer_BMNG>True</Layer_BMNG><Layer_Relief>False</Layer_Relief><Layer_StamenTerrain>False</Layer_StamenTerrain><Layer_StamenRoads>False</Layer_StamenRoads><Layer_Borders>False</Layer_Borders><Layer_Placenames>False</Layer_Placenames><Layer_LandCover>False</Layer_LandCover><Layer_MapboxPlaceName>False</Layer_MapboxPlaceName><Layer_MapboxAdminBoundary>False</Layer_MapboxAdminBoundary><Layer_MapboxRoad>False</Layer_MapboxRoad><Layer_MapboxContour>False</Layer_MapboxContour><Layer_MapboxWater>False</Layer_MapboxWater><Layer_VirtualEarth>False</Layer_VirtualEarth><DayNightLighting>False</DayNightLighting><RSVisible_AASensor>0</RSVisible_AASensor><RSVisible_ASSensor>0</RSVisible_ASSensor><RSVisible_ASWSensor>0</RSVisible_ASWSensor><RSVisible_AAWeapon>0</RSVisible_AAWeapon><RSVisible_ASWeapon>0</RSVisible_ASWeapon><RSVisible_AGWeapon>0</RSVisible_AGWeapon><RSVisible_ASWWeapon>0</RSVisible_ASWWeapon><RSVisible_ACRange>1</RSVisible_ACRange><ShowRangeSymbols>0</ShowRangeSymbols><MergeRangeSymbols>True</MergeRangeSymbols><ShowNonFriendly>True</ShowNonFriendly><ShowTargetingVectors>2</ShowTargetingVectors><ShowDatalinks>2</ShowDatalinks><ShowDatablocks>1</ShowDatablocks><ShowIlluminationVectors>0</ShowIlluminationVectors><ShowContactEmissions>0</ShowContactEmissions><ShowContactEmissions_Details>0</ShowContactEmissions_Details><ViewMode>0</ViewMode><RPColor>-1</RPColor><WPColor>-1</WPColor></MapProfile><AAR /></Side></Sides><NonActiveUnits><Explosions /><WeaponImpacts /><UnguidedWeapons /><ChaffClouds /></NonActiveUnits><ActiveUnits><Aircraft><ID>F221AN-0HNN0G5IF2AF0</ID><AllowMultiMission>False</AllowMultiMission><DesignatedSupplier>3</DesignatedSupplier><AltOld>10972.8</AltOld><Decoy>False</Decoy><Name>母平台-1</Name><CH>0</CH><CS>350</CS><CA>10972.8</CA><Lon>119.15710022080471</Lon><Lat>18.644217690350267</Lat><LonLR>116.03719111111111</LonLR><LatLR>19.692824722222223</LatLR><Side>红方</Side><DBID>3712</DBID><DS>350</DS><DA>10972.8</DA><FlightRole>0</FlightRole><Thr>1</Thr><AbnTime>0</AbnTime><Sensors><Sensor><ID>F221AN-0HNN0G5IF2AF2</ID><DBID>628</DBID><Name>AN/APG-73</Name><Cov><Seg>PB2,SB1,</Seg></Cov><Cov_Ill><Seg>PB1,PB2,PMF2,SB1,SB2,SMF1,</Seg></Cov_Ill><TTNS>1</TTNS></Sensor><Sensor><ID>F221AN-0HNN0G5IF2AF3</ID><DBID>1902</DBID><Name>AN/ALR-67(V)3</Name><Cov><Seg>360</Seg></Cov><Cov_Ill><Seg>360</Seg></Cov_Ill><TTNS>4</TTNS></Sensor><Sensor><ID>F221AN-0HNN0G5IF2AF4</ID><DBID>1584</DBID><Name>AN/ALQ-126B</Name><Cov><Seg>360</Seg></Cov><Cov_Ill><Seg>360</Seg></Cov_Ill></Sensor><Sensor><ID>F221AN-0HNN0G5IF2AF5</ID><DBID>0</DBID><Name>Mk1 视线</Name><Cov><Seg>360</Seg></Cov></Sensor></Sensors><PoddedSensors><Sensor><ID>R0PCDA-0HNN74TJLLUC4</ID><DBID>5035</DBID><Name>AN/AAQ-28 [FLIR, Air-to-Air Tracking]</Name><Cov><Seg>PB1,PB2,PMF2,SB1,SB2,SMF1,</Seg></Cov><Cov_Ill><Seg>PB1,PB2,PMF2,SB1,SB2,SMF1,</Seg></Cov_Ill><TTNS>9</TTNS></Sensor><Sensor><ID>R0PCDA-0HNN74TJLLUC5</ID><DBID>194</DBID><Name>AN/AAQ-28 [FLIR]</Name><Cov><Seg>360</Seg></Cov><Cov_Ill><Seg>360</Seg></Cov_Ill><TTNS>6</TTNS></Sensor><Sensor><ID>R0PCDA-0HNN74TJLLUC6</ID><DBID>192</DBID><Name>AN/AAQ-28 [Laser Designator]</Name><Cov><Seg>360</Seg></Cov><Cov_Ill><Seg>360</Seg></Cov_Ill></Sensor></PoddedSensors><Comms><CD><ID>F221AN-0HNN0G5IF2AF6</ID><DBID>187</DBID><OC>0</OC><PS>True</PS></CD><CD><ID>F221AN-0HNN0G5IF2AF7</ID><DBID>43</DBID><OC>0</OC><PS>True</PS></CD><CD><ID>F221AN-0HNN0G5IF2AF8</ID><DBID>52</DBID><OC>0</OC><PS>True</PS></CD><CD><ID>F221AN-0HNN0G5IF2AF9</ID><DBID>484</DBID><OC>0</OC><PS>True</PS></CD></Comms><Propulsion><Engine><ID>F221AN-0HNN0G5IF2AFJ</ID><DBID>34</DBID><Name>F404-GE-400 #1</Name></Engine><Engine><ID>F221AN-0HNN0G5IF2AFK</ID><DBID>34</DBID><Name>F404-GE-400 #2</Name></Engine></Propulsion><Fuel><FuelRec><ID>F221AN-0HNN0G5IF2AFL</ID><DBID>173</DBID><MQ>4925</MQ><CQ>4925</CQ><FT>2001</FT></FuelRec></Fuel><Mounts><Mount><ID>F221AN-0HNN0G5IF2AFA</ID><Name>20mm/85 M61A1 火神 [570 发]</Name><PP>F221AN-0HNN0G5IF2AF0</PP><DBID>278</DBID><MW><WRec><ID>F221AN-0HNN0G5IF2AFC</ID><DL>6</DL><CL>6</CL><ML>6</ML><ROF>5</ROF><WeapID>1918</WeapID></WRec></MW><Cov><Seg>PB2,SB1,</Seg></Cov><DP>0</DP></Mount><Mount><ID>F221AN-0HNN0G5IF2AFD</ID><Name>AN/ALE-47 CMDS x 2 [60 Cartridges]</Name><PP>F221AN-0HNN0G5IF2AF0</PP><DBID>1709</DBID><MW><WRec><ID>F221AN-0HNN0G5IF2AFF</ID><DL>20</DL><CL>20</CL><ML>20</ML><ROF>1</ROF><WeapID>2051</WeapID></WRec></MW><Cov><Seg>360</Seg></Cov><DP>0</DP></Mount><Mount><ID>F221AN-0HNN0G5IF2AFG</ID><Name>BOL x 2 [320 Cartridges]</Name><PP>F221AN-0HNN0G5IF2AF0</PP><DBID>1690</DBID><MW><WRec><ID>F221AN-0HNN0G5IF2AFI</ID><DL>40</DL><CL>40</CL><ML>40</ML><ROF>1</ROF><WeapID>565</WeapID></WRec></MW><Cov><Seg>360</Seg></Cov><DP>0</DP></Mount></Mounts><Status>0</Status><FuelState>0</FuelState><WeaponState>0</WeaponState><SBR_TF>false</SBR_TF><SBR_ThrottleSetting>0</SBR_ThrottleSetting><SBED_Altitude>0</SBED_Altitude><SBED_TF>false</SBED_TF><SBED_ThrottleSetting>0</SBED_ThrottleSetting><SBEO_Altitude>0</SBEO_Altitude><SBEO_Altitude_TF>0</SBEO_Altitude_TF><SBEO_TF>false</SBEO_TF><SBPF_Altitude>0</SBPF_Altitude><SBPF_Altitude_TF>0</SBPF_Altitude_TF><SBPF_TF>false</SBPF_TF><SBPF_ThrottleSetting>0</SBPF_ThrottleSetting><AMP_OC>False</AMP_OC><AMP_OC_DAO>False</AMP_OC_DAO><AMP_OC_Speed>0</AMP_OC_Speed><DamagePts>5</DamagePts><OldDamagePercent>0</OldDamagePercent><Doctrine /><Loadout><Loadout><ID>F221AN-0HNN0G5IF2AFM</ID><DBID>7055</DBID><Name>GBU-12B/B LGB [Mk82], Litening AT Pod [FLIR]</Name><ROF>5</ROF><MC>9</MC><RT>360</RT><Weaps><WRec><ID>F221AN-0HNN0G5IF2AFN</ID><DL>1</DL><CL>1</CL><ML>1</ML><ROF>5</ROF><OW>True</OW><WeapID>446</WeapID></WRec><WRec><ID>F221AN-0HNN0G5IF2AFO</ID><DL>2</DL><CL>2</CL><ML>2</ML><ROF>5</ROF><WeapID>1755</WeapID></WRec><WRec><ID>F221AN-0HNN0G5IF2AFP</ID><DL>2</DL><CL>2</CL><ML>2</ML><ROF>1</ROF><WeapID>74</WeapID></WRec><WRec><ID>F221AN-0HNN0G5IF2AFQ</ID><DL>1</DL><CL>1</CL><ML>1</ML><ROF>5</ROF><WeapID>544</WeapID></WRec><WRec><ID>F221AN-0HNN0G5IF2AFR</ID><DL>3</DL><CL>3</CL><ML>3</ML><WeapID>1522</WeapID><FuelTank>1000</FuelTank></WRec></Weaps><Role>3001</Role><PayloadWeight>884</PayloadWeight><PayloadWeightDroppable>550</PayloadWeightDroppable><PayloadWeight_TakeOff>884</PayloadWeight_TakeOff><PayloadWeightDroppable_TakeOff>550</PayloadWeightDroppable_TakeOff><WeightDragModifier>0.087</WeightDragModifier><CombatRadius>500</CombatRadius><QT_TimeofDay>1001</QT_TimeofDay><WinchesterShotgun>2001</WinchesterShotgun></Loadout></Loadout><Navigator><MPO>False</MPO></Navigator><AI /><Kinematics><ReserveFuel>1902.1498</ReserveFuel><SP>5</SP></Kinematics><Sensory><ObE>True</ObE><EmissionInterval><DECON><Defcon_Green><UseEmissionInterval>False</UseEmissionInterval><WakeWhenDetectingThreat>True</WakeWhenDetectingThreat><EmissionInterval>30</EmissionInterval><EmissionDuration>30</EmissionDuration><Wake_IncludesContactStance>Neutral,Unfriendly,Hostile,Unknown,</Wake_IncludesContactStance><Wake_IncludesContactID>Unknown,KnownDomain,KnownType,KnownClass,PreciseID,</Wake_IncludesContactID></Defcon_Green><Defcon_Blue><UseEmissionInterval>False</UseEmissionInterval><WakeWhenDetectingThreat>True</WakeWhenDetectingThreat><EmissionInterval>30</EmissionInterval><EmissionDuration>30</EmissionDuration><Wake_IncludesContactStance>Neutral,Unfriendly,Hostile,Unknown,</Wake_IncludesContactStance><Wake_IncludesContactID>Unknown,KnownDomain,KnownType,KnownClass,PreciseID,</Wake_IncludesContactID></Defcon_Blue><Defcon_Yellow><UseEmissionInterval>False</UseEmissionInterval><WakeWhenDetectingThreat>True</WakeWhenDetectingThreat><EmissionInterval>30</EmissionInterval><EmissionDuration>30</EmissionDuration><Wake_IncludesContactStance>Neutral,Unfriendly,Hostile,Unknown,</Wake_IncludesContactStance><Wake_IncludesContactID>Unknown,KnownDomain,KnownType,KnownClass,PreciseID,</Wake_IncludesContactID></Defcon_Yellow><Defcon_Orange><UseEmissionInterval>False</UseEmissionInterval><WakeWhenDetectingThreat>True</WakeWhenDetectingThreat><EmissionInterval>30</EmissionInterval><EmissionDuration>30</EmissionDuration><Wake_IncludesContactStance>Neutral,Unfriendly,Hostile,Unknown,</Wake_IncludesContactStance><Wake_IncludesContactID>Unknown,KnownDomain,KnownType,KnownClass,PreciseID,</Wake_IncludesContactID></Defcon_Orange><Defcon_Red><UseEmissionInterval>False</UseEmissionInterval><WakeWhenDetectingThreat>True</WakeWhenDetectingThreat><EmissionInterval>30</EmissionInterval><EmissionDuration>30</EmissionDuration><Wake_IncludesContactStance>Neutral,Unfriendly,Hostile,Unknown,</Wake_IncludesContactStance><Wake_IncludesContactID>Unknown,KnownDomain,KnownType,KnownClass,PreciseID,</Wake_IncludesContactID></Defcon_Red><Defcon_Custom><UseEmissionInterval>False</UseEmissionInterval><WakeWhenDetectingThreat>True</WakeWhenDetectingThreat><EmissionInterval>30</EmissionInterval><EmissionDuration>30</EmissionDuration><Wake_IncludesContactStance>Neutral,Unfriendly,Hostile,Unknown,</Wake_IncludesContactStance><Wake_IncludesContactID>Unknown,KnownDomain,KnownType,KnownClass,PreciseID,</Wake_IncludesContactID></Defcon_Custom></DECON></EmissionInterval></Sensory><Weaponry /><CommStuff /><Damage><TTNSDC>0</TTNSDC></Damage><AirOps><LQ /><Con>0</Con><CT>0</CT><ManA2ARD>False</ManA2ARD><A2AR_NumberOfReceiverHookups /></AirOps></Aircraft></ActiveUnits><Groups /><WeatherModel>0</WeatherModel><GlobalWeather><WeatherProfile><Temp>15</Temp><Pressure>1013.25</Pressure><RL>86.17</RL><GRC>0</GRC><DN>39</DN><SDH>0</SDH><EDH>0</EDH><RFR>0</RFR><FUR>0</FUR><SS>0</SS></WeatherProfile></GlobalWeather><EventTriggers><EventTrigger_RegularTime><ID>X9EERF-0HNMU8GHJSABP</ID><Description>1秒</Description><Interval>0</Interval></EventTrigger_RegularTime><EventTrigger_Time><ID>F221AN-0HNN0G5IF3QP6</ID><Description>08:56:25</Description><Time>639191841850000000</Time></EventTrigger_Time><EventTrigger_UnitDetected><ID>V2PL28-0HNN17P9IMJO0</ID><Description>蓝方发射车被识别</Description><TargetFilter><ID>V2PL28-0HNN17P9IMJO1</ID><TargetSide>XYI0W5-0HNMTITIFP7BS</TargetSide><TargetType>0</TargetType><TargetSubType>0</TargetSubType><ShowAllTypes>True</ShowAllTypes></TargetFilter><Area /><DetectorSideID>XYI0W5-0HNMTITIFP7BQ</DetectorSideID><MCL>3</MCL></EventTrigger_UnitDetected><EventTrigger_UnitDamaged><ID>Q31JQI-0HNN1EPD95Q24</ID><Description>发射车被毁伤</Description><DamagePercent>60</DamagePercent><TargetFilter><ID>Q31JQI-0HNN1EPD95Q25</ID><TargetSide>XYI0W5-0HNMTITIFP7BS</TargetSide><TargetType>0</TargetType><TargetSubType>0</TargetSubType></TargetFilter></EventTrigger_UnitDamaged></EventTriggers><EventConditions /><EventActions><EventAction_LuaScript><ID>XYI0W5-0HNMTITIFP9AI</ID><Description>蓝方-01-发射车生成与周期</Description><ScriptText>-- Version: 4.2.0-stats
+--[[
+  蓝方-01：区域随机生成发射车 + 周期控制（装填/机动/BOL）
+  v4.2.0-stats:
+    - LUCAS(4142) 发射计数：清理登记时累加（首架红方无人机入任务区起算）
+    - 结束条件：未重创发射车≤END_SCAN_ALIVE_LE 才全量扫伤；全部≥END_DAMAGE 则 EndScenario
+    - 挂架 Tick 节流 / STATIC 跳过 GetUnit（继承 perf）
+--]]
+
+SCRIPT_VERSION = "4.2.0-stats"
+LAUNCHER_CTRL_VERSION = SCRIPT_VERSION
+
+CONFIG = {
+  UNIT_SIDE = "蓝方",
+  RP_SIDE   = "红方",
+  REFERENCE_POINTS = { "RP-1", "RP-2", "RP-3", "RP-4" },
+  COUNT = 50, NAME_PREFIX = "发射车-", UNIT_TYPE = "Facility", UNIT_DBID = 3665,
+  HEAVY_DAMAGE = 0.67,
+  -- 想定结束：损伤阈值（可与查伤重创阈不同）
+  END_DAMAGE = 0.70,
+  -- 未重创发射车（内存计数）≤此值才开始全量扫伤验结束
+  END_SCAN_ALIVE_LE = 6,
+  -- 或蓝方侧单元总数（含飞弹）≤此值也触发扫伤（用户举例门槛）
+  END_SCAN_SIDE_UNITS_LE = 6,
+  END_SCENARIO = true,
+  RUN_SPAWN = true, MAX_RETRIES = 80, MIN_ELEV = 0,
+  PHASE_MINUTES = {
+    STATIC_1 = 3, FIRE = 4, STATIC_2 = 5, MOVE_1 = 15, MOVE_2 = 15, RELOAD = 8,
+  },
+  TICK_INTERVAL = 3, MOVE_SPEED_KTS = 12, MOVE_DISTANCE_RATIO = 0.65, ARRIVE_NM = 0.05,
+  MAX_BOL_PER_TICK = 5,
+  TRIM_MOUNTS_AFTER_SPAWN = true,
+  TRIM_MOUNTS_ON_TICK = true,
+  TRIM_MOUNTS_INTERVAL_SEC = 300,
+  DAMAGE_CHECK_MIN_INTERVAL_SEC = 10,
+  EVENT_NAME = "蓝方-01-发射车周期",
+  SCRIPT_FILE = "蓝方-01-发射车生成与周期.lua",
+  RESET_ON_START = false, DEBUG = false, DEBUG_EVERY = 5,
+  FIRE_WEAPON = {
+    ENABLED = true, WEAPON_ID = 4142, MOUNT_ID = nil,
+    BEARING_DEG = 280, AIMPOINT_NM = 80, QTY = 1, INTERVAL_SEC = 30,
+    CLEANUP_ENABLED = true, CLEANUP_FLIGHT_MINUTES = 3,
+    CLEANUP_UNIT_DBID = 4142, CLEANUP_NAME_PREFIX = nil, MASS_CLEANUP = false,
+  },
+}
+
+LAUNCHER_CTRL_PHASES = {
+  { id = "STATIC_1", key = "STATIC_1" }, { id = "FIRE", key = "FIRE" },
+  { id = "STATIC_2", key = "STATIC_2" }, { id = "MOVE_1", key = "MOVE_1" },
+  { id = "RELOAD", key = "RELOAD" }, { id = "MOVE_2", key = "MOVE_2" },
+}
+
+-- MEMORY：cars[name]={...}；stat=LUCAS 统计窗口
+_LC = _LC or { cars = {}, names = nil, poly = nil, tick_n = 0, ready = false,
+  wpn = {}, fire_ts = {}, mass_ts = 0, bol_budget = 0,
+  stat = {
+    t0 = nil,          -- 首架红方无人机入任务区时刻
+    t1 = nil,          -- 全部发射车达结束损伤时刻
+    launched = 0,      -- 窗口内登记到的 LUCAS(4142) 数量
+    ended = false,
+    ao_probe_i = 1,
+  },
+}
+
+local function cfg() return CONFIG end
+local function fc() return CONFIG.FIRE_WEAPON end
+local function to_num(v) return tonumber(v) or 0 end
+local function ph_min(k) return cfg().PHASE_MINUTES[k] or 1 end
+local function ph_sec(k) return ph_min(k) * 60 end
+local function is_move(id) return id == "MOVE_1" or id == "MOVE_2" end
+local function reload_idx()
+  for i, p in ipairs(LAUNCHER_CTRL_PHASES) do if p.id == "RELOAD" then return i end end
+  return 5
+end
+
+local function car(name)
+  local c = _LC.cars[name]
+  if not c then
+    c = { i = 0, t0 = 0, dlat = nil, dlon = nil, arr = false, hid = false,
+      flast = 0, ko = false, guid = nil, snap = nil }
+    _LC.cars[name] = c
+  end
+  return c
+end
+
+local function pip(lat, lon, poly)
+  local inside, j = false, #poly
+  for i = 1, #poly do
+    local yi, xi, yj, xj = poly[i].lat, poly[i].lon, poly[j].lat, poly[j].lon
+    if ((yi &gt; lat) ~= (yj &gt; lat)) and (lon &lt; (xj - xi) * (lat - yi) / ((yj - yi) + 1e-12) + xi) then
+      inside = not inside
+    end
+    j = i
+  end
+  return inside
+end
+
+local function bounds(poly)
+  local a, b, c, d = poly[1].lat, poly[1].lat, poly[1].lon, poly[1].lon
+  for i = 2, #poly do
+    local p = poly[i]
+    if p.lat &lt; a then a = p.lat end; if p.lat &gt; b then b = p.lat end
+    if p.lon &lt; c then c = p.lon end; if p.lon &gt; d then d = p.lon end
+  end
+  return a, b, c, d
+end
+
+local function load_poly(side, names, verbose)
+  if #names &lt; 3 then error("REFERENCE_POINTS 至少 3 个") end
+  local poly, miss = {}, {}
+  for _, n in ipairs(names) do
+    local ok, rp = pcall(ScenEdit_GetReferencePoint, { side = side, name = n })
+    if ok and rp and rp.latitude then
+      poly[#poly + 1] = { lat = to_num(rp.latitude), lon = to_num(rp.longitude), name = n }
+      if verbose then
+        print(string.format("  [RP@%s] %s → %.5f, %.5f", side, n, to_num(rp.latitude), to_num(rp.longitude)))
+      end
+    else miss[#miss + 1] = n end
+  end
+  if #miss &gt; 0 then error("参考点未找到: " .. table.concat(miss, ", ")) end
+  return poly
+end
+
+local function rand_in_poly(poly, retries, min_elev)
+  local a, b, c, d = bounds(poly)
+  for _ = 1, retries do
+    local lat = a + math.random() * (b - a)
+    local lon = c + math.random() * (d - c)
+    if pip(lat, lon, poly) then
+      local elev = World_GetElevation({ latitude = lat, longitude = lon })
+      if elev and elev &gt;= min_elev then return lat, lon end
+    end
+  end
+  return nil, nil
+end
+
+function Shared_LoadPolygon(force)
+  if _LC.poly and not force then return _LC.poly end
+  _LC.poly = load_poly(cfg().RP_SIDE, cfg().REFERENCE_POINTS, false)
+  return _LC.poly
+end
+
+function FacilitySpawn_Run()
+  local c = cfg()
+  math.randomseed(os.time())
+  print(string.format("=== [Spawn v%s] 随机生成 %d 设施 DBID=%d ===", SCRIPT_VERSION, c.COUNT, c.UNIT_DBID))
+  print(string.format("[INFO] 单元:%s | 参考点:%s | %s", c.UNIT_SIDE, c.RP_SIDE, table.concat(c.REFERENCE_POINTS, ", ")))
+  local poly = load_poly(c.RP_SIDE, c.REFERENCE_POINTS, true)
+  local ok_n, fail = 0, 0
+  for i = 1, c.COUNT do
+    local lat, lon = rand_in_poly(poly, c.MAX_RETRIES, c.MIN_ELEV)
+    local name = c.NAME_PREFIX .. i
+    if lat then
+      local ok, r = pcall(ScenEdit_AddUnit, {
+        side = c.UNIT_SIDE, type = c.UNIT_TYPE, name = name, dbid = c.UNIT_DBID,
+        latitude = lat, longitude = lon, heading = math.random(0, 359),
+      })
+      if ok and r then ok_n = ok_n + 1; print(string.format("[OK] %s (%.5f, %.5f)", name, lat, lon))
+      else fail = fail + 1; print("[FAIL] " .. name .. " " .. tostring(r)) end
+    else fail = fail + 1; print("[FAIL] " .. name .. " 无落点") end
+  end
+  print(string.format("=== 生成完成 成功%d/目标%d 失败%d ===", ok_n, c.COUNT, fail))
+  _LC.poly = poly
+  if c.TRIM_MOUNTS_AFTER_SPAWN ~= false and type(LauncherCtrl_TrimMountsOnce) == "function" then
+    LauncherCtrl_TrimMountsOnce()
+  end
+  return ok_n, fail
+end
+
+-- 生成后一次性裁挂架（也可被识别事件节流调用）
+function LauncherCtrl_TrimMountsOnce()
+  local side_name, prefix, keep = cfg().UNIT_SIDE, cfg().NAME_PREFIX, 1
+  local ok_side, side = pcall(VP_GetSide, { Side = side_name })
+  if not ok_side or not side or not side.units then
+    print("[TrimMounts] 读不到阵营"); return 0
+  end
+  local removed = 0
+  for _, ptr in ipairs(side.units) do
+    local name = ptr.name or ""
+    if name:sub(1, #prefix) == prefix then
+      local guid = ptr.guid or ptr.objectid
+      for _ = 1, 6 do
+        local ok, u = pcall(ScenEdit_GetUnit, { guid = guid })
+        if not (ok and u) then break end
+        local mounts = u.mounts or u.Mounts
+        if type(mounts) ~= "table" then break end
+        local list = {}
+        if mounts[1] ~= nil then for _, m in ipairs(mounts) do list[#list + 1] = m end
+        else for _, m in pairs(mounts) do if type(m) == "table" then list[#list + 1] = m end end end
+        if #list &lt;= keep then break end
+        local m = list[#list]
+        local mid = m.mount_guid or m.guid
+        local dbid = tonumber(m.mount_dbid or m.dbid or m.DBID)
+        local ok_rm = false
+        if mid then
+          ok_rm = pcall(ScenEdit_UpdateUnit, { guid = guid, mode = "remove_mount", mountid = tostring(mid) })
+        end
+        if not ok_rm and dbid then
+          ok_rm = pcall(ScenEdit_UpdateUnit, { guid = guid, mode = "remove_mount", dbid = dbid })
+        end
+        if not ok_rm then break end
+        removed = removed + 1
+      end
+    end
+  end
+  if removed &gt; 0 then
+    print(string.format("[TrimMounts] 裁挂架完成，共删 %d", removed))
+  end
+  return removed
+end
+
+--- 节流裁挂架：默认间隔 120s；识别事件可反复挂，不会每检测扫一遍
+function LauncherCtrl_TrimMountsThrottled(interval_sec)
+  interval_sec = tonumber(interval_sec) or 120
+  local kv = "lc_trim_last"
+  local now = ScenEdit_CurrentTime()
+  local last = tonumber(ScenEdit_GetKeyValue(kv)) or 0
+  if last &gt; 0 and (now - last) &lt; interval_sec then
+    return 0
+  end
+  ScenEdit_SetKeyValue(kv, tostring(now))
+  return LauncherCtrl_TrimMountsOnce()
+end
+
+-- 损伤
+local function dmg_frac(u)
+  if not u then return 0 end
+  local cond = u.condition or u.Condition or u.status or u.Status
+  if type(cond) == "string" then
+    local s = cond:lower()
+    if s:find("destroy", 1, true) or s:find("毁", 1, true) then return 1 end
+    if s:find("heavy", 1, true) or s:find("重", 1, true) then return 0.75 end
+  end
+  local pct = tonumber(u.damagePercent or u.DamagePercent)
+  if pct then return pct &gt; 1 and math.min(1, pct / 100) or math.max(0, pct) end
+  local d = u.damage or u.Damage
+  if type(d) == "string" then
+    local s = d:lower()
+    if s:find("destroy", 1, true) or s:find("毁", 1, true) then return 1 end
+    if s:find("heavy", 1, true) or s:find("重", 1, true) then return 0.75 end
+    d = tonumber(d)
+  end
+  if type(d) == "number" then
+    if d &lt; 0 then return 0 end
+    if d &lt;= 1 then return d end
+    if d &lt;= 100 then return d / 100 end
+  end
+  return 0
+end
+
+local function freeze_ko(u, name)
+  local st = car(name)
+  if st.ko then return false end
+  st.ko = true
+  if u and u.guid then
+    pcall(ScenEdit_SetUnit, {
+      guid = u.guid, holdPosition = true, holdFire = true, throttle = "FullStop", speed = 0,
+    })
+  end
+  print(string.format("[LauncherCtrl] 重伤停摆 %s dmg=%.0f%%", name, dmg_frac(u) * 100))
+  return true
+end
+
+local function get_u(name)
+  -- 已知隐藏/停摆时不要 GetUnit：引擎即使被 pcall 也会刷异常日志，易触发熔断
+  local st0 = _LC.cars and _LC.cars[name]
+  if st0 and (st0.hid or st0.ko) then return nil end
+  if st0 and st0.guid then
+    local okg, ug = pcall(ScenEdit_GetUnit, { guid = st0.guid })
+    if okg and ug then return ug end
+    -- GUID 失效：按隐藏处理，勿再 name 查找
+    if st0 then st0.hid = true end
+    return nil
+  end
+  local ok, u = pcall(ScenEdit_GetUnit, { side = cfg().UNIT_SIDE, unitname = name })
+  if ok and u then
+    car(name).guid = u.guid
+    return u
+  end
+  return nil
+end
+
+local function hold(guid, fire)
+  pcall(ScenEdit_SetUnit, { guid = guid, holdPosition = true, holdFire = fire, throttle = "FullStop" })
+end
+
+local function move_range(key)
+  return cfg().MOVE_SPEED_KTS * (ph_min(key) / 60) * cfg().MOVE_DISTANCE_RATIO
+end
+
+local function pick_wp(lat, lon, max_nm, poly)
+  for _ = 1, 12 do
+    local dist = max_nm * (0.35 + math.random() * 0.55)
+    local ok, pt = pcall(World_GetPointFromBearing, {
+      latitude = lat, longitude = lon, bearing = math.random() * 360, distance = dist, unit = "nm",
+    })
+    if ok and pt then
+      local la, lo = to_num(pt.latitude or pt.Latitude), to_num(pt.longitude or pt.Longitude)
+      if pip(la, lo, poly) then
+        local elev = World_GetElevation({ latitude = la, longitude = lo })
+        if elev and elev &gt;= 0 then return la, lo end
+      end
+    end
+  end
+  return nil, nil
+end
+
+local function begin_move(st, u, key, poly)
+  local la, lo = pick_wp(to_num(u.latitude), to_num(u.longitude), move_range(key), poly)
+  if not la then return false end
+  st.dlat, st.dlon, st.arr = la, lo, false
+  pcall(ScenEdit_SetUnit, {
+    guid = u.guid, holdPosition = false, holdFire = true,
+    speed = cfg().MOVE_SPEED_KTS, course = { { latitude = la, longitude = lo } },
+  })
+  return true
+end
+
+local function save_snap(st, u)
+  st.snap = {
+    name = u.name, side = u.side or cfg().UNIT_SIDE,
+    type = u.type or cfg().UNIT_TYPE, dbid = u.dbid or cfg().UNIT_DBID,
+    latitude = to_num(u.latitude), longitude = to_num(u.longitude),
+    heading = to_num(u.heading),
+  }
+end
+
+local function begin_reload(st, u)
+  if st.ko then return end
+  save_snap(st, u)
+  st.hid, st.arr = true, false
+  pcall(ScenEdit_DeleteUnit, { side = u.side or cfg().UNIT_SIDE, unitname = u.name })
+end
+
+local function respawn(name, st)
+  if st.ko then st.hid = false; print("[LauncherCtrl] 装填结束不重建(重伤): " .. name); return nil end
+  local s = st.snap
+  if not s then return nil end
+  local ok, u = pcall(ScenEdit_AddUnit, {
+    side = s.side, type = s.type, name = s.name, dbid = s.dbid,
+    latitude = s.latitude, longitude = s.longitude, heading = s.heading or 0,
+  })
+  if ok and u then st.hid = false; st.guid = u.guid; return u end
+  return nil
+end
+
+local function bearing_pt(lat, lon, brg, nm)
+  local ok, pt = pcall(World_GetPointFromBearing, {
+    latitude = lat, longitude = lon, bearing = brg, distance = nm, unit = "nm",
+  })
+  if ok and pt then return to_num(pt.latitude or pt.Latitude), to_num(pt.longitude or pt.Longitude) end
+  return nil, nil
+end
+
+local function note_fire(now)
+  local keep = {}
+  for _, ts in ipairs(_LC.fire_ts) do
+    if (now - ts) &lt;= 300 then keep[#keep + 1] = ts end
+  end
+  keep[#keep + 1] = now
+  _LC.fire_ts = keep
+end
+
+-- ---------- LUCAS 统计 / 想定结束 ----------
+local function stat()
+  if not _LC.stat then
+    _LC.stat = { t0 = nil, t1 = nil, launched = 0, ended = false, ao_probe_i = 1 }
+  end
+  return _LC.stat
+end
+
+--- 首架红方无人机进入任务区时调用（红方任务制 / 本侧兜底探测）
+function LauncherCtrl_NoteRedInAo(now)
+  local s = stat()
+  if s.t0 then return false end
+  now = now or ScenEdit_CurrentTime()
+  s.t0 = now
+  ScenEdit_SetKeyValue("lc_lucas_t0", tostring(now))
+  print(string.format("[LucasStat] 统计起算：首架红方无人机入任务区 t0=%s", tostring(now)))
+  return true
+end
+
+local function count_alive_launchers()
+  local names = LauncherCtrl_BuildNameList(false)
+  local alive, ko_n = 0, 0
+  for _, name in ipairs(names) do
+    local st = car(name)
+    if st.ko then ko_n = ko_n + 1 else alive = alive + 1 end
+  end
+  return alive, ko_n, #names
+end
+
+local function side_unit_count()
+  local ok, side = pcall(VP_GetSide, { Side = cfg().UNIT_SIDE })
+  if not (ok and side and side.units) then return -1 end
+  return #side.units
+end
+
+--- 清理登记时：窗口内每发现一枚新的 4142 计 +1（不另开遍历）
+local function note_lucas_registered(name)
+  local s = stat()
+  if not s.t0 or s.ended then return end
+  s.launched = (s.launched or 0) + 1
+  ScenEdit_SetKeyValue("lc_lucas_launched", tostring(s.launched))
+  if cfg().DEBUG then
+    print(string.format("[LucasStat] +1 %s → 累计 %d", tostring(name), s.launched))
+  end
+end
+
+function LauncherCtrl_LucasStatReport()
+  local s = stat()
+  local now = ScenEdit_CurrentTime()
+  local dur = (s.t0 and ((s.t1 or now) - s.t0)) or 0
+  local alive, ko_n, total = count_alive_launchers()
+  print("=== LucasStat ===")
+  print(string.format("t0(入区)=%s | t1(结束)=%s | 历时=%.0fs",
+    tostring(s.t0), tostring(s.t1), dur))
+  print(string.format("窗口内发射 LUCAS(Shahed-136/4142) 累计: %d", s.launched or 0))
+  print(string.format("发射车: 总数=%d 未重创=%d 已重创=%d | ended=%s",
+    total, alive, ko_n, tostring(s.ended)))
+  return s.launched or 0
+end
+
+local function finish_scenario(now, reason)
+  local s = stat()
+  if s.ended then return end
+  s.ended = true
+  s.t1 = now or ScenEdit_CurrentTime()
+  ScenEdit_SetKeyValue("lc_lucas_t1", tostring(s.t1))
+  ScenEdit_SetKeyValue("lc_lucas_launched", tostring(s.launched or 0))
+  local dur = (s.t0 and (s.t1 - s.t0)) or 0
+  print("========== 想定结束 ==========")
+  print(string.format("原因: %s", reason or "蓝方发射车全部达损伤阈值"))
+  print(string.format("统计窗口: 首机入区 → 发射车全灭 | 历时 %.0f s", dur))
+  print(string.format("期间发射 LUCAS(Shahed-136) 总数: %d", s.launched or 0))
+  LauncherCtrl_LucasStatReport()
+  if cfg().END_SCENARIO ~= false then
+    local msg = string.format(
+      "想定结束：发射车损伤达标。窗口内 LUCAS 发射 %d 枚，历时 %.0fs",
+      s.launched or 0, dur)
+    pcall(ScenEdit_SpecialMessage, cfg().UNIT_SIDE, msg)
+    pcall(ScenEdit_SpecialMessage, cfg().RP_SIDE or "红方", msg)
+    pcall(ScenEdit_EndScenario)
+  end
+end
+
+--- 仅在「未重创很少」或「侧单元很少」时才全量 GetUnit 验伤并可能结束
+function LauncherCtrl_TryEndCheck(now)
+  local s = stat()
+  if s.ended then return false end
+  now = now or ScenEdit_CurrentTime()
+  local alive = select(1, count_alive_launchers())
+  local side_n = side_unit_count()
+  local alive_le = cfg().END_SCAN_ALIVE_LE or 6
+  local side_le = cfg().END_SCAN_SIDE_UNITS_LE or 6
+  if alive &gt; alive_le and not (side_n &gt;= 0 and side_n &lt;= side_le) then
+    return false
+  end
+
+  local thr = cfg().END_DAMAGE or 0.70
+  local names = LauncherCtrl_BuildNameList(false)
+  local ok_all, checked = true, 0
+  for _, name in ipairs(names) do
+    local st = car(name)
+    if st.ko then
+      checked = checked + 1
+    else
+      local u = get_u(name)
+      checked = checked + 1
+      if not u then
+        ok_all = false -- 隐藏装填中：暂不判结束
+      else
+        local d = dmg_frac(u)
+        if d &gt;= thr then
+          if not st.ko then freeze_ko(u, name) end
+        else
+          ok_all = false
+        end
+      end
+    end
+  end
+  if ok_all and #names &gt; 0 and checked &gt;= #names then
+    if not s.t0 then
+      s.t0 = now
+      print("[LucasStat] 结束时尚未记到入区，t0 记为结束时刻")
+    end
+    finish_scenario(now, string.format("全部发射车损伤≥%.0f%%（扫 %d）", thr * 100, checked))
+    return true
+  end
+  return false
+end
+
+--- 兜底：尚未起算时，从 dsw_drones 抽样看是否已有红机在任务区
+local function probe_red_in_ao(now)
+  local s = stat()
+  if s.t0 then return end
+  local poly = _LC.poly
+  if not poly and type(LauncherCtrl_LoadPolygon) == "function" then
+    poly = LauncherCtrl_LoadPolygon()
+  end
+  if not poly then return end
+  local raw = ""
+  pcall(function() raw = ScenEdit_GetKeyValue("dsw_drones") or "" end)
+  if raw == "" then return end
+  local guids = {}
+  for g in string.gmatch(raw, "([^|]+)") do guids[#guids + 1] = g end
+  if #guids == 0 then return end
+  local i = s.ao_probe_i or 1
+  if i &lt; 1 or i &gt; #guids then i = 1 end
+  local budget = 3
+  for k = 0, budget - 1 do
+    local guid = guids[((i - 1 + k) % #guids) + 1]
+    local ok, u = pcall(ScenEdit_GetUnit, { guid = guid })
+    if ok and u and pip(to_num(u.latitude), to_num(u.longitude), poly) then
+      LauncherCtrl_NoteRedInAo(now)
+      return
+    end
+  end
+  s.ao_probe_i = ((i - 1 + budget) % #guids) + 1
+end
+
+local function try_bol(name, st, u, now)
+  local f = fc()
+  if not f.ENABLED then return false end
+  if (_LC.bol_budget or 0) &lt;= 0 then return false end
+  if (now - (st.flast or 0)) &lt; f.INTERVAL_SEC then return false end
+  local al, ao = bearing_pt(to_num(u.latitude), to_num(u.longitude), f.BEARING_DEG, f.AIMPOINT_NM)
+  if not al then return false end
+  local opts = { mode = 1, weapon = f.WEAPON_ID, qty = f.QTY, latitude = al, longitude = ao }
+  if f.MOUNT_ID then opts.mount = f.MOUNT_ID end
+  local ok, r = pcall(ScenEdit_AttackContact, name, "BOL", opts)
+  if ok and r then
+    st.flast = now; note_fire(now)
+    _LC.bol_budget = (_LC.bol_budget or 1) - 1
+    if cfg().DEBUG then
+      print(string.format("[LauncherCtrl] %s BOL %d → %.0f°", name, f.WEAPON_ID, f.BEARING_DEG))
+    end
+    return true
+  end
+  return false
+end
+
+local function is_launcher(n) return n:sub(1, #cfg().NAME_PREFIX) == cfg().NAME_PREFIX end
+
+local function ptr_cleanup(ptr)
+  local f = fc()
+  if not f.CLEANUP_ENABLED or not ptr then return false end
+  local name = ptr.name or ""
+  if name == "" or is_launcher(name) then return false end
+  if f.CLEANUP_NAME_PREFIX and f.CLEANUP_NAME_PREFIX ~= "" then
+    return name:sub(1, #f.CLEANUP_NAME_PREFIX) == f.CLEANUP_NAME_PREFIX
+  end
+  local dbid = tonumber(ptr.dbid or ptr.DBID)
+  local want = f.CLEANUP_UNIT_DBID or f.WEAPON_ID
+  if dbid then return dbid == want end
+  local guid = ptr.guid or ptr.objectid
+  if not guid then return false end
+  local ok, u = pcall(ScenEdit_GetUnit, { guid = guid })
+  return ok and u and (u.dbid or 0) == want
+end
+
+local function recent_fire(now, win)
+  for _, ts in ipairs(_LC.fire_ts) do
+    if (now - ts) &lt;= win then return true end
+  end
+  return false
+end
+
+local function est_spawn(now)
+  local best = nil
+  for _, ts in ipairs(_LC.fire_ts) do
+    if ts &lt;= now and (now - ts) &lt;= 120 and (not best or ts &gt; best) then best = ts end
+  end
+  return best or now
+end
+
+function LauncherCtrl_CleanupWeaponUnits(now)
+  local f = fc()
+  if not f.CLEANUP_ENABLED then return 0 end
+  now = now or ScenEdit_CurrentTime()
+  local ttl = (f.CLEANUP_FLIGHT_MINUTES or 3) * 60
+  local reg = _LC.wpn
+  local has_reg = next(reg) ~= nil
+  local recently = recent_fire(now, ttl + 60)
+  local mass_due = f.MASS_CLEANUP and (now - (_LC.mass_ts or 0)) &gt;= ttl
+  if not has_reg and not recently and not mass_due then return 0 end
+
+  if recently or mass_due then
+    local side = VP_GetSide({ Side = cfg().UNIT_SIDE })
+    if side and side.units then
+      for _, ptr in ipairs(side.units) do
+        if ptr_cleanup(ptr) and ptr.name and not reg[ptr.name] then
+          -- 新发现一枚在飞的 LUCAS：登记前计数（统计窗口内）
+          note_lucas_registered(ptr.name)
+          reg[ptr.name] = est_spawn(now)
+        end
+      end
+    end
+  end
+
+  local removed = 0
+  for name, ts in pairs(reg) do
+    if (now - ts) &gt;= ttl then
+      pcall(ScenEdit_DeleteUnit, { side = cfg().UNIT_SIDE, unitname = name })
+      reg[name] = nil
+      removed = removed + 1
+    end
+  end
+  if mass_due then _LC.mass_ts = now end
+  return removed
+end
+
+local function enter_phase(name, st, idx, poly, u)
+  if st.ko then return end
+  local phase = LAUNCHER_CTRL_PHASES[idx]
+  st.arr = false
+  if phase.id == "STATIC_1" or phase.id == "STATIC_2" then hold(u.guid, true)
+  elseif phase.id == "FIRE" then hold(u.guid, false)
+  elseif phase.id == "RELOAD" then begin_reload(st, u)
+  elseif is_move(phase.id) then begin_move(st, u, phase.key, poly) end
+end
+
+local function proc_hidden(name, st, now, poly)
+  if st.i ~= reload_idx() then return false, nil end
+  if st.ko then
+    if (now - st.t0) &gt;= ph_sec("RELOAD") then st.hid = false end
+    return false, "KNOCKED"
+  end
+  if (now - st.t0) &lt; ph_sec("RELOAD") then return false, "RELOAD_HIDDEN" end
+  local ni = (st.i % #LAUNCHER_CTRL_PHASES) + 1
+  st.i, st.t0 = ni, now
+  local u = respawn(name, st)
+  if u then enter_phase(name, st, ni, poly, u); return true, LAUNCHER_CTRL_PHASES[ni].id end
+  return false, "RELOAD_RESPAWN_FAIL"
+end
+
+local function proc_visible(name, st, now, poly)
+  if st.ko then return false, "KNOCKED" end
+  local idx = st.i
+  if idx &lt; 1 or idx &gt; #LAUNCHER_CTRL_PHASES then return false, nil end
+  local phase = LAUNCHER_CTRL_PHASES[idx]
+  local elapsed = now - st.t0
+  local need_unit = (elapsed &gt;= ph_sec(phase.key))
+    or (phase.id == "FIRE")
+    or (is_move(phase.id) and not st.arr and st.dlat)
+  -- STATIC 未到期：零 GetUnit
+  if not need_unit then return false, phase.id end
+
+  local u = get_u(name)
+  if not u then
+    if st.hid then return proc_hidden(name, st, now, poly) end
+    st.hid = true
+    return proc_hidden(name, st, now, poly)
+  end
+  if elapsed &lt; ph_sec(phase.key) then
+    if phase.id == "FIRE" then try_bol(name, st, u, now)
+    elseif is_move(phase.id) and not st.arr and st.dlat then
+      local ok, rng = pcall(Tool_Range,
+        { latitude = u.latitude, longitude = u.longitude },
+        { latitude = st.dlat, longitude = st.dlon })
+      if ok and rng and rng &lt;= cfg().ARRIVE_NM then hold(u.guid, true); st.arr = true end
+    end
+    return false, phase.id
+  end
+  local ni = (idx % #LAUNCHER_CTRL_PHASES) + 1
+  st.i, st.t0 = ni, now
+  enter_phase(name, st, ni, poly, u)
+  return true, LAUNCHER_CTRL_PHASES[ni].id
+end
+
+function LauncherCtrl_LoadPolygon() return Shared_LoadPolygon(false) end
+
+function LauncherCtrl_BuildNameList(force)
+  -- 固定用 发射车-1..COUNT（装填删车后侧列表会缺席，不能靠扫侧重建）
+  if _LC.names and not force then return _LC.names end
+  local c = cfg()
+  local names = {}
+  for i = 1, c.COUNT do names[i] = c.NAME_PREFIX .. i end
+  _LC.names = names
+  return names
+end
+
+function LauncherCtrl_Init()
+  math.randomseed(os.time())
+  local poly = LauncherCtrl_LoadPolygon()
+  local names = LauncherCtrl_BuildNameList(true)
+  if #names == 0 then
+    print("[LauncherCtrl v" .. SCRIPT_VERSION .. "] 未找到单元 " .. cfg().UNIT_SIDE .. "/" .. cfg().NAME_PREFIX)
+    return 0
+  end
+  local now = ScenEdit_CurrentTime()
+  local neu = 0
+  for _, name in ipairs(names) do
+    local st = car(name)
+    if st.i &lt; 1 then
+      local idx = math.random(1, #LAUNCHER_CTRL_PHASES)
+      local phase = LAUNCHER_CTRL_PHASES[idx]
+      local offset = math.random(0, math.max(0, ph_sec(phase.key) - 1))
+      st.i, st.t0, st.arr, st.hid = idx, now - offset, false, false
+      if phase.id == "RELOAD" then
+        local u = get_u(name); if u then begin_reload(st, u) end
+      else
+        local u = get_u(name)
+        if u then
+          if is_move(phase.id) and offset &gt; ph_sec(phase.key) * 0.5 then
+            hold(u.guid, true); st.arr = true
+          else enter_phase(name, st, idx, poly, u) end
+        end
+      end
+      neu = neu + 1
+    end
+  end
+  _LC.ready = true
+  print(string.format("[LauncherCtrl v%s] 就绪 %d 辆 | %s@%s区（新初始化 %d）",
+    SCRIPT_VERSION, #names, cfg().UNIT_SIDE, cfg().RP_SIDE, neu))
+  print(string.format("[LauncherCtrl] 重伤阈≥%.0f%% | 查伤: LauncherCtrl_DamageCheckOnce()",
+    (cfg().HEAVY_DAMAGE or 0.67) * 100))
+  if fc().ENABLED then
+    print(string.format("[LauncherCtrl] BOL 武器=%d | 方位=%.0f° | 间隔=%ds",
+      fc().WEAPON_ID, fc().BEARING_DEG, fc().INTERVAL_SEC))
+    if fc().CLEANUP_ENABLED then
+      print(string.format("[LauncherCtrl] 发射体清理: %d min | DBID=%d",
+        fc().CLEANUP_FLIGHT_MINUTES, fc().CLEANUP_UNIT_DBID or fc().WEAPON_ID))
+    end
+  end
+  return #names
+end
+
+function LauncherCtrl_Tick()
+  if not _LC.ready then LauncherCtrl_Init() end
+  local now = ScenEdit_CurrentTime()
+  if stat().ended then return end
+  _LC.bol_budget = cfg().MAX_BOL_PER_TICK or 5
+  -- 尚未起算时偶尔抽样红机是否入区（每 tick 最多 3 次 GetUnit）
+  if not stat().t0 then probe_red_in_ao(now) end
+  LauncherCtrl_CleanupWeaponUnits(now)
+  -- 长周期裁挂架（默认 300s）
+  if cfg().TRIM_MOUNTS_ON_TICK ~= false then
+    LauncherCtrl_TrimMountsThrottled(cfg().TRIM_MOUNTS_INTERVAL_SEC or 300)
+  end
+  local poly = LauncherCtrl_LoadPolygon()
+  local names = LauncherCtrl_BuildNameList(false)
+  if #names == 0 then return end
+  local transitions, phase_count, getu_need = 0, {}, 0
+  for _, name in ipairs(names) do
+    local st = car(name)
+    local changed, pid
+    if st.ko and not st.hid then pid = "KNOCKED"
+    elseif st.hid then
+      if st.i == reload_idx() and (now - st.t0) &gt;= ph_sec("RELOAD") then getu_need = getu_need + 1 end
+      changed, pid = proc_hidden(name, st, now, poly)
+    else
+      local idx = st.i
+      local phase = LAUNCHER_CTRL_PHASES[idx]
+      if phase then
+        local el = now - st.t0
+        if el &gt;= ph_sec(phase.key) or phase.id == "FIRE" or (is_move(phase.id) and not st.arr) then
+          getu_need = getu_need + 1
+        end
+      end
+      changed, pid = proc_visible(name, st, now, poly)
+    end
+    if changed then transitions = transitions + 1 end
+    if pid then phase_count[pid] = (phase_count[pid] or 0) + 1 end
+  end
+  -- 门槛满足才全量扫伤验结束（默认未重创≤6 或侧单元≤6）
+  LauncherCtrl_TryEndCheck(now)
+  _LC.tick_n = (_LC.tick_n or 0) + 1
+  local c = cfg()
+  if c.DEBUG or (_LC.tick_n % (c.DEBUG_EVERY or 5) == 0) then
+    local parts = {}
+    for _, p in ipairs(LAUNCHER_CTRL_PHASES) do
+      local n = phase_count[p.id] or 0
+      if n &gt; 0 then parts[#parts + 1] = p.id .. "=" .. n end
+    end
+    local alive = select(1, count_alive_launchers())
+    print(string.format(
+      "[LauncherCtrl v%s] tick#%d 切换=%d needGet~%d 未重创=%d LUCAS=%d | %s",
+      SCRIPT_VERSION, _LC.tick_n, transitions, getu_need, alive,
+      stat().launched or 0, table.concat(parts, " ")))
+  end
+end
+
+function LauncherCtrl_Status()
+  local names = LauncherCtrl_BuildNameList(false)
+  local c = cfg()
+  print("=== LauncherCtrl v" .. SCRIPT_VERSION .. " ===")
+  print(string.format("单元:%s | 参考点:%s | 数:%d | 运行:%s",
+    c.UNIT_SIDE, c.RP_SIDE, #names, tostring(ScenEdit_GetScenHasStarted())))
+  local now = ScenEdit_CurrentTime()
+  for i, name in ipairs(names) do
+    if i &lt;= 8 then
+      local st = car(name)
+      local ph = LAUNCHER_CTRL_PHASES[st.i]
+      local tag = st.hid and " [装填]" or (st.arr and " 已到位" or "")
+      if st.ko then tag = tag .. " [重伤]" end
+      print(string.format("  %s | %s %.0fs%s", name, ph and ph.id or "?", now - st.t0, tag))
+    end
+  end
+  if #names &gt; 8 then print("  ... +" .. (#names - 8) .. " 辆") end
+end
+
+function LauncherCtrl_Reset()
+  _LC.cars, _LC.names, _LC.poly, _LC.tick_n = {}, nil, nil, 0
+  _LC.ready, _LC.wpn, _LC.fire_ts, _LC.mass_ts = false, {}, {}, 0
+  _LC.stat = { t0 = nil, t1 = nil, launched = 0, ended = false, ao_probe_i = 1 }
+  print("[LauncherCtrl v" .. SCRIPT_VERSION .. "] 已重置")
+end
+
+function LauncherCtrl_RegisterEvent()
+  local c = cfg()
+  local evt, trg, act = c.EVENT_NAME, "LCycleTrigger", "LCycleAction"
+  for _, old in ipairs({ evt, "发射车周期控制" }) do
+    pcall(function() ScenEdit_SetEvent(old, { mode = "remove" }) end)
+  end
+  pcall(function() ScenEdit_SetTrigger({ mode = "remove", name = trg }) end)
+  pcall(function() ScenEdit_SetAction({ mode = "remove", name = act }) end)
+  ScenEdit_SetEvent(evt, { mode = "add", IsActive = true, IsRepeatable = true })
+  local ok_trg = pcall(ScenEdit_SetTrigger, {
+    mode = "add", name = trg, type = "RegularTime", Interval = c.TICK_INTERVAL,
+  })
+  local tick_script = string.format([[
+if type(LauncherCtrl_Tick) ~= 'function' then
+  LAUNCHER_CTRL_LIB_ONLY = true
+  ScenEdit_RunScript('%s')
+end
+if type(LauncherCtrl_Tick) == 'function' then LauncherCtrl_Tick() end
+]], c.SCRIPT_FILE)
+  local ok_act = pcall(ScenEdit_SetAction, {
+    mode = "add", name = act, type = "LuaScript", ScriptText = tick_script,
+  })
+  if ok_trg and ok_act then
+    pcall(ScenEdit_SetEventTrigger, evt, { mode = "add", name = trg })
+    pcall(ScenEdit_SetEventAction, evt, { mode = "add", name = act })
+    return true
+  end
+  return false
+end
+
+function LauncherCtrl_Setup()
+  print("[LauncherCtrl] 版本 " .. SCRIPT_VERSION)
+  if cfg().RESET_ON_START then LauncherCtrl_Reset() end
+  LauncherCtrl_Init()
+  local ok = LauncherCtrl_RegisterEvent()
+  LauncherCtrl_Status()
+  print(ok and "[LauncherCtrl] 设置完成" or "[LauncherCtrl] 事件注册失败")
+  print("【查伤】周期不含查伤。动作粘贴:")
+  print("  if type(LauncherCtrl_DamageCheckOnce)=='function' then LauncherCtrl_DamageCheckOnce() end")
+  return ok
+end
+
+function LauncherCtrl_DamageCheckOnce()
+  local now = ScenEdit_CurrentTime()
+  local gap = cfg().DAMAGE_CHECK_MIN_INTERVAL_SEC or 10
+  local last = tonumber(ScenEdit_GetKeyValue("lc_dmg_last")) or 0
+  if last &gt; 0 and (now - last) &lt; gap then
+    return 0
+  end
+  ScenEdit_SetKeyValue("lc_dmg_last", tostring(now))
+
+  local names = LauncherCtrl_BuildNameList(false)
+  local n_new, n_skip, n_gone = 0, 0, 0
+  for _, name in ipairs(names) do
+    local st = car(name)
+    if st.ko then n_skip = n_skip + 1
+    elseif st.hid then n_gone = n_gone + 1
+    else
+      local u = get_u(name)
+      if u and dmg_frac(u) &gt;= (cfg().HEAVY_DAMAGE or 0.67) then
+        if freeze_ko(u, name) then n_new = n_new + 1 end
+      end
+    end
+  end
+  if n_new &gt; 0 or cfg().DEBUG then
+    print(string.format("[LauncherCtrl] DamageCheck: 新停摆=%d 已停=%d 隐藏=%d 扫=%d",
+      n_new, n_skip, n_gone, #names))
+  end
+  -- 查伤后也试结束（仍受 alive/侧单元门槛约束）
+  LauncherCtrl_TryEndCheck(now)
+  return n_new
+end
+
+function LauncherCtrl_DamageCheckTick() return LauncherCtrl_DamageCheckOnce() end
+
+if not LAUNCHER_CTRL_LIB_ONLY then
+  if CONFIG.RUN_SPAWN then FacilitySpawn_Run() end
+  LauncherCtrl_Setup()
+end
+</ScriptText></EventAction_LuaScript><EventAction_LuaScript><ID>F221AN-0HNN0G5IF3QP7</ID><Description>红方-02-发射小无人机</Description><ScriptText>-- Version: 1.3.0-attrition
+--[[
+  红方-任务制：探测用「巡逻」；对陆先「进区巡逻」再切「对地打击」
+  v1.3.0-attrition:
+    - 入区后按时间段、按平台概率 Kill（AttritionCtrl_*）；试用默认率可调
+  v1.2.1-retask-fix: 目标挂本区+借机；关键字发射车/Shahed
+  入口：MissionCtrl_Setup() / IngressTick / FeedTargets / AttritionCtrl_Report()
+--]]
+
+MISSION_CTRL_VERSION = "1.3.0-attrition"
+
+if not DRONE_SPAWN_CONFIG then
+  DRONE_SPAWN_CONFIG = {
+    SIDE = "红方", RP_SIDE = "红方",
+    MOTHER_UNIT = "母平台-1",
+    REFERENCE_POINTS = { "RP-1", "RP-2", "RP-3", "RP-4" },
+    AIRCRAFT_DBID = 1719, AIRCRAFT_TYPE = "Aircraft",
+    PAYLOADS = {
+      { label = "雷达", count = 5,  loadoutid = 8600 },
+      { label = "光电", count = 25, loadoutid = 8600 },
+      { label = "对陆", count = 70, loadoutid = 2230 },
+    },
+    SPAWN_ORDER = { "雷达", "光电", "对陆" },
+    NAME_PREFIX = "小无人机-",
+    SPAWN_ALT_M = 3000, FLY_SPEED_KTS = 180, SPAWN_INTERVAL_SEC = 5,
+    EO_SENSOR_DBID = 6252,
+    EO_SENSOR_ARCS = { detect = { "SB1", "SB2", "PB1", "PB2" }, track = { "SB1", "SB2", "PB1", "PB2" } },
+    EO_SENSOR_PER_TICK = 5, EO_SENSOR_MAX_RETRY = 3,
+    RECON = { ZONE_COUNT = 5, RADAR_PER_ZONE = 1, EO_PER_ZONE = 5 },
+    STRIKE = { ZONE_ROWS = 2, ZONE_COLS = 3, ZONE_CAPS = { 12, 12, 12, 12, 11, 11 } },
+  }
+end
+
+MISSION_CTRL_CONFIG = MISSION_CTRL_CONFIG or {
+  SIDE = DRONE_SPAWN_CONFIG.SIDE or "红方",
+  ENEMY_SIDE = "蓝方",
+  CONTACT_SIDE = DRONE_SPAWN_CONFIG.SIDE or "红方",
+  RECON_MISSION_FMT = "侦察巡逻-区%d",
+  STRIKE_MISSION_FMT = "对地打击-区%d",
+  -- 对陆进区阶段专用巡逻（与打击区同矩形）
+  INGRESS_MISSION_FMT = "对陆进区-区%d",
+  RECON_RP_FMT = "MC-侦%d-%s",
+  STRIKE_RP_FMT = "MC-打%d-%s",
+  TARGET_KEYWORDS = { "SSM Bty", "发射车", "Shahed" },
+  TARGET_DBIDS = { 3665 },
+  EXCLUDE_DBIDS = { 4142 },
+  FEED_INTERVAL = 2, -- ≈15s
+  SPAWN_INTERVAL = 1, -- ≈5s
+  EO_INTERVAL = 3,    -- ≈30s
+  INGRESS_INTERVAL = 1, -- ≈5s 检查进区→切打击
+  -- near: 距任务区中心 ≤NEAR_NM；enter: 点在任务多边形内
+  -- compare: 两种时机都记账，实际切换用 ACTIVE_SWITCH
+  SWITCH_MODE = "compare",
+  ACTIVE_SWITCH = "near", -- compare 模式下真正切换用哪个
+  NEAR_NM = 35,
+  INGRESS_SPEED_KTS = 180,
+  INGRESS_CHECK_BUDGET = 20, -- 每 tick 最多 GetUnit 几架对陆进区机
+  -- 后期救场：有接触时强制进区机切打击；本区无打击机则跨区借
+  RETASK_ON_CONTACT = true,
+  BORROW_CROSS_ZONE = true,
+  MAX_BORROW_PER_FEED = 6,
+  FORCE_ALL_INGRESS_IF_NO_STRIKE = true,
+  AUTO_SETUP = true,
+  QUIET = true,
+}
+-- 热加载旧表时补齐新键（nil 视为启用）
+do
+  local mc = MISSION_CTRL_CONFIG
+  if mc.RETASK_ON_CONTACT == nil then mc.RETASK_ON_CONTACT = true end
+  if mc.BORROW_CROSS_ZONE == nil then mc.BORROW_CROSS_ZONE = true end
+  if mc.MAX_BORROW_PER_FEED == nil then mc.MAX_BORROW_PER_FEED = 6 end
+  if mc.FORCE_ALL_INGRESS_IF_NO_STRIKE == nil then mc.FORCE_ALL_INGRESS_IF_NO_STRIKE = true end
+  if type(mc.TARGET_KEYWORDS) == "table" then
+    local has_che = false
+    for _, kw in ipairs(mc.TARGET_KEYWORDS) do
+      if kw == "发射车" then has_che = true; break end
+    end
+    if not has_che then
+      mc.TARGET_KEYWORDS[#mc.TARGET_KEYWORDS + 1] = "发射车"
+      mc.TARGET_KEYWORDS[#mc.TARGET_KEYWORDS + 1] = "Shahed"
+    end
+  end
+end
+
+local KV_READY = "mc_ready"
+local KV_QIDX = "dsw_qidx"
+local KV_LAST_SPAWN = "dsw_last"
+local KV_SPAWN_DONE = "dsw_spawn_done"
+local KV_DRONES = "dsw_drones"
+local KV_FEED_EVT = "mc_feed_reg"
+local KV_WCS = "mc_wcs_air"
+local KV_INGRESS_CUR = "mc_ingress_cur"
+local SEP = "|"
+
+local RECON_LABELS = { ["雷达"] = true, ["光电"] = true }
+local STRIKE_LABEL = "对陆"
+
+_MC = _MC or {
+  poly = nil, spawn_q = nil, fed = {},
+  -- 对比统计
+  stats = {
+    getu = 0, switched = 0,
+    near_t = {}, enter_t = {}, -- guid -&gt; first sim-time ready
+    spawn_t = {},
+    near_first_n = 0, enter_first_n = 0, -- which condition triggered first
+  },
+}
+
+local function cfg() return DRONE_SPAWN_CONFIG end
+local function mcfg() return MISSION_CTRL_CONFIG end
+local function to_num(v) return tonumber(v) or 0 end
+local function kv_d(g, f) return "dsw_" .. (g or ""):gsub("-", "") .. "_" .. f end
+local function kv_z(field, z) return "dsw_z" .. z .. "_" .. field end
+
+local function dbg(msg)
+  if not mcfg().QUIET then print(msg) end
+end
+
+-- ---------- 几何（与原责任区一致） ----------
+local function point_in_polygon(lat, lon, poly)
+  local inside, j = false, #poly
+  for i = 1, #poly do
+    local yi, xi = poly[i].lat, poly[i].lon
+    local yj, xj = poly[j].lat, poly[j].lon
+    if ((yi &gt; lat) ~= (yj &gt; lat)) and (lon &lt; (xj - xi) * (lat - yi) / ((yj - yi) + 1e-12) + xi) then
+      inside = not inside
+    end
+    j = i
+  end
+  return inside
+end
+
+local function polygon_bounds(poly)
+  local min_lat, max_lat = poly[1].lat, poly[1].lat
+  local min_lon, max_lon = poly[1].lon, poly[1].lon
+  for i = 2, #poly do
+    local p = poly[i]
+    if p.lat &lt; min_lat then min_lat = p.lat end
+    if p.lat &gt; max_lat then max_lat = p.lat end
+    if p.lon &lt; min_lon then min_lon = p.lon end
+    if p.lon &gt; max_lon then max_lon = p.lon end
+  end
+  return min_lat, max_lat, min_lon, max_lon
+end
+
+local function load_polygon()
+  if _MC.poly then return _MC.poly end
+  local side = cfg().RP_SIDE or cfg().SIDE
+  local names = cfg().REFERENCE_POINTS or { "RP-1", "RP-2", "RP-3", "RP-4" }
+  local poly = {}
+  for _, nm in ipairs(names) do
+    local ok, rp = pcall(ScenEdit_GetReferencePoint, { side = side, name = nm })
+    if ok and rp then
+      poly[#poly + 1] = { lat = to_num(rp.latitude), lon = to_num(rp.longitude) }
+    end
+  end
+  if #poly &lt; 3 then
+    print("[MissionCtrl] 任务区 RP 不足，无法建区")
+    return nil
+  end
+  _MC.poly = poly
+  return poly
+end
+
+local function recon_bounds(z, poly)
+  local min_lat, max_lat, min_lon, max_lon = polygon_bounds(poly)
+  local H, W = max_lat - min_lat, max_lon - min_lon
+  local split = max_lat - (2 / 5) * H
+  if z &lt;= 2 then
+    local col = z - 1
+    local lon_w = W / 2
+    return split, max_lat, min_lon + col * lon_w, min_lon + (col + 1) * lon_w
+  end
+  local col = z - 3
+  local lon_w = W / 3
+  return min_lat, split, min_lon + col * lon_w, min_lon + (col + 1) * lon_w
+end
+
+local function strike_bounds(z, poly)
+  local rows = (cfg().STRIKE and cfg().STRIKE.ZONE_ROWS) or 2
+  local cols = (cfg().STRIKE and cfg().STRIKE.ZONE_COLS) or 3
+  local min_lat, max_lat, min_lon, max_lon = polygon_bounds(poly)
+  local row = math.floor((z - 1) / cols)
+  local col = (z - 1) % cols
+  local lat_h = (max_lat - min_lat) / rows
+  local lon_w = (max_lon - min_lon) / cols
+  return max_lat - (row + 1) * lat_h, max_lat - row * lat_h,
+    min_lon + col * lon_w, min_lon + (col + 1) * lon_w
+end
+
+function MissionCtrl_StrikeZoneIdAt(lat, lon)
+  local poly = load_polygon()
+  if not poly then return 1 end
+  local rows = (cfg().STRIKE and cfg().STRIKE.ZONE_ROWS) or 2
+  local cols = (cfg().STRIKE and cfg().STRIKE.ZONE_COLS) or 3
+  local min_lat, max_lat, min_lon, max_lon = polygon_bounds(poly)
+  local lat_h = (max_lat - min_lat) / rows
+  local lon_w = (max_lon - min_lon) / cols
+  if lat_h &lt;= 0 or lon_w &lt;= 0 then return 1 end
+  local row = math.floor((max_lat - to_num(lat)) / lat_h)
+  local col = math.floor((to_num(lon) - min_lon) / lon_w)
+  if row &lt; 0 then row = 0 elseif row &gt;= rows then row = rows - 1 end
+  if col &lt; 0 then col = 0 elseif col &gt;= cols then col = cols - 1 end
+  return row * cols + col + 1
+end
+
+-- 兼容旧名（目标进打击任务用）
+DroneSwarm_ZoneIdAt = MissionCtrl_StrikeZoneIdAt
+
+-- ---------- RP / 任务 ----------
+local function ensure_rp(side, name, lat, lon)
+  local ok, rp = pcall(ScenEdit_GetReferencePoint, { side = side, name = name })
+  if ok and rp then
+    pcall(ScenEdit_SetReferencePoint, { side = side, name = name, lat = lat, lon = lon })
+    return name
+  end
+  pcall(ScenEdit_AddReferencePoint, {
+    side = side, name = name, latitude = lat, longitude = lon, highlighted = false,
+  })
+  return name
+end
+
+local function rect_rps(fmt, z, a, b, c, d)
+  local side = mcfg().SIDE
+  local corners = {
+    { "NW", b, c }, { "NE", b, d }, { "SE", a, d }, { "SW", a, c },
+  }
+  local names = {}
+  for _, p in ipairs(corners) do
+    local nm = string.format(fmt, z, p[1])
+    ensure_rp(side, nm, p[2], p[3])
+    names[#names + 1] = nm
+  end
+  return names
+end
+
+local function mission_exists(name)
+  local ok, m = pcall(ScenEdit_GetMission, mcfg().SIDE, name)
+  return ok and m ~= nil
+end
+
+local function add_patrol(name, zone_rps)
+  if mission_exists(name) then
+    pcall(ScenEdit_SetMission, mcfg().SIDE, name, {
+      patrolzone = zone_rps, onethirdrule = false, isactive = true,
+    })
+    return true
+  end
+  local ok = pcall(ScenEdit_AddMission, mcfg().SIDE, name, "Patrol", { type = "LAND" })
+  if not ok then
+    ok = pcall(ScenEdit_AddMission, {
+      side = mcfg().SIDE, name = name, type = "Patrol", subtype = "LAND",
+    })
+  end
+  if not ok then
+    print("[MissionCtrl] 创建巡逻失败: " .. name)
+    return false
+  end
+  pcall(ScenEdit_SetMission, mcfg().SIDE, name, {
+    patrolzone = zone_rps, onethirdrule = false, isactive = true,
+  })
+  -- 任务级空中限制开火（尽量不拦 lucas）
+  pcall(ScenEdit_SetDoctrine, { side = mcfg().SIDE, mission = name }, {
+    weapon_control_status_air = "2",
+  })
+  return true
+end
+
+local function add_strike(name, zone_rps)
+  if mission_exists(name) then
+    pcall(ScenEdit_SetMission, mcfg().SIDE, name, {
+      attackee = mcfg().ENEMY_SIDE,
+      patrolzone = zone_rps,
+      isactive = true,
+    })
+    return true
+  end
+  local ok = pcall(ScenEdit_AddMission, mcfg().SIDE, name, "Strike", { type = "LAND" })
+  if not ok then
+    ok = pcall(ScenEdit_AddMission, {
+      side = mcfg().SIDE, name = name, type = "Strike", subtype = "LAND",
+    })
+  end
+  if not ok then
+    print("[MissionCtrl] 创建打击失败: " .. name)
+    return false
+  end
+  pcall(ScenEdit_SetMission, mcfg().SIDE, name, {
+    attackee = mcfg().ENEMY_SIDE,
+    patrolzone = zone_rps,
+    isactive = true,
+  })
+  pcall(ScenEdit_SetDoctrine, { side = mcfg().SIDE, mission = name }, {
+    weapon_control_status_air = "2",
+  })
+  return true
+end
+
+function MissionCtrl_BuildMissions()
+  local poly = load_polygon()
+  if not poly then return false end
+  local recon_n = (cfg().RECON and cfg().RECON.ZONE_COUNT) or 5
+  local strike_n = ((cfg().STRIKE and cfg().STRIKE.ZONE_ROWS) or 2)
+    * ((cfg().STRIKE and cfg().STRIKE.ZONE_COLS) or 3)
+
+  for z = 1, recon_n do
+    local a, b, c, d = recon_bounds(z, poly)
+    local rps = rect_rps(mcfg().RECON_RP_FMT, z, a, b, c, d)
+    local mname = string.format(mcfg().RECON_MISSION_FMT, z)
+    add_patrol(mname, rps)
+    print(string.format("[MissionCtrl] 侦察巡逻 %s", mname))
+  end
+  for z = 1, strike_n do
+    local a, b, c, d = strike_bounds(z, poly)
+    local rps = rect_rps(mcfg().STRIKE_RP_FMT, z, a, b, c, d)
+    -- 进区巡逻：催对陆尽快贴区
+    local ingress = string.format(mcfg().INGRESS_MISSION_FMT, z)
+    add_patrol(ingress, rps)
+    -- 打击任务：到位后再切入
+    local strike = string.format(mcfg().STRIKE_MISSION_FMT, z)
+    add_strike(strike, rps)
+    print(string.format("[MissionCtrl] 对陆进区 %s → 打击 %s", ingress, strike))
+  end
+  return true
+end
+
+local function apply_air_hold()
+  if ScenEdit_GetKeyValue(KV_WCS) == "hold" then return end
+  pcall(ScenEdit_SetDoctrine, { side = mcfg().SIDE }, {
+    weapon_control_status_air = "2",
+  })
+  ScenEdit_SetKeyValue(KV_WCS, "hold")
+  print("[MissionCtrl] 红方空中武器控制=限制开火(Hold)")
+end
+
+-- ---------- 释放与任务分配 ----------
+local function build_spawn_queue()
+  if _MC.spawn_q then return _MC.spawn_q end
+  local q = {}
+  local by = {}
+  for _, p in ipairs(cfg().PAYLOADS or {}) do by[p.label] = p end
+  for _, label in ipairs(cfg().SPAWN_ORDER or { "雷达", "光电", "对陆" }) do
+    local p = by[label]
+    if p then
+      for _ = 1, (p.count or 0) do
+        q[#q + 1] = { label = label, loadoutid = p.loadoutid }
+      end
+    end
+  end
+  _MC.spawn_q = q
+  return q
+end
+
+local function load_qidx() return tonumber(ScenEdit_GetKeyValue(KV_QIDX)) or 1 end
+local function save_qidx(n) ScenEdit_SetKeyValue(KV_QIDX, tostring(n)) end
+local function spawn_done() return ScenEdit_GetKeyValue(KV_SPAWN_DONE) == "1" end
+
+local function save_zone_count(z, field, n) ScenEdit_SetKeyValue(kv_z(field, z), tostring(n)) end
+
+local function pick_zone_recon(label)
+  local n = (cfg().RECON and cfg().RECON.ZONE_COUNT) or 5
+  if label == "雷达" then
+    local cap = (cfg().RECON and cfg().RECON.RADAR_PER_ZONE) or 1
+    for z = 1, n do
+      if (tonumber(ScenEdit_GetKeyValue(kv_z("r", z))) or 0) &lt; cap then return z end
+    end
+  else
+    local cap = (cfg().RECON and cfg().RECON.EO_PER_ZONE) or 5
+    for z = 1, n do
+      if (tonumber(ScenEdit_GetKeyValue(kv_z("e", z))) or 0) &lt; cap then return z end
+    end
+  end
+  return 1
+end
+
+local function strike_cap(z)
+  local caps = (cfg().STRIKE and cfg().STRIKE.ZONE_CAPS) or {}
+  return caps[z] or 12
+end
+
+local function pick_zone_strike()
+  local n = ((cfg().STRIKE and cfg().STRIKE.ZONE_ROWS) or 2)
+    * ((cfg().STRIKE and cfg().STRIKE.ZONE_COLS) or 3)
+  for z = 1, n do
+    if (tonumber(ScenEdit_GetKeyValue(kv_z("s", z))) or 0) &lt; strike_cap(z) then return z end
+  end
+  local best, best_n = 1, 1e9
+  for z = 1, n do
+    local c = tonumber(ScenEdit_GetKeyValue(kv_z("s", z))) or 0
+    if c &lt; best_n then best, best_n = z, c end
+  end
+  return best
+end
+
+local function append_drone(guid)
+  local raw = ScenEdit_GetKeyValue(KV_DRONES) or ""
+  if raw:find(guid, 1, true) then return end
+  ScenEdit_SetKeyValue(KV_DRONES, raw == "" and guid or (raw .. SEP .. guid))
+end
+
+local function register_drone(guid, name, label, zone_id)
+  append_drone(guid)
+  ScenEdit_SetKeyValue(kv_d(guid, "name"), name)
+  ScenEdit_SetKeyValue(kv_d(guid, "role"), label)
+  ScenEdit_SetKeyValue(kv_d(guid, "zone"), tostring(zone_id))
+  if label == "雷达" then
+    save_zone_count(zone_id, "r", (tonumber(ScenEdit_GetKeyValue(kv_z("r", zone_id))) or 0) + 1)
+  elseif label == "光电" then
+    save_zone_count(zone_id, "e", (tonumber(ScenEdit_GetKeyValue(kv_z("e", zone_id))) or 0) + 1)
+  else
+    save_zone_count(zone_id, "s", (tonumber(ScenEdit_GetKeyValue(kv_z("s", zone_id))) or 0) + 1)
+  end
+end
+
+local function mission_name_for(label, zone_id, phase)
+  if RECON_LABELS[label] then
+    return string.format(mcfg().RECON_MISSION_FMT, zone_id)
+  end
+  -- 对陆：进区阶段 → 进区巡逻；打击阶段 → 对地打击
+  if phase == "strike" then
+    return string.format(mcfg().STRIKE_MISSION_FMT, zone_id)
+  end
+  return string.format(mcfg().INGRESS_MISSION_FMT, zone_id)
+end
+
+local function assign_to_mission(guid, label, zone_id, phase)
+  local mname = mission_name_for(label, zone_id, phase)
+  local ok, res = pcall(ScenEdit_AssignUnitToMission, guid, mname)
+  if not ok or not res then
+    ok, res = pcall(ScenEdit_AssignUnitToMission, { guid = guid }, mname)
+  end
+  if ok and res ~= false then
+    ScenEdit_SetKeyValue(kv_d(guid, "mission"), mname)
+    if label == STRIKE_LABEL then
+      ScenEdit_SetKeyValue(kv_d(guid, "phase"), phase or "ingress")
+    end
+    dbg(string.format("[MissionCtrl] 分派 %s → %s", guid, mname))
+    return true
+  end
+  print(string.format("[MissionCtrl] 分派失败 %s → %s | %s", tostring(guid), mname, tostring(res)))
+  return false
+end
+
+local function get_mother()
+  local c = cfg()
+  local ok, u = pcall(ScenEdit_GetUnit, { side = c.SIDE, unitname = c.MOTHER_UNIT })
+  if ok and u then return u end
+  ok, u = pcall(ScenEdit_GetUnit, { side = c.SIDE, name = c.MOTHER_UNIT })
+  return ok and u or nil
+end
+
+local function unit_name(label, serial, zone_id, local_idx)
+  local code = (label == "雷达") and tostring(zone_id) or (tostring(zone_id) .. "-" .. tostring(local_idx))
+  return (cfg().NAME_PREFIX or "") .. label .. "-" .. serial .. "(" .. code .. ")"
+end
+
+local function spawn_one(mother, item, qidx)
+  local zone_id = RECON_LABELS[item.label] and pick_zone_recon(item.label) or pick_zone_strike()
+  local local_idx = 1
+  if item.label == "雷达" then
+    local_idx = 1
+  elseif item.label == "光电" then
+    local_idx = (tonumber(ScenEdit_GetKeyValue(kv_z("e", zone_id))) or 0) + 1
+  else
+    local_idx = (tonumber(ScenEdit_GetKeyValue(kv_z("s", zone_id))) or 0) + 1
+  end
+  local serial = 0
+  local q = build_spawn_queue()
+  for i = 1, qidx do if q[i].label == item.label then serial = serial + 1 end end
+  local name = unit_name(item.label, serial, zone_id, local_idx)
+
+  local slat = to_num(mother.latitude) + (math.random() - 0.5) * 0.02
+  local slon = to_num(mother.longitude) + (math.random() - 0.5) * 0.02
+  local ok, res = pcall(ScenEdit_AddUnit, {
+    side = cfg().SIDE, type = cfg().AIRCRAFT_TYPE, name = name,
+    dbid = cfg().AIRCRAFT_DBID, loadoutid = item.loadoutid,
+    latitude = slat, longitude = slon, altitude = cfg().SPAWN_ALT_M,
+    heading = math.random(0, 359),
+  })
+  if not ok or not res then
+    print("[MissionCtrl] 创建失败: " .. name)
+    return false
+  end
+  local guid = (type(res) == "table" and res.guid) or nil
+  if not guid then
+    local oku, u = pcall(ScenEdit_GetUnit, { side = cfg().SIDE, name = name })
+    if oku and u then guid = u.guid end
+  end
+  if not guid then return false end
+  register_drone(guid, name, item.label, zone_id)
+  local phase = RECON_LABELS[item.label] and nil or "ingress"
+  assign_to_mission(guid, item.label, zone_id, phase)
+  if phase == "ingress" then
+    local spd = mcfg().INGRESS_SPEED_KTS or 180
+    pcall(ScenEdit_SetUnit, { guid = guid, speed = spd, holdPosition = false })
+    _MC.stats.spawn_t[guid] = ScenEdit_CurrentTime()
+    ScenEdit_SetKeyValue(kv_d(guid, "spawn_t"), tostring(_MC.stats.spawn_t[guid]))
+  end
+  print(string.format("[MissionCtrl] 释放 %d/%d %s → %s",
+    qidx, #build_spawn_queue(), name, mission_name_for(item.label, zone_id, phase)))
+  return true
+end
+
+function MissionCtrl_SpawnTick()
+  if ScenEdit_GetKeyValue(KV_READY) ~= "1" then MissionCtrl_Init() end
+  if spawn_done() then return end
+  local q = build_spawn_queue()
+  local qidx = load_qidx()
+  if qidx &gt; #q then
+    ScenEdit_SetKeyValue(KV_SPAWN_DONE, "1")
+    print("[MissionCtrl] 全部释放完成")
+    return
+  end
+  local now = ScenEdit_CurrentTime()
+  local last = tonumber(ScenEdit_GetKeyValue(KV_LAST_SPAWN)) or 0
+  if (now - last) &lt; (cfg().SPAWN_INTERVAL_SEC or 5) then return end
+  local mother = get_mother()
+  if not mother then
+    print("[MissionCtrl] 无母平台: " .. tostring(cfg().MOTHER_UNIT))
+    return
+  end
+  local item = q[qidx]
+  save_qidx(qidx + 1)
+  ScenEdit_SetKeyValue(KV_LAST_SPAWN, tostring(now))
+  if not spawn_one(mother, item, qidx) then
+    save_qidx(qidx)
+  end
+  if qidx &gt;= #q then
+    ScenEdit_SetKeyValue(KV_SPAWN_DONE, "1")
+    print("[MissionCtrl] 全部释放完成")
+  end
+end
+
+-- 把已存在但未分派的机补进任务
+function MissionCtrl_AssignExisting()
+  local raw = ScenEdit_GetKeyValue(KV_DRONES) or ""
+  local n = 0
+  for guid in string.gmatch(raw, "([^|]+)") do
+    local role = ScenEdit_GetKeyValue(kv_d(guid, "role")) or ""
+    local z = tonumber(ScenEdit_GetKeyValue(kv_d(guid, "zone"))) or 1
+    local phase = ScenEdit_GetKeyValue(kv_d(guid, "phase"))
+    if role == STRIKE_LABEL and (not phase or phase == "") then
+      phase = "ingress"
+    end
+    if role ~= "" and (not ScenEdit_GetKeyValue(kv_d(guid, "mission"))
+        or ScenEdit_GetKeyValue(kv_d(guid, "mission")) == "") then
+      if assign_to_mission(guid, role, z, phase) then n = n + 1 end
+    end
+  end
+  print(string.format("[MissionCtrl] 补分派 %d 架", n))
+  return n
+end
+
+-- ---------- 进区判定 / 切打击 ----------
+local function ao_center(poly)
+  local a, b, c, d = polygon_bounds(poly)
+  return (a + b) * 0.5, (c + d) * 0.5
+end
+
+local function range_nm(lat1, lon1, lat2, lon2)
+  local ok, r = pcall(Tool_Range,
+    { latitude = lat1, longitude = lon1 },
+    { latitude = lat2, longitude = lon2 })
+  return ok and r or 1e9
+end
+
+local function ready_near(lat, lon, poly)
+  local clat, clon = ao_center(poly)
+  local nm = mcfg().NEAR_NM or 35
+  return range_nm(lat, lon, clat, clon) &lt;= nm
+end
+
+local function ready_enter(lat, lon, poly)
+  return point_in_polygon(lat, lon, poly)
+end
+
+local function switch_to_strike(guid, zone_id, how)
+  if assign_to_mission(guid, STRIKE_LABEL, zone_id, "strike") then
+    _MC.stats.switched = (_MC.stats.switched or 0) + 1
+    ScenEdit_SetKeyValue(kv_d(guid, "phase"), "strike")
+    ScenEdit_SetKeyValue(kv_d(guid, "switch_how"), how)
+    if not mcfg().QUIET then
+      print(string.format("[MissionCtrl] 进区完成→打击 区%d (%s) %s", zone_id, how, guid))
+    end
+    return true
+  end
+  return false
+end
+
+--- 对陆进区巡逻 → 打击任务；并记录 near/enter 哪个先满足（效率对比）
+function MissionCtrl_IngressTick()
+  if ScenEdit_GetKeyValue(KV_READY) ~= "1" then return 0 end
+  local poly = load_polygon()
+  if not poly then return 0 end
+  local raw = ScenEdit_GetKeyValue(KV_DRONES) or ""
+  local guids = {}
+  for guid in string.gmatch(raw, "([^|]+)") do
+    if ScenEdit_GetKeyValue(kv_d(guid, "role")) == STRIKE_LABEL
+      and (ScenEdit_GetKeyValue(kv_d(guid, "phase")) or "ingress") == "ingress" then
+      guids[#guids + 1] = guid
+    end
+  end
+  if #guids == 0 then return 0 end
+
+  local budget = mcfg().INGRESS_CHECK_BUDGET or 20
+  local cur = tonumber(ScenEdit_GetKeyValue(KV_INGRESS_CUR)) or 1
+  if cur &lt; 1 or cur &gt; #guids then cur = 1 end
+  local mode = mcfg().SWITCH_MODE or "near"
+  local active = mcfg().ACTIVE_SWITCH or mode
+  if mode == "compare" then active = mcfg().ACTIVE_SWITCH or "near" end
+  local now = ScenEdit_CurrentTime()
+  local switched = 0
+  local checked = 0
+
+  for i = 0, math.min(budget, #guids) - 1 do
+    local idx = ((cur - 1 + i) % #guids) + 1
+    local guid = guids[idx]
+    local ok, u = pcall(ScenEdit_GetUnit, { guid = guid })
+    _MC.stats.getu = (_MC.stats.getu or 0) + 1
+    checked = checked + 1
+    if ok and u then
+      local lat, lon = to_num(u.latitude), to_num(u.longitude)
+      local is_near = ready_near(lat, lon, poly)
+      local is_enter = ready_enter(lat, lon, poly)
+
+      if is_near and not _MC.stats.near_t[guid] then
+        _MC.stats.near_t[guid] = now
+        if not _MC.stats.enter_t[guid] then
+          _MC.stats.near_first_n = (_MC.stats.near_first_n or 0) + 1
+        end
+      end
+      if is_enter and not _MC.stats.enter_t[guid] then
+        _MC.stats.enter_t[guid] = now
+        if not _MC.stats.near_t[guid] then
+          _MC.stats.enter_first_n = (_MC.stats.enter_first_n or 0) + 1
+        elseif _MC.stats.near_t[guid] == now then
+          -- same tick both: count near as first
+        end
+        -- 统计起算：首架入任务区
+        if type(LauncherCtrl_NoteRedInAo) == "function" then
+          pcall(LauncherCtrl_NoteRedInAo, now)
+        end
+        if type(AttritionCtrl_NoteEnter) == "function" then
+          pcall(AttritionCtrl_NoteEnter, guid, now)
+        end
+      end
+
+      local do_switch = false
+      local how = active
+      if active == "near" then do_switch = is_near; how = "near"
+      elseif active == "enter" then do_switch = is_enter; how = "enter"
+      else do_switch = is_near; how = "near" end
+
+      if do_switch then
+        local z = tonumber(ScenEdit_GetKeyValue(kv_d(guid, "zone"))) or 1
+        if switch_to_strike(guid, z, how) then switched = switched + 1 end
+      end
+    end
+  end
+  ScenEdit_SetKeyValue(KV_INGRESS_CUR, tostring(((cur - 1 + checked) % #guids) + 1))
+  if switched &gt; 0 then
+    print(string.format("[MissionCtrl] 本轮切打击 %d | 进区中 %d | 模式=%s/%s",
+      switched, #guids, mode, active))
+  end
+  return switched
+end
+
+--- 打印 near vs enter 效率对比（可随时调用）
+function MissionCtrl_IngressCompareReport()
+  local st = _MC.stats
+  local near_dts, enter_dts, lead = {}, {}, {}
+  for guid, nt in pairs(st.near_t or {}) do
+    local sp = st.spawn_t[guid] or tonumber(ScenEdit_GetKeyValue(kv_d(guid, "spawn_t")))
+    if sp then near_dts[#near_dts + 1] = nt - sp end
+  end
+  for guid, et in pairs(st.enter_t or {}) do
+    local sp = st.spawn_t[guid] or tonumber(ScenEdit_GetKeyValue(kv_d(guid, "spawn_t")))
+    if sp then enter_dts[#enter_dts + 1] = et - sp end
+  end
+  for guid, nt in pairs(st.near_t or {}) do
+    local et = st.enter_t[guid]
+    if et then lead[#lead + 1] = et - nt end -- enter 比 near 晚多少秒
+  end
+  local function avg(t)
+    if #t == 0 then return nil end
+    local s = 0; for _, v in ipairs(t) do s = s + v end
+    return s / #t
+  end
+  local an, ae, al = avg(near_dts), avg(enter_dts), avg(lead)
+  print("=== Ingress 时机对比 (near vs enter) ===")
+  print(string.format("NEAR_NM=%.0f | ACTIVE_SWITCH=%s | SWITCH_MODE=%s",
+    mcfg().NEAR_NM or 35, tostring(mcfg().ACTIVE_SWITCH), tostring(mcfg().SWITCH_MODE)))
+  print(string.format("已记 near就绪 %d | enter就绪 %d | 已切打击 %d | GetUnit累计 %d",
+    #near_dts, #enter_dts, st.switched or 0, st.getu or 0))
+  print(string.format("释放→near均值 %s s | 释放→enter均值 %s s | enter晚于near均值 %s s",
+    an and string.format("%.0f", an) or "-",
+    ae and string.format("%.0f", ae) or "-",
+    al and string.format("%.0f", al) or "-"))
+  print(string.format("先满足 near 的机次 %d | 先满足 enter 的机次 %d",
+    st.near_first_n or 0, st.enter_first_n or 0))
+  local rec = "near"
+  if an and ae then
+    -- 推荐：更早具备「可贴区作战」且 Lua 成本相同（同属 IngressTick）
+    rec = (an &lt;= ae) and "near（更早切打击，多出来的时间≈enter-near）" or "enter"
+  end
+  print("建议实际切换: " .. rec)
+  print("说明: 两种判定共用同一 IngressTick/GetUnit 预算，Lua成本接近；差在切打击早晚与引擎接敌时机。")
+  return { near_avg = an, enter_avg = ae, enter_lag = al, recommend = "near" }
+end
+
+function MissionCtrl_SetSwitchMode(mode, active)
+  -- mode: near|enter|compare ; active: near|enter（compare 时用）
+  if mode then mcfg().SWITCH_MODE = mode end
+  if active then mcfg().ACTIVE_SWITCH = active end
+  print(string.format("[MissionCtrl] SWITCH_MODE=%s ACTIVE_SWITCH=%s NEAR_NM=%s",
+    tostring(mcfg().SWITCH_MODE), tostring(mcfg().ACTIVE_SWITCH), tostring(mcfg().NEAR_NM)))
+end
+
+-- ---------- 目标入打击任务 / 后期救场 ----------
+local function contact_dbid(c)
+  for _, k in ipairs({ "dbid", "DBID", "actualunitdbid", "ActualUnitDBID" }) do
+    local v = tonumber(c[k]); if v and v &gt; 0 then return v end
+  end
+  return nil
+end
+
+local function is_strike_target(c)
+  if not c then return false end
+  local id = contact_dbid(c)
+  for _, x in ipairs(mcfg().EXCLUDE_DBIDS or {}) do
+    if id == x then return false end
+  end
+  local name = tostring(c.name or "")
+  for _, kw in ipairs(mcfg().TARGET_KEYWORDS or {}) do
+    if kw ~= "" and name:find(kw, 1, true) then return true end
+  end
+  for _, x in ipairs(mcfg().TARGET_DBIDS or {}) do
+    if id == x then return true end
+  end
+  return false
+end
+
+local function strike_zone_count()
+  return ((cfg().STRIKE and cfg().STRIKE.ZONE_ROWS) or 2)
+    * ((cfg().STRIKE and cfg().STRIKE.ZONE_COLS) or 3)
+end
+
+--- 统计各区对陆机：strike 已切打击 / ingress 仍在进区
+local function build_strike_roster()
+  local strike_z, ingress_z = {}, {}
+  local raw = ScenEdit_GetKeyValue(KV_DRONES) or ""
+  for guid in string.gmatch(raw, "([^|]+)") do
+    if ScenEdit_GetKeyValue(kv_d(guid, "role")) == STRIKE_LABEL then
+      local z = tonumber(ScenEdit_GetKeyValue(kv_d(guid, "zone"))) or 1
+      local ph = ScenEdit_GetKeyValue(kv_d(guid, "phase")) or "ingress"
+      local ok, u = pcall(ScenEdit_GetUnit, { guid = guid })
+      if ok and u then
+        local row = { guid = guid, lat = to_num(u.latitude), lon = to_num(u.longitude) }
+        if ph == "strike" then
+          strike_z[z] = strike_z[z] or {}
+          strike_z[z][#strike_z[z] + 1] = row
+        else
+          ingress_z[z] = ingress_z[z] or {}
+          ingress_z[z][#ingress_z[z] + 1] = row
+        end
+      end
+    end
+  end
+  return strike_z, ingress_z
+end
+
+local function zone_center(z)
+  local poly = load_polygon()
+  if not poly then return 0, 0 end
+  local a, b, c, d = strike_bounds(z, poly)
+  return (a + b) * 0.5, (c + d) * 0.5
+end
+
+--- 已废弃：勿把目标挂到「有机区」——会与 ensure_shooters(借到本区) 对冲
+local function pick_mission_zone(home_z, strike_z)
+  return home_z
+end
+
+local function count_roster(map)
+  local n = 0
+  for _, list in pairs(map or {}) do
+    n = n + #(list or {})
+  end
+  return n
+end
+
+local function force_switch_ingress(list, zone_id, how, limit)
+  local n = 0
+  if not list then return 0 end
+  for _, d in ipairs(list) do
+    if limit and n &gt;= limit then break end
+    if switch_to_strike(d.guid, zone_id, how or "retask") then
+      n = n + 1
+    end
+  end
+  return n
+end
+
+--- 从其它区借打击/进区机到目标区打击任务
+local function borrow_to_zone(need_z, strike_z, ingress_z, max_n)
+  max_n = max_n or (mcfg().MAX_BORROW_PER_FEED or 4)
+  local borrowed = 0
+  local tlat, tlon = zone_center(need_z)
+  local cands = {}
+  for z, list in pairs(strike_z) do
+    if z ~= need_z then
+      for _, d in ipairs(list) do
+        cands[#cands + 1] = { guid = d.guid, from_z = z, phase = "strike",
+          r = range_nm(d.lat, d.lon, tlat, tlon) }
+      end
+    end
+  end
+  for z, list in pairs(ingress_z) do
+    if z ~= need_z then
+      for _, d in ipairs(list) do
+        cands[#cands + 1] = { guid = d.guid, from_z = z, phase = "ingress",
+          r = range_nm(d.lat, d.lon, tlat, tlon) }
+      end
+    end
+  end
+  table.sort(cands, function(a, b) return a.r &lt; b.r end)
+  for _, c in ipairs(cands) do
+    if borrowed &gt;= max_n then break end
+    -- 改挂到目标区打击任务，并改 zone KV（后续入目仍认新区）
+    if assign_to_mission(c.guid, STRIKE_LABEL, need_z, "strike") then
+      ScenEdit_SetKeyValue(kv_d(c.guid, "zone"), tostring(need_z))
+      ScenEdit_SetKeyValue(kv_d(c.guid, "phase"), "strike")
+      ScenEdit_SetKeyValue(kv_d(c.guid, "borrow_from"), tostring(c.from_z))
+      borrowed = borrowed + 1
+      print(string.format("[MissionCtrl] 跨区借机 区%d→区%d %s (%s)",
+        c.from_z, need_z, c.guid, c.phase))
+    end
+  end
+  return borrowed
+end
+
+--- 保证 need_z 至少有打击机；有接触时本区进区机立刻切打击
+local function ensure_shooters(need_z, strike_z, ingress_z)
+  if mcfg().RETASK_ON_CONTACT == false then return 0, 0 end
+  local switched, borrowed = 0, 0
+  local have = strike_z[need_z] and #strike_z[need_z] or 0
+  if have == 0 and ingress_z[need_z] and #ingress_z[need_z] &gt; 0 then
+    switched = force_switch_ingress(ingress_z[need_z], need_z, "contact", 8)
+    strike_z, ingress_z = build_strike_roster()
+    have = strike_z[need_z] and #strike_z[need_z] or 0
+  end
+  if have == 0 and mcfg().BORROW_CROSS_ZONE ~= false then
+    borrowed = borrow_to_zone(need_z, strike_z, ingress_z, mcfg().MAX_BORROW_PER_FEED or 4)
+  end
+  return switched, borrowed
+end
+
+function MissionCtrl_FeedTargets()
+  local side = mcfg().CONTACT_SIDE or mcfg().SIDE
+  -- 入目要准：短 TTL 或强制刷新
+  if type(DroneSwarm_InvalidateContactCache) == "function" then
+    pcall(DroneSwarm_InvalidateContactCache)
+  end
+  local list
+  if type(DroneSwarm_GetContactsCached) == "function" then
+    list = DroneSwarm_GetContactsCached(side, 5)
+  else
+    local ok, L = pcall(ScenEdit_GetContacts, side)
+    list = (ok and L) or {}
+  end
+
+  local strike_z, ingress_z = build_strike_roster()
+  local added, refreshed, gone, matched = 0, 0, 0, 0
+  local seen, need_zones = {}, {}
+
+  for _, c in ipairs(list) do
+    if is_strike_target(c) then
+      matched = matched + 1
+      local g = c.guid or c.objectid
+      if g then
+        local key = tostring(g):gsub("-", ""):lower()
+        seen[key] = true
+        -- 目标固定挂接触所在区；打手调过去（勿挂「有机区」再反向借机）
+        local home_z = MissionCtrl_StrikeZoneIdAt(to_num(c.latitude), to_num(c.longitude))
+        local mz = home_z
+        local mname = string.format(mcfg().STRIKE_MISSION_FMT, mz)
+        local prev = _MC.fed[key]
+        need_zones[home_z] = true
+
+        -- 越区：从旧任务摘掉（失败忽略）
+        if prev and prev ~= mz then
+          local oldm = string.format(mcfg().STRIKE_MISSION_FMT, prev)
+          pcall(ScenEdit_RemoveUnitAsTarget, g, oldm)
+          pcall(ScenEdit_RemoveUnitAsTarget, { g }, oldm)
+        end
+
+        local ok, res = pcall(ScenEdit_AssignUnitAsTarget, g, mname)
+        if not ok or res == false then
+          ok, res = pcall(ScenEdit_AssignUnitAsTarget, { g }, mname)
+        end
+        -- 名称兜底（有的接触用 name 更稳）
+        if (not ok or res == false) and c.name then
+          ok, res = pcall(ScenEdit_AssignUnitAsTarget, c.name, mname)
+        end
+
+        if ok then
+          if not prev then
+            added = added + 1
+            if not mcfg().QUIET then
+              print(string.format("[MissionCtrl] 目标入 %s: %s", mname, tostring(c.name)))
+            end
+          else
+            refreshed = refreshed + 1
+          end
+          _MC.fed[key] = mz
+        end
+      end
+    end
+  end
+
+  for key in pairs(_MC.fed) do
+    if not seen[key] then
+      _MC.fed[key] = nil
+      gone = gone + 1
+    end
+  end
+
+  local sw_n, br_n = 0, 0
+
+  -- 有发射车接触但全区无打击机：进区机全员切打击，避免「看见却没人打」
+  if matched &gt; 0 and count_roster(strike_z) == 0
+      and mcfg().FORCE_ALL_INGRESS_IF_NO_STRIKE ~= false
+      and mcfg().RETASK_ON_CONTACT ~= false then
+    for z, ilist in pairs(ingress_z) do
+      sw_n = sw_n + force_switch_ingress(ilist, z, "all-ingress", 99)
+    end
+    if sw_n &gt; 0 then
+      strike_z, ingress_z = build_strike_roster()
+    end
+  end
+
+  for z, _ in pairs(need_zones) do
+    local a, b = ensure_shooters(z, strike_z, ingress_z)
+    sw_n, br_n = sw_n + a, br_n + b
+    if a &gt; 0 or b &gt; 0 then
+      strike_z, ingress_z = build_strike_roster()
+    end
+  end
+
+  if added &gt; 0 or sw_n &gt; 0 or br_n &gt; 0 or matched &gt; 0 or not mcfg().QUIET then
+    print(string.format(
+      "[MissionCtrl] 入目 +%d 刷新 %d 消失 %d | 强切打击 %d 跨区借 %d | 目标接触 %d/%d",
+      added, refreshed, gone, sw_n, br_n, matched, #list))
+  end
+  return added
+end
+
+-- UnitDetected 轻量入口
+function MissionCtrl_OnDetected()
+  return MissionCtrl_FeedTargets()
+end
+
+-- ---------- 光电补装（轻量，可选） ----------
+function MissionCtrl_EoSensorTick()
+  local dbid = cfg().EO_SENSOR_DBID
+  if not dbid then return end
+  local raw = ScenEdit_GetKeyValue(KV_DRONES) or ""
+  local n, budget = 0, cfg().EO_SENSOR_PER_TICK or 5
+  for guid in string.gmatch(raw, "([^|]+)") do
+    if n &gt;= budget then break end
+    if ScenEdit_GetKeyValue(kv_d(guid, "role")) == "光电"
+      and ScenEdit_GetKeyValue(kv_d(guid, "eo_sens")) ~= "1" then
+      local ok = pcall(ScenEdit_UpdateUnit, {
+        guid = guid, mode = "add_sensor", dbid = dbid,
+      })
+      if ok then
+        ScenEdit_SetKeyValue(kv_d(guid, "eo_sens"), "1")
+        n = n + 1
+      end
+    end
+  end
+end
+
+-- ---------- 事件注册 ----------
+local function remove_evt(name)
+  pcall(function() ScenEdit_SetEvent(name, { mode = "remove" }) end)
+  pcall(function() ScenEdit_SetTrigger({ mode = "remove", name = name .. "Trg" }) end)
+  pcall(function() ScenEdit_SetAction({ mode = "remove", name = name .. "Act" }) end)
+end
+
+local function add_rt_event(name, interval, script)
+  remove_evt(name)
+  ScenEdit_SetEvent(name, { mode = "add", IsActive = true, IsRepeatable = true })
+  pcall(ScenEdit_SetTrigger, {
+    mode = "add", name = name .. "Trg", type = "RegularTime", Interval = interval,
+  })
+  pcall(ScenEdit_SetAction, {
+    mode = "add", name = name .. "Act", type = "LuaScript", ScriptText = script,
+  })
+  pcall(ScenEdit_SetEventTrigger, name, { mode = "add", name = name .. "Trg" })
+  pcall(ScenEdit_SetEventAction, name, { mode = "add", name = name .. "Act" })
+end
+
+function MissionCtrl_RegisterEvents()
+  for _, old in ipairs({
+    "红方-02-释放", "红方-02-光电补装", "红方-02-航路规划", "红方-02-侦查抵近",
+    "红方-03-对陆周期", "DroneSwarm-Lucas打击",
+  }) do
+    pcall(function() ScenEdit_SetEvent(old, { mode = "update", isActive = false }) end)
+  end
+
+  add_rt_event("红方-任务制-释放", mcfg().SPAWN_INTERVAL or 1,
+    [[if type(MissionCtrl_SpawnTick)=='function' then MissionCtrl_SpawnTick() end]])
+  add_rt_event("红方-任务制-进区切换", mcfg().INGRESS_INTERVAL or 1,
+    [[if type(MissionCtrl_IngressTick)=='function' then MissionCtrl_IngressTick() end]])
+  add_rt_event("红方-任务制-入目", mcfg().FEED_INTERVAL or 2,
+    [[if type(MissionCtrl_FeedTargets)=='function' then MissionCtrl_FeedTargets() end]])
+  add_rt_event("红方-任务制-光电补装", mcfg().EO_INTERVAL or 3,
+    [[if type(MissionCtrl_EoSensorTick)=='function' then MissionCtrl_EoSensorTick() end]])
+  if type(AttritionCtrl_Setup) == "function" then
+    pcall(AttritionCtrl_Setup)
+  end
+  ScenEdit_SetKeyValue(KV_FEED_EVT, "1")
+  print(string.format(
+    "[MissionCtrl] 注册：释放 / 进区切打击(~5s,%s→%s) / 入目 / 光电 / 入区损耗",
+    tostring(mcfg().SWITCH_MODE), tostring(mcfg().ACTIVE_SWITCH or mcfg().SWITCH_MODE)))
+end
+
+function MissionCtrl_Init()
+  math.randomseed(os.time())
+  _MC.poly, _MC.spawn_q = nil, nil
+  _MC.stats = {
+    getu = 0, switched = 0, near_t = {}, enter_t = {}, spawn_t = {},
+    near_first_n = 0, enter_first_n = 0,
+  }
+  build_spawn_queue()
+  load_polygon()
+  if load_qidx() &lt; 1 then save_qidx(1) end
+  ScenEdit_SetKeyValue(KV_READY, "1")
+  apply_air_hold()
+  print(string.format("[MissionCtrl v%s] Init | 队列 %d | 对陆进区→打击",
+    MISSION_CTRL_VERSION, #build_spawn_queue()))
+end
+
+function MissionCtrl_Status()
+  print("=== MissionCtrl v" .. MISSION_CTRL_VERSION .. " ===")
+  local recon_n = (cfg().RECON and cfg().RECON.ZONE_COUNT) or 5
+  local strike_n = ((cfg().STRIKE and cfg().STRIKE.ZONE_ROWS) or 2)
+    * ((cfg().STRIKE and cfg().STRIKE.ZONE_COLS) or 3)
+  for z = 1, recon_n do
+    local nm = string.format(mcfg().RECON_MISSION_FMT, z)
+    print("  " .. nm .. " exists=" .. tostring(mission_exists(nm)))
+  end
+  local ingress_n, strike_n_u = 0, 0
+  for z = 1, strike_n do
+    print(string.format("  %s / %s",
+      string.format(mcfg().INGRESS_MISSION_FMT, z),
+      string.format(mcfg().STRIKE_MISSION_FMT, z)))
+  end
+  local raw = ScenEdit_GetKeyValue(KV_DRONES) or ""
+  local n = 0
+  for guid in string.gmatch(raw, "([^|]+)") do
+    n = n + 1
+    if ScenEdit_GetKeyValue(kv_d(guid, "role")) == STRIKE_LABEL then
+      local ph = ScenEdit_GetKeyValue(kv_d(guid, "phase")) or "ingress"
+      if ph == "ingress" then ingress_n = ingress_n + 1 else strike_n_u = strike_n_u + 1 end
+    end
+  end
+  print(string.format("登记 %d | 对陆进区中 %d | 已切打击 %d | 模式 %s/%s NEAR=%.0fnm",
+    n, ingress_n, strike_n_u, tostring(mcfg().SWITCH_MODE),
+    tostring(mcfg().ACTIVE_SWITCH), mcfg().NEAR_NM or 35))
+  print("对比报告: MissionCtrl_IngressCompareReport()")
+  if type(AttritionCtrl_Report) == "function" then
+    print("损耗报告: AttritionCtrl_Report()")
+  end
+end
+
+function MissionCtrl_Setup()
+  MissionCtrl_Init()
+  MissionCtrl_BuildMissions()
+  MissionCtrl_RegisterEvents()
+  MissionCtrl_Status()
+end
+
+MISSION_CTRL_LIB_ONLY = true
+
+
+-- ===== AttritionCtrl =====
+-- Version: 1.0.0-slice
+--[[
+  入区后「按时间段、按概率」删红方无人机（分平台）
+  用途：试用 / 日后 MC 标定损失率后灌进主想定
+  入口：
+    AttritionCtrl_Setup()     -- 注册周期事件
+    AttritionCtrl_Tick()      -- 手动跑一轮
+    AttritionCtrl_Report()    -- 打印累计
+    AttritionCtrl_SetEnabled(true/false)
+    AttritionCtrl_SetRates({ ["雷达"]=0.03, ["光电"]=0.04, ["对陆"]=0.06 })
+    AttritionCtrl_SetSliceSec(60)
+  热加载：在已开想定的 Lua 控制台粘贴本文件全文，再 AttritionCtrl_Setup()
+--]]
+
+ATTRITION_CTRL_VERSION = "1.0.0-slice"
+
+ATTRITION_CTRL_CONFIG = ATTRITION_CTRL_CONFIG or {
+  ENABLED = true,
+  SIDE = "红方",
+  -- 首架入任务区后起算；之后每 SLICE_SEC 推演秒扫一轮「已入区且仍存活」的机
+  SLICE_SEC = 60,
+  -- 每段、每架独立掷骰（按角色）。试用默认偏明显，便于看出效果；MC 标定后请改小
+  P_KILL = {
+    ["雷达"] = 0.04,
+    ["光电"] = 0.05,
+    ["对陆"] = 0.08,
+  },
+  MAX_PER_SLICE = 5,       -- 单段最多删几架，避免一轮清空
+  ONLY_IN_AO = true,       -- 必须仍在 RP 多边形内才参与掷骰
+  METHOD = "kill",         -- "kill" | "delete"
+  EVENT_NAME = "红方-入区损耗",
+  EVENT_INTERVAL = 1,      -- RegularTime 档位（与其它红方周期一致，≈5s 级）
+  QUIET = false,
+}
+
+_AC = _AC or {
+  t0 = nil,                -- 首机入区时刻
+  last_slice = nil,        -- 上一段结算时刻
+  slice_i = 0,
+  enter_t = {},            -- guid → 入区时刻
+  killed = { ["雷达"] = 0, ["光电"] = 0, ["对陆"] = 0, other = 0 },
+  attempts = 0,
+}
+
+local KV_DRONES = "dsw_drones"
+local KV_AC_T0 = "ac_t0"
+local KV_AC_LAST = "ac_last_slice"
+local SEP = "|"
+
+local function acfg()
+  return ATTRITION_CTRL_CONFIG
+end
+
+local function kv_d(guid, key)
+  return "dsw_" .. tostring(guid) .. "_" .. key
+end
+
+local function to_num(v)
+  return tonumber(v) or 0
+end
+
+local function point_in_polygon(lat, lon, poly)
+  if not poly or #poly &lt; 3 then return false end
+  local inside = false
+  local j = #poly
+  for i = 1, #poly do
+    local xi, yi = poly[i][1], poly[i][2]
+    local xj, yj = poly[j][1], poly[j][2]
+    if ((yi &gt; lat) ~= (yj &gt; lat))
+        and (lon &lt; (xj - xi) * (lat - yi) / ((yj - yi) + 1e-15) + xi) then
+      inside = not inside
+    end
+    j = i
+  end
+  return inside
+end
+
+local function load_polygon()
+  local side = acfg().SIDE or "红方"
+  local names = { "RP-1", "RP-2", "RP-3", "RP-4" }
+  if DRONE_SPAWN_CONFIG and DRONE_SPAWN_CONFIG.REFERENCE_POINTS then
+    names = DRONE_SPAWN_CONFIG.REFERENCE_POINTS
+  end
+  local poly = {}
+  for _, nm in ipairs(names) do
+    local ok, rp = pcall(ScenEdit_GetReferencePoint, { side = side, name = nm })
+    if not (ok and rp) then
+      ok, rp = pcall(ScenEdit_GetReferencePoint, { side = DRONE_SPAWN_CONFIG and DRONE_SPAWN_CONFIG.RP_SIDE or side, name = nm })
+    end
+    if ok and rp then
+      poly[#poly + 1] = { to_num(rp.latitude), to_num(rp.longitude) }
+    end
+  end
+  if #poly &lt; 3 then return nil end
+  return poly
+end
+
+local function role_of(guid)
+  local r = ScenEdit_GetKeyValue(kv_d(guid, "role"))
+  if r and r ~= "" then return r end
+  local ok, u = pcall(ScenEdit_GetUnit, { guid = guid })
+  if ok and u and u.name then
+    local n = tostring(u.name)
+    if n:find("雷达", 1, true) then return "雷达" end
+    if n:find("光电", 1, true) then return "光电" end
+    if n:find("对陆", 1, true) then return "对陆" end
+  end
+  return "other"
+end
+
+local function p_for(role)
+  local t = acfg().P_KILL or {}
+  return tonumber(t[role]) or tonumber(t.other) or 0
+end
+
+local function remove_unit(guid, role)
+  local method = acfg().METHOD or "kill"
+  local ok = false
+  if method == "delete" then
+    ok = pcall(ScenEdit_DeleteUnit, { guid = guid })
+  else
+    ok = pcall(ScenEdit_KillUnit, { guid = guid })
+    if not ok then
+      ok = pcall(ScenEdit_DeleteUnit, { guid = guid })
+    end
+  end
+  if ok then
+    local bucket = (_AC.killed[role] ~= nil) and role or "other"
+    _AC.killed[bucket] = (_AC.killed[bucket] or 0) + 1
+  end
+  return ok
+end
+
+local function ensure_t0(now)
+  if _AC.t0 then return end
+  local kv = tonumber(ScenEdit_GetKeyValue(KV_AC_T0))
+  if kv then
+    _AC.t0 = kv
+    return
+  end
+  -- 与 Lucas 统计共用：若蓝方已记入区，跟着起算
+  local lc = tonumber(ScenEdit_GetKeyValue("lc_lucas_t0"))
+  if lc then
+    _AC.t0 = lc
+    ScenEdit_SetKeyValue(KV_AC_T0, tostring(lc))
+    print(string.format("[AttritionCtrl] 起算对齐 Lucas t0=%s", tostring(lc)))
+  end
+end
+
+--- 外部可调：首机入区时调用（MissionCtrl Ingress 已有钩子时可接）
+function AttritionCtrl_NoteEnter(guid, now)
+  now = now or ScenEdit_CurrentTime()
+  if guid and not _AC.enter_t[guid] then
+    _AC.enter_t[guid] = now
+  end
+  if not _AC.t0 then
+    _AC.t0 = now
+    ScenEdit_SetKeyValue(KV_AC_T0, tostring(now))
+    if not acfg().QUIET then
+      print(string.format("[AttritionCtrl] 起算 t0=%s（首机入区）", tostring(now)))
+    end
+  end
+end
+
+function AttritionCtrl_SetEnabled(v)
+  acfg().ENABLED = not not v
+  print("[AttritionCtrl] ENABLED=" .. tostring(acfg().ENABLED))
+end
+
+function AttritionCtrl_SetSliceSec(sec)
+  acfg().SLICE_SEC = tonumber(sec) or acfg().SLICE_SEC
+  print("[AttritionCtrl] SLICE_SEC=" .. tostring(acfg().SLICE_SEC))
+end
+
+function AttritionCtrl_SetRates(tbl)
+  if type(tbl) ~= "table" then return end
+  acfg().P_KILL = acfg().P_KILL or {}
+  for k, v in pairs(tbl) do
+    acfg().P_KILL[k] = tonumber(v)
+  end
+  print("[AttritionCtrl] P_KILL 已更新")
+  AttritionCtrl_Report()
+end
+
+function AttritionCtrl_Report()
+  local c = acfg()
+  print("=== AttritionCtrl v" .. ATTRITION_CTRL_VERSION .. " ===")
+  print(string.format("ENABLED=%s | SLICE=%ss | MAX/段=%s | METHOD=%s",
+    tostring(c.ENABLED), tostring(c.SLICE_SEC), tostring(c.MAX_PER_SLICE), tostring(c.METHOD)))
+  local pk = c.P_KILL or {}
+  print(string.format("P_KILL 雷达=%.3f 光电=%.3f 对陆=%.3f",
+    pk["雷达"] or 0, pk["光电"] or 0, pk["对陆"] or 0))
+  print(string.format("t0=%s | 已结算段数=%d | 掷骰轮次=%d",
+    tostring(_AC.t0), _AC.slice_i or 0, _AC.attempts or 0))
+  print(string.format("累计击杀 雷达=%d 光电=%d 对陆=%d other=%d | 合计=%d",
+    _AC.killed["雷达"] or 0, _AC.killed["光电"] or 0, _AC.killed["对陆"] or 0,
+    _AC.killed.other or 0,
+    (_AC.killed["雷达"] or 0) + (_AC.killed["光电"] or 0)
+      + (_AC.killed["对陆"] or 0) + (_AC.killed.other or 0)))
+end
+
+function AttritionCtrl_Tick()
+  if acfg().ENABLED == false then return 0 end
+  local now = ScenEdit_CurrentTime()
+  ensure_t0(now)
+  local poly = load_polygon()
+  if not poly then return 0 end
+
+  local raw = ScenEdit_GetKeyValue(KV_DRONES) or ""
+  local candidates = {}
+  for guid in string.gmatch(raw, "([^|]+)") do
+    local ok, u = pcall(ScenEdit_GetUnit, { guid = guid })
+    if ok and u then
+      local lat, lon = to_num(u.latitude), to_num(u.longitude)
+      local in_ao = point_in_polygon(lat, lon, poly)
+      if in_ao then
+        if not _AC.enter_t[guid] then
+          AttritionCtrl_NoteEnter(guid, now)
+        end
+        if not acfg().ONLY_IN_AO or in_ao then
+          candidates[#candidates + 1] = guid
+        end
+      end
+    end
+  end
+
+  if not _AC.t0 then return 0 end
+
+  local last = _AC.last_slice or tonumber(ScenEdit_GetKeyValue(KV_AC_LAST)) or _AC.t0
+  local slice = tonumber(acfg().SLICE_SEC) or 60
+  if (now - last) &lt; slice then return 0 end
+
+  -- 可能积压多段：按时间推进，每段最多 MAX
+  local killed_total = 0
+  local guard = 0
+  while (now - last) &gt;= slice and guard &lt; 20 do
+    guard = guard + 1
+    last = last + slice
+    _AC.slice_i = (_AC.slice_i or 0) + 1
+    _AC.attempts = (_AC.attempts or 0) + 1
+
+    -- 刷新存活候选（上一段可能已删）
+    candidates = {}
+    for guid in string.gmatch(raw, "([^|]+)") do
+      local ok, u = pcall(ScenEdit_GetUnit, { guid = guid })
+      if ok and u then
+        local lat, lon = to_num(u.latitude), to_num(u.longitude)
+        if point_in_polygon(lat, lon, poly) and _AC.enter_t[guid] then
+          candidates[#candidates + 1] = guid
+        end
+      end
+    end
+    -- 打乱顺序，避免总删列表前面的
+    for i = #candidates, 2, -1 do
+      local j = math.random(i)
+      candidates[i], candidates[j] = candidates[j], candidates[i]
+    end
+
+    local max_n = tonumber(acfg().MAX_PER_SLICE) or 5
+    local got = 0
+    local by = { ["雷达"] = 0, ["光电"] = 0, ["对陆"] = 0, other = 0 }
+    for _, guid in ipairs(candidates) do
+      if got &gt;= max_n then break end
+      local role = role_of(guid)
+      local p = p_for(role)
+      if p &gt; 0 and math.random() &lt; p then
+        if remove_unit(guid, role) then
+          got = got + 1
+          killed_total = killed_total + 1
+          local b = (by[role] ~= nil) and role or "other"
+          by[b] = by[b] + 1
+        end
+      end
+    end
+    if got &gt; 0 or not acfg().QUIET then
+      print(string.format(
+        "[AttritionCtrl] 第%d段(+%ds) 删 %d | 雷达%d 光电%d 对陆%d | 候选%d",
+        _AC.slice_i, slice, got, by["雷达"], by["光电"], by["对陆"], #candidates))
+    end
+    -- 下一段用更新后的 raw 意义不大（guid 仍在 KV）；靠 GetUnit 判存活即可
+  end
+
+  _AC.last_slice = last
+  ScenEdit_SetKeyValue(KV_AC_LAST, tostring(last))
+  return killed_total
+end
+
+local function remove_evt(name)
+  pcall(function() ScenEdit_SetEvent(name, { mode = "remove" }) end)
+  pcall(function() ScenEdit_SetTrigger({ mode = "remove", name = name .. "Trg" }) end)
+  pcall(function() ScenEdit_SetAction({ mode = "remove", name = name .. "Act" }) end)
+end
+
+function AttritionCtrl_Setup()
+  math.randomseed(os.time() % 2147483647)
+  local name = acfg().EVENT_NAME or "红方-入区损耗"
+  local interval = acfg().EVENT_INTERVAL or 1
+  remove_evt(name)
+  ScenEdit_SetEvent(name, { mode = "add", IsActive = true, IsRepeatable = true })
+  pcall(ScenEdit_SetTrigger, {
+    mode = "add", name = name .. "Trg", type = "RegularTime", Interval = interval,
+  })
+  pcall(ScenEdit_SetAction, {
+    mode = "add", name = name .. "Act", type = "LuaScript",
+    ScriptText = [[if type(AttritionCtrl_Tick)=='function' then AttritionCtrl_Tick() end]],
+  })
+  pcall(ScenEdit_SetEventTrigger, name, { mode = "add", name = name .. "Trg" })
+  pcall(ScenEdit_SetEventAction, name, { mode = "add", name = name .. "Act" })
+  print(string.format("[AttritionCtrl v%s] 已注册周期「%s」| SLICE=%ss",
+    ATTRITION_CTRL_VERSION, name, tostring(acfg().SLICE_SEC)))
+  AttritionCtrl_Report()
+end
+
+print(string.format("[AttritionCtrl v%s] 已加载。执行 AttritionCtrl_Setup() 注册周期。", ATTRITION_CTRL_VERSION))
+
+
+MISSION_CTRL_LIB_ONLY = false
+if (MISSION_CTRL_CONFIG or {}).AUTO_SETUP ~= false then
+  pcall(MissionCtrl_Setup)
+end
+</ScriptText></EventAction_LuaScript><EventAction_LuaScript><ID>V2PL28-0HNN17P9IMJND</ID><Description>红方-01-无人机全局变量</Description><ScriptText>-- Version: 4.1.0-mission-cfg
+--[[
+  红方-01（任务制想定用）：仍提供 DRONE_SPAWN_CONFIG
+  行为主控已改为「红方-任务制」：巡逻侦察 + 对地打击任务，不再依赖航路/AttackContact 脚本
+--]]
+
+DRONE_SWARM_ENV_VERSION = "4.1.0-mission-cfg"
+DRONE_SWARM_VERSION     = "4.1.0-mission-cfg"
+
+DRONE_SPAWN_CONFIG = {
+  SIDE         = "红方",
+  RP_SIDE      = "红方",
+  MOTHER_UNIT  = "母平台-1",
+  REFERENCE_POINTS = { "RP-1", "RP-2", "RP-3", "RP-4" },
+
+  AIRCRAFT_DBID = 1719,
+  AIRCRAFT_TYPE = "Aircraft",
+
+  PAYLOADS = {
+    { label = "雷达", count = 5,  loadoutid = 8600 },
+    { label = "光电", count = 25, loadoutid = 8600 },
+    { label = "对陆", count = 70, loadoutid = 2230 },
+  },
+  SPAWN_ORDER = { "雷达", "光电", "对陆" },
+
+  NAME_PREFIX   = "小无人机-",
+  SPAWN_ALT_M   = 3000,
+  FLY_SPEED_KTS = 180,
+  SPAWN_INTERVAL_SEC = 5,
+
+  EO_SENSOR_DBID = 6252,
+  EO_SENSOR_ARCS = {
+    detect = { "SB1", "SB2", "PB1", "PB2" },
+    track  = { "SB1", "SB2", "PB1", "PB2" },
+  },
+  EO_SENSOR_PER_TICK = 5,
+  EO_SENSOR_MAX_RETRY = 3,
+
+  CONTACT_CACHE_TTL_SEC = 15,
+
+  RECON = {
+    LAYOUT = "上二下三",
+    ZONE_COUNT = 5,
+    RADAR_PER_ZONE = 1,
+    EO_PER_ZONE = 5,
+  },
+
+  STRIKE = {
+    LAYOUT = "上三下三",
+    ZONE_ROWS = 2,
+    ZONE_COLS = 3,
+    ZONE_CAPS = { 12, 12, 12, 12, 11, 11 },
+  },
+
+  CONTROL_MODE = "MISSION", -- MISSION | SCRIPT
+  DEBUG = false,
+}
+
+DRONE_SPAWN_STRIKE_LABEL = "对陆"
+DRONE_SPAWN_RECON_LABELS = { ["雷达"] = true, ["光电"] = true }
+DRONE_SPAWN_ENV_LOADED = true
+
+_DSW_CONTACT_CACHE = _DSW_CONTACT_CACHE or { t = -1e9, list = {}, side = "" }
+
+function DroneSwarm_GetContactsCached(side, ttl_sec)
+  side = side or (DRONE_SPAWN_CONFIG.SIDE or "红方")
+  ttl_sec = tonumber(ttl_sec) or DRONE_SPAWN_CONFIG.CONTACT_CACHE_TTL_SEC or 15
+  local now = ScenEdit_CurrentTime()
+  local c = _DSW_CONTACT_CACHE
+  if c.list and c.side == side and (now - (c.t or 0)) &lt; ttl_sec then
+    return c.list
+  end
+  local ok, list = pcall(ScenEdit_GetContacts, side)
+  if not ok or type(list) ~= "table" then list = {} end
+  c.t, c.list, c.side = now, list, side
+  return list
+end
+
+print(string.format("[DroneSwarm Env v%s] 任务制配置 | CONTROL_MODE=MISSION",
+  DRONE_SWARM_ENV_VERSION))
+</ScriptText></EventAction_LuaScript><EventAction_LuaScript><ID>V2PL28-0HNN17P9IMJNU</ID><Description>红方-03-对陆打击</Description><ScriptText>-- 识别到发射车/阵地接触时，把目标丢进对应打击区任务
+if type(MissionCtrl_OnDetected) == "function" then
+  MissionCtrl_OnDetected()
+elseif type(MissionCtrl_FeedTargets) == "function" then
+  MissionCtrl_FeedTargets()
+else
+  print("[MissionCtrl] 尚未加载任务制脚本（先跑红方-02/任务制 Setup）")
+end
+</ScriptText></EventAction_LuaScript><EventAction_LuaScript><ID>Q31JQI-0HNN1EPD95Q21</ID><Description>启动红方-03-单次对陆打击</Description><ScriptText>ScenEdit_SetEvent("红方-03-单次对陆打击", { mode = "update", isActive = false })
+</ScriptText></EventAction_LuaScript><EventAction_LuaScript><ID>Q31JQI-0HNN1EPD95Q22</ID><Description>查伤</Description><ScriptText>LauncherCtrl_DamageCheckOnce()</ScriptText></EventAction_LuaScript><EventAction_LuaScript><ID>Q31JQI-0HNN1EPD9QQI1</ID><Description>红方-03-单次对陆打击</Description><ScriptText>-- 识别到发射车/阵地接触时，把目标丢进对应打击区任务
+if type(MissionCtrl_OnDetected) == "function" then
+  MissionCtrl_OnDetected()
+elseif type(MissionCtrl_FeedTargets) == "function" then
+  MissionCtrl_FeedTargets()
+else
+  print("[MissionCtrl] 尚未加载任务制脚本（先跑红方-02/任务制 Setup）")
+end
+</ScriptText></EventAction_LuaScript><EventAction_LuaScript><ID>Q31JQI-0HNN1EPDAM7RD</ID><Description>蓝方-02-删除多余挂架</Description><ScriptText>-- Version: 1.3.0-tick
+--[[
+  蓝方-02：删除多余挂架（保留 1 个）
+
+  说明（给操作者）：
+  - 「删挂架」= 把发射车上多余武器挂架删到只剩 1 个，避免多联装乱打。
+  - 现在主路径：蓝方-01 Tick 每 TRIM_MOUNTS_INTERVAL_SEC（默认 300s）自动维一次。
+  - 本文件保留为手动/兼容入口；默认不要再挂到 UnitDetected（入区会事件风暴）。
+--]]
+
+TRIM_MOUNTS_ACTION_VERSION = "1.3.0-tick"
+TRIM_MOUNTS_MIN_INTERVAL_SEC = TRIM_MOUNTS_MIN_INTERVAL_SEC or 300
+
+local function run()
+  if type(LauncherCtrl_TrimMountsThrottled) == "function" then
+    return LauncherCtrl_TrimMountsThrottled(TRIM_MOUNTS_MIN_INTERVAL_SEC)
+  end
+  if type(LauncherCtrl_TrimMountsOnce) == "function" then
+    local kv = "lc_trim_last"
+    local now = ScenEdit_CurrentTime()
+    local last = tonumber(ScenEdit_GetKeyValue(kv)) or 0
+    local gap = TRIM_MOUNTS_MIN_INTERVAL_SEC or 300
+    if last &gt; 0 and (now - last) &lt; gap then
+      return 0
+    end
+    ScenEdit_SetKeyValue(kv, tostring(now))
+    return LauncherCtrl_TrimMountsOnce()
+  end
+  print("[TrimMounts] LauncherCtrl_TrimMountsOnce 不可用，跳过（请先加载蓝方-01）")
+  return 0
+end
+
+-- 仅当显式要求执行时才跑（事件 ScriptText 调用本文件整体时也会跑）
+run()
+</ScriptText></EventAction_LuaScript></EventActions><SimEvents><SimEvent><ID>X9EERF-0HNMU8GHJSABO</ID><Description>蓝方-01-发射车周期</Description><IsRepeatable>False</IsRepeatable><IsActive>True</IsActive><IsShown>True</IsShown><Probability>100</Probability><Triggers><Trigger>X9EERF-0HNMU8GHJSABP</Trigger></Triggers><Conditions /><Actions><Action>XYI0W5-0HNMTITIFP9AI</Action><Action>V2PL28-0HNN17P9IMJND</Action></Actions></SimEvent><SimEvent><ID>F221AN-0HNN0G5IF3QP5</ID><Description>红方-02-发射小无人机</Description><IsRepeatable>False</IsRepeatable><IsActive>True</IsActive><IsShown>True</IsShown><Probability>100</Probability><Triggers><Trigger>F221AN-0HNN0G5IF3QP6</Trigger></Triggers><Conditions /><Actions><Action>F221AN-0HNN0G5IF3QP7</Action></Actions></SimEvent><SimEvent><ID>V2PL28-0HNN17P9IMJNV</ID><Description>红方-03-对陆打击</Description><IsRepeatable>False</IsRepeatable><IsActive>True</IsActive><IsShown>True</IsShown><Probability>100</Probability><Triggers><Trigger>V2PL28-0HNN17P9IMJO0</Trigger></Triggers><Conditions /><Actions><Action>V2PL28-0HNN17P9IMJNU</Action><Action>Q31JQI-0HNN1EPD95Q21</Action></Actions></SimEvent><SimEvent><ID>Q31JQI-0HNN1EPD95Q23</ID><Description>蓝方-01-启动查伤</Description><IsRepeatable>True</IsRepeatable><IsActive>True</IsActive><IsShown>True</IsShown><Probability>100</Probability><Triggers><Trigger>Q31JQI-0HNN1EPD95Q24</Trigger></Triggers><Conditions /><Actions><Action>Q31JQI-0HNN1EPD95Q22</Action></Actions></SimEvent><SimEvent><ID>Q31JQI-0HNN1EPD9QQI0</ID><Description>红方-03-单次对陆打击</Description><IsRepeatable>True</IsRepeatable><IsActive>True</IsActive><IsShown>True</IsShown><Probability>100</Probability><Triggers><Trigger>V2PL28-0HNN17P9IMJO0</Trigger></Triggers><Conditions /><Actions /></SimEvent></SimEvents><ScenAttachmentObjects /><FlightplanErrors /><TimeCompression>0</TimeCompression><GameResolution>0.1</GameResolution><MessageLog></MessageLog><MessageIncrement>30</MessageIncrement><UnitsAutoIncrement>55</UnitsAutoIncrement><CurrentSide>红方</CurrentSide><GameVersion>仿真推演系统 v1.06                   [永久授权]</GameVersion><DBUsed>5a5a97c7746d3ca72f59f4478aafaa49860e3f5b</DBUsed><LastSavedInScenEdit>True</LastSavedInScenEdit><LandingPlan_ACS_NAW_Limitations>True</LandingPlan_ACS_NAW_Limitations><Realism_LandTypeEffects>True</Realism_LandTypeEffects><Realism_AircraftDamage>True</Realism_AircraftDamage><Realism_WeatherAffectsShipSpeed>True</Realism_WeatherAffectsShipSpeed></Scenario>

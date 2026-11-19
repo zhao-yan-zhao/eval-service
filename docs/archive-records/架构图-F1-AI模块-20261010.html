@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>F1-AI 体系推演智能实验平台 · 模块架构图</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:"Microsoft YaHei","Segoe UI",sans-serif; }
+  body { background:#f4f6f9; padding:28px; width:1560px; }
+  .title { text-align:center; margin-bottom:6px; }
+  .title h1 { font-size:26px; color:#1a2b4a; letter-spacing:2px; }
+  .title p { font-size:12px; color:#7a8699; margin-top:4px; }
+  .main { display:flex; gap:14px; margin-top:14px; }
+
+  /* 左列：功能流程 */
+  .flow-col { width:250px; display:flex; flex-direction:column; gap:8px; }
+  .col-label { text-align:center; font-size:13px; font-weight:bold; color:#43536b; padding:4px 0; background:#e4eaf3; border-radius:6px; }
+  .stage { border-radius:8px; padding:10px 12px; color:#fff; position:relative; }
+  .stage .no { font-size:11px; opacity:.85; }
+  .stage .name { font-size:15px; font-weight:bold; margin:2px 0; }
+  .stage .desc { font-size:11px; opacity:.92; line-height:1.5; }
+  .s1 { background:#4a6fa5; } .s2 { background:#5b83b8; } .s3 { background:#6f97cb; } .s4 { background:#849fd0; }
+  .arrow-down { text-align:center; color:#8a97ab; font-size:16px; line-height:1; }
+  .side-func { border:1.5px solid #b98a2f; background:#fdf6e7; border-radius:8px; padding:9px 12px; }
+  .side-func .name { font-size:13px; font-weight:bold; color:#8a6414; }
+  .side-func .desc { font-size:11px; color:#6b5a33; line-height:1.5; margin-top:3px; }
+
+  /* 右列：技术分层 */
+  .tech-col { flex:1; display:flex; flex-direction:column; gap:8px; }
+  .layer { border-radius:10px; padding:10px 14px; display:flex; gap:10px; align-items:stretch; }
+  .layer-tag { width:92px; flex:none; display:flex; flex-direction:column; justify-content:center; align-items:center; border-right:2px solid rgba(255,255,255,.35); padding-right:10px; }
+  .layer-tag .t1 { font-size:15px; font-weight:bold; color:#fff; }
+  .layer-tag .t2 { font-size:10px; color:rgba(255,255,255,.75); margin-top:2px; }
+  .layer-body { flex:1; display:flex; gap:8px; flex-wrap:wrap; align-items:stretch; }
+  .box { background:rgba(255,255,255,.92); border-radius:7px; padding:7px 10px; flex:1; min-width:120px; }
+  .box .b-name { font-size:12.5px; font-weight:bold; color:#233550; }
+  .box .b-desc { font-size:10.5px; color:#5a6a82; line-height:1.45; margin-top:2px; }
+  .L1 { background:#3d5a80; } .L2 { background:#5e60ce; } .L3 { background:#2a9d8f; } .L4 { background:#b5651d; } .L5 { background:#6c757d; }
+
+  .conn { display:flex; justify-content:space-around; color:#98a4b6; font-size:11px; padding:0 100px; }
+  .conn span { background:#e8edf4; border-radius:4px; padding:1px 8px; }
+
+  /* 底条：开发协同 */
+  .devstrip { margin-top:12px; background:#26334d; border-radius:10px; padding:10px 14px; display:flex; gap:10px; align-items:center; }
+  .devstrip .tag { color:#fff; font-size:14px; font-weight:bold; flex:none; width:120px; }
+  .devstrip .role { background:rgba(255,255,255,.1); border-radius:6px; padding:6px 10px; flex:1; }
+  .devstrip .role .r-name { font-size:12px; font-weight:bold; color:#ffd97a; }
+  .devstrip .role .r-desc { font-size:10.5px; color:#c6d0e0; margin-top:1px; }
+
+  .legend { margin-top:10px; display:flex; gap:18px; justify-content:center; font-size:11px; color:#5a6a82; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+</style>
+</head>
+<body>
+
+<div class="title">
+  <h1>F1-AI 体系推演智能实验平台 · 模块架构图</h1>
+  <p>功能模块（左）× 技术架构（右）　|　2026-10-10</p>
+</div>
+
+<div class="main">
+
+  <!-- ========== 左：功能模块 ========== -->
+  <div class="flow-col">
+    <div class="col-label">功能模块（用户使用视角）</div>
+
+    <div class="stage s1">
+      <div class="no">阶段 ①</div>
+      <div class="name">构想澄清与实验设计</div>
+      <div class="desc">大白话作战构想 → 结构化实验方案<br>纯对话，OKF 知识支撑</div>
+    </div>
+    <div class="arrow-down">▼</div>
+    <div class="stage s2">
+      <div class="no">阶段 ②</div>
+      <div class="name">想定设计</div>
+      <div class="desc">实验方案 → 想定设计文档<br>（兵力、部署、战法、评判标准）</div>
+    </div>
+    <div class="arrow-down">▼</div>
+    <div class="stage s3">
+      <div class="no">阶段 ③</div>
+      <div class="name">想定落地与试车</div>
+      <div class="desc">调桥生成想定文件 → 短局试车<br>→ 判读不合格自动返修（≤3 轮）</div>
+    </div>
+    <div class="arrow-down">▼</div>
+    <div class="stage s4">
+      <div class="no">阶段 ④</div>
+      <div class="name">矩阵跑批与统计</div>
+      <div class="desc">批量推演 / 蒙特卡洛 →<br>白名单脚本统计 → 评判卡</div>
+    </div>
+
+    <div class="side-func">
+      <div class="name">数据库修改与管理（旁路功能）</div>
+      <div class="desc">武器/装备参数修正：确认门五步 → 快照 → 程序化修改 → 读回校验 → 哈希闭环 → 台账登记</div>
+    </div>
+    <div class="side-func" style="border-color:#3a7d6b;background:#eaf6f2;">
+      <div class="name" style="color:#265d4e;">OKF 作战知识库（知识支撑）</div>
+      <div class="desc" style="color:#3d6156;">真实战例与装备知识，支撑阶段①②的构想与设计质量</div>
+    </div>
+    <div class="side-func" style="border-color:#7a5aa0;background:#f3eef9;">
+      <div class="name" style="color:#54397a;">规矩库 skills（全程约束）</div>
+      <div class="desc" style="color:#57497a;">四份操作规程约束四个阶段：能干什么、怎么干、什么不许干</div>
+    </div>
+  </div>
+
+  <!-- ========== 右：技术架构 ========== -->
+  <div class="tech-col">
+    <div class="col-label">技术架构（系统实现视角）</div>
+
+    <div class="layer L1">
+      <div class="layer-tag"><div class="t1">交互层</div><div class="t2">人机入口</div></div>
+      <div class="layer-body">
+        <div class="box"><div class="b-name">AI 面板（demo-ui）</div><div class="b-desc">四段式对话界面，React 构建；nginx 8085 托管（demo-dev 同源）</div></div>
+        <div class="box"><div class="b-name">F1-BS 网页控制台</div><div class="b-desc">想定编辑 / 阵位图 / 推演监控演示界面</div></div>
+        <div class="box"><div class="b-name">F1 桌面程序</div><div class="b-desc">引擎原生界面：想定编辑、手动切库、人工操作兜底</div></div>
+        <div class="box"><div class="b-name">开发监控台</div><div class="b-desc">多 AI 协同看板（Kimi Dashboard Widget）</div></div>
+      </div>
+    </div>
+    <div class="conn"><span>SSE 流式对话 / 工具事件</span><span>HTTP</span></div>
+
+    <div class="layer L2">
+      <div class="layer-tag"><div class="t1">AI 服务层</div><div class="t2">proxy :7177</div></div>
+      <div class="layer-body">
+        <div class="box"><div class="b-name">四段提示词编排</div><div class="b-desc">prompts.js：阶段职责、工具清单、纪律铁律注入</div></div>
+        <div class="box"><div class="b-name">claimcheck 物理兜底</div><div class="b-desc">零工具调用却自称完成 → 强制标注 + 审计（待升级自动回炉）</div></div>
+        <div class="box"><div class="b-name">工具路由 tools</div><div class="b-desc">面板 AI 的工具调用转发桥/数据库/统计脚本</div></div>
+        <div class="box"><div class="b-name">改库闸门 dbgate</div><div class="b-desc">改库确认门、一次性授权、只读探查</div></div>
+        <div class="box"><div class="b-name">大模型 API</div><div class="b-desc">DeepSeek 等（可换模型）；Key 本机保管</div></div>
+      </div>
+    </div>
+    <div class="conn"><span>HTTP + Bearer 令牌 · 27+ 工具</span><span>推演进行中零查询（铁律）</span></div>
+
+    <div class="layer L3">
+      <div class="layer-tag"><div class="t1">桥接层</div><div class="t2">bridge :9477</div></div>
+      <div class="layer-body">
+        <div class="box"><div class="b-name">想定操作</div><div class="b-desc">scenario.load / save / set_time / get_summary</div></div>
+        <div class="box"><div class="b-name">推演控制</div><div class="b-desc">simulation.run / status（脉冲调度，0.1s/脉冲）</div></div>
+        <div class="box"><div class="b-name">结果读取</div><div class="b-desc">result.read：导出 CSV 指标与行计数</div></div>
+        <div class="box"><div class="b-name">数据库探查</div><div class="b-desc">db3k.search（字段级只读 W3 待补）</div></div>
+      </div>
+    </div>
+    <div class="conn"><span>Lua / AiAssistant 宿主内嵌</span></div>
+
+    <div class="layer L4">
+      <div class="layer-tag"><div class="t1">引擎层</div><div class="t2">F1.exe</div></div>
+      <div class="layer-body">
+        <div class="box"><div class="b-name">推演核心</div><div class="b-desc">脉冲仿真循环、交战裁决、蒙特卡洛</div></div>
+        <div class="box"><div class="b-name">库绑定 DBOps</div><div class="t2"></div><div class="b-desc">现按库指纹解析（W1 待改为按文件名优先+警告）</div></div>
+        <div class="box"><div class="b-name">事件导出</div><div class="b-desc">开火/弹着/损伤/沉没等 → CSV 队列落盘</div></div>
+        <div class="box"><div class="b-name">隔离运行包</div><div class="b-desc">程序目录 + WritableRoot.txt 指向数据根（多实例/迁移地基）</div></div>
+      </div>
+    </div>
+    <div class="conn"><span>读写数据根（单写者）</span></div>
+
+    <div class="layer L5">
+      <div class="layer-tag"><div class="t1">数据层</div><div class="t2">数据根 F1-测试</div></div>
+      <div class="layer-body">
+        <div class="box"><div class="b-name">装备数据库 DB3K</div><div class="b-desc">SQLite，官方库 + 改型副本（台账管代级）</div></div>
+        <div class="box"><div class="b-name">想定库 .scen</div><div class="b-desc">XML 标签 + 加密载荷；锚点/试射/实验想定</div></div>
+        <div class="box"><div class="b-name">EventExport 导出</div><div class="b-desc">按推演局分目录的事件 CSV（统计数据源）</div></div>
+        <div class="box"><div class="b-name">Config 配置</div><div class="b-desc">导出开关、高流量记录裁剪等</div></div>
+      </div>
+    </div>
+
+    <div class="devstrip">
+      <div class="tag">开发协同层</div>
+      <div class="role"><div class="r-name">Kimi（统筹/验收）</div><div class="r-desc">任务拆解、架构设计、独立实证验收、文档</div></div>
+      <div class="role"><div class="r-name">Claude（写码）</div><div class="r-desc">引擎 / proxy / 面板的具体实现</div></div>
+      <div class="role"><div class="r-name">Cursor（审查+编译）</div><div class="r-desc">代码审查、统一编译窗口</div></div>
+      <div class="role"><div class="r-name">GPT-terra / sol（评审）</div><div class="r-desc">简单评审 / 复杂重要评审</div></div>
+      <div class="role"><div class="r-name">LabConsole 知识底座</div><div class="r-desc">outputs 实证留档 · knowledge 雷区库 · 看板状态通道</div></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="legend">
+  <span><i style="background:#4a6fa5;"></i>功能四阶段（①→④ 顺序流）</span>
+  <span><i style="background:#b98a2f;"></i>旁路功能（改库）</span>
+  <span><i style="background:#3a7d6b;"></i>知识支撑（OKF）</span>
+  <span><i style="background:#7a5aa0;"></i>全程约束（规矩库）</span>
+  <span><i style="background:#26334d;"></i>开发协同（非运行时）</span>
+</div>
+
+</body>
+</html>
