@@ -1,0 +1,267 @@
+{
+  "systemId": "sys_joint_combat_multilevel_v1",
+  "name": "现代联合作战综合效能多级评估体系",
+  "version": "1.0.0",
+  "description": "4层深度多策略融合体系：涵盖任务效果、杀伤链敏捷度、防空生存与空域电磁协同，结合加权和、几何平均、木桶效应与条件折减",
+  "builtin": true,
+  "targetTags": ["joint_combat", "multilevel", "bvr", "strike", "air_defense"],
+  "kpis": [
+    {
+      "label": "走廊空间遵从率",
+      "atomRef": "roe.corridor_spatial_compliance",
+      "formatter": "percent_ci"
+    },
+    {
+      "label": "打击任务完成比",
+      "atomRef": "strike.composite_mission_metrics",
+      "formatter": "percent_ci"
+    },
+    {
+      "label": "杀伤链闭环时延",
+      "atomRef": "fire_control.unit_kill_chain_closure",
+      "formatter": "duration_sec"
+    },
+    {
+      "label": "战损交换比",
+      "atomRef": "cost.side_exchange_ratio",
+      "formatter": "ratio"
+    }
+  ],
+  "root": {
+    "id": "sys_joint_combat_multilevel_v1",
+    "nodeCode": "root_joint_combat",
+    "name": "联合作战综合效能评估",
+    "weight": 1.0,
+    "aggregation": {
+      "mode": "visual",
+      "strategy": "weighted_sum"
+    },
+    "children": [
+      {
+        "id": "dim_task_strike",
+        "nodeCode": "dim_strike",
+        "name": "进攻与任务达成能力",
+        "weight": 0.35,
+        "aggregation": {
+          "mode": "visual",
+          "strategy": "weighted_sum"
+        },
+        "children": [
+          {
+            "id": "dim_strike_cost",
+            "nodeCode": "sub_strike",
+            "name": "打击与效费",
+            "weight": 0.6,
+            "aggregation": {
+              "mode": "visual",
+              "strategy": "weighted_sum"
+            },
+            "children": [
+              {
+                "id": "leaf_strike_comp",
+                "nodeCode": "ind_strike",
+                "indicatorRef": "ind_strike_completion",
+                "weight": 0.6
+              },
+              {
+                "id": "leaf_strike_eff",
+                "nodeCode": "ind_eff",
+                "indicatorRef": "ind_comp_strike_cost_eff",
+                "weight": 0.4
+              }
+            ]
+          },
+          {
+            "id": "dim_patrol_support",
+            "nodeCode": "sub_patrol",
+            "name": "巡逻与支援保障",
+            "weight": 0.4,
+            "aggregation": {
+              "mode": "visual",
+              "strategy": "weighted_sum"
+            },
+            "children": [
+              {
+                "id": "leaf_patrol_comp",
+                "nodeCode": "ind_patrol",
+                "indicatorRef": "ind_patrol_completion",
+                "weight": 0.5
+              },
+              {
+                "id": "leaf_support_comp",
+                "nodeCode": "ind_support",
+                "indicatorRef": "ind_support_completion",
+                "weight": 0.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dim_killchain_info",
+        "nodeCode": "dim_kc",
+        "name": "杀伤链与信息优势",
+        "weight": 0.25,
+        "aggregation": {
+          "mode": "visual",
+          "strategy": "geometric_mean"
+        },
+        "children": [
+          {
+            "id": "dim_isr",
+            "nodeCode": "sub_isr",
+            "name": "侦察预警效能",
+            "weight": 0.5,
+            "aggregation": {
+              "mode": "visual",
+              "strategy": "weighted_sum"
+            },
+            "children": [
+              {
+                "id": "leaf_isr_det",
+                "nodeCode": "ind_det",
+                "indicatorRef": "ind_isr_detection_rate",
+                "weight": 0.4
+              },
+              {
+                "id": "leaf_isr_id",
+                "nodeCode": "ind_id",
+                "indicatorRef": "ind_isr_id_time",
+                "weight": 0.3
+              },
+              {
+                "id": "leaf_isr_cov",
+                "nodeCode": "ind_cov",
+                "indicatorRef": "ind_isr_coverage_eff",
+                "weight": 0.3
+              }
+            ]
+          },
+          {
+            "id": "dim_fire_control",
+            "nodeCode": "sub_fc",
+            "name": "闭环打击与敏捷度",
+            "weight": 0.5,
+            "aggregation": {
+              "mode": "visual",
+              "strategy": "weighted_sum"
+            },
+            "children": [
+              {
+                "id": "leaf_c2_sit",
+                "nodeCode": "ind_c2",
+                "indicatorRef": "ind_c2_situation_integrity",
+                "weight": 0.3
+              },
+              {
+                "id": "leaf_kc_time",
+                "nodeCode": "ind_kc",
+                "indicatorRef": "ind_kc_closure_time",
+                "weight": 0.3
+              },
+              {
+                "id": "leaf_wpn_hit",
+                "nodeCode": "ind_wpn",
+                "indicatorRef": "ind_wpn_hit_rate",
+                "weight": 0.2
+              },
+              {
+                "id": "leaf_ooad",
+                "nodeCode": "ind_ooad",
+                "indicatorRef": "ind_comp_ooad_speed",
+                "weight": 0.2
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dim_defense_surv",
+        "nodeCode": "dim_defense",
+        "name": "体系防御与生存战存",
+        "weight": 0.25,
+        "aggregation": {
+          "mode": "visual",
+          "strategy": "maximin"
+        },
+        "children": [
+          {
+            "id": "dim_air_defense",
+            "nodeCode": "sub_ad",
+            "name": "防空反导拦截",
+            "weight": 0.5,
+            "aggregation": {
+              "mode": "visual",
+              "strategy": "weighted_sum"
+            },
+            "children": [
+              {
+                "id": "leaf_ad_rate",
+                "nodeCode": "ind_ad",
+                "indicatorRef": "ind_ad_intercept_rate",
+                "weight": 0.6
+              },
+              {
+                "id": "leaf_ad_shield",
+                "nodeCode": "ind_shield",
+                "indicatorRef": "ind_comp_air_defense_shield",
+                "weight": 0.4
+              }
+            ]
+          },
+          {
+            "id": "dim_cost_loss",
+            "nodeCode": "sub_cost",
+            "name": "战损消耗控制",
+            "weight": 0.5,
+            "aggregation": {
+              "mode": "visual",
+              "strategy": "weighted_sum"
+            },
+            "children": [
+              {
+                "id": "leaf_loss_ratio",
+                "nodeCode": "ind_ratio",
+                "indicatorRef": "ind_cost_exchange_ratio",
+                "weight": 0.5
+              },
+              {
+                "id": "leaf_damage_integ",
+                "nodeCode": "ind_integ",
+                "indicatorRef": "ind_cost_platform_integrity",
+                "weight": 0.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dim_roe_ew",
+        "nodeCode": "dim_roe",
+        "name": "空域规则与电磁协同",
+        "weight": 0.15,
+        "aggregation": {
+          "mode": "formula",
+          "strategy": "formula",
+          "customFormula": "IF(node_corridor < 80, MIN(node_corridor, 60), 0.7 * node_corridor + 0.3 * node_ecm)"
+        },
+        "children": [
+          {
+            "id": "leaf_corridor_comp",
+            "nodeCode": "node_corridor",
+            "name": "任务航路走廊空间遵从率",
+            "indicatorRef": "ind_roe_corridor_compliance",
+            "weight": 0.7
+          },
+          {
+            "id": "leaf_ecm_suppression",
+            "nodeCode": "node_ecm",
+            "name": "通信网台干扰压制率",
+            "indicatorRef": "ind_ecm_comm_suppression",
+            "weight": 0.3
+          }
+        ]
+      }
+    ]
+  }
+}
