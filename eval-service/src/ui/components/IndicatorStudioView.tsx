@@ -9,6 +9,7 @@ import {
   Download,
   FlaskConical,
   Gauge,
+  GitBranch,
   Layers,
   Link2,
   Plus,
@@ -36,14 +37,17 @@ import {
 import { applyScoringRule } from '../../core/scoring-functions.ts';
 import { validateFormula } from '../../operators/formula-engine.ts';
 import { EChartPanel } from './EChartPanel.tsx';
+import { MetricDagStudioPanel } from './v4/index.ts';
 
 interface IndicatorStudioViewProps {
   indicators: IndicatorDefinition[];
   operators: MetricAtomMeta[];
   runs?: StoredRunSummary[];
   selectedRunId?: string;
+  activeSourceId?: string;
   focusedIndicatorTarget?: { id: string; nonce: number } | null;
   onRefresh: () => Promise<void>;
+  onDrillDownToOperator?: (operatorId: string) => void;
 }
 
 const DEFAULT_STEPS: Array<{ val: number; score: number }> = [
@@ -239,9 +243,12 @@ export function IndicatorStudioView({
   operators,
   runs = [],
   selectedRunId = '',
+  activeSourceId,
   focusedIndicatorTarget = null,
   onRefresh,
+  onDrillDownToOperator,
 }: IndicatorStudioViewProps) {
+  const [studioMode, setStudioMode] = useState<'classic' | 'v4_dag'>('v4_dag');
   const [selectedId, setSelectedId] = useState<string>(indicators[0]?.indicatorId ?? '');
 
   // 左侧搜索与筛选状态
@@ -821,7 +828,36 @@ export function IndicatorStudioView({
   }, [indicators, searchQuery, scopeFilter, domainTagFilter, mountedByIndicator]);
 
   return (
-    <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
+    <div className="space-y-2">
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          id={studioMode === 'v4_dag' ? 'btn-indicator-mode-classic' : 'btn-indicator-mode-v4-dag'}
+          onClick={() => setStudioMode((m) => (m === 'v4_dag' ? 'classic' : 'v4_dag'))}
+          className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1 text-[11px] font-medium text-[#8b949e] hover:border-slate-500 hover:text-slate-200 transition"
+        >
+          {studioMode === 'v4_dag' ? (
+            <>
+              <Layers className="h-3 w-3" />
+              <span>切换经典标量表单</span>
+            </>
+          ) : (
+            <>
+              <GitBranch className="h-3 w-3 text-emerald-400" />
+              <span>返回 V4 指标 DAG 画布</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {studioMode === 'v4_dag' ? (
+        <MetricDagStudioPanel
+          selectedRunId={selectedRunId}
+          activeSourceId={activeSourceId}
+          onDrillDownToOperator={onDrillDownToOperator}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
       {/* 左侧指标清单 */}
       <section className="min-w-0 flex flex-col rounded-lg border border-[#2a313c] bg-[#161b22] p-3.5 lg:col-span-5 panel-isolate">
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
@@ -2136,6 +2172,8 @@ export function IndicatorStudioView({
           </div>
         </form>
       </section>
+    </div>
+      )}
     </div>
   );
 }

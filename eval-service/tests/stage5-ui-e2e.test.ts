@@ -150,6 +150,10 @@ test('Stage 5 & 6：全栈 UI 构建产物与六大工作台无头浏览器端�
     // 3. 指标工坊 (#tab-indicators)
     await page.locator('#tab-indicators').click();
     await page.waitForSelector('#panel-indicators:not([hidden])', { timeout: 5_000 });
+    const indClassicBtn = page.locator('#btn-indicator-mode-classic');
+    if (await indClassicBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {
+      await indClassicBtn.click();
+    }
     await page.waitForTimeout(250);
     await assertNoHorizontalOverflow('1440-indicators');
     await assertVisibleCanvasDrawn('#panel-indicators', 'indicators');
@@ -163,6 +167,10 @@ test('Stage 5 & 6：全栈 UI 构建产物与六大工作台无头浏览器端�
     // 4. 体系编排器 (#tab-systems)
     await page.locator('#tab-systems').click();
     await page.waitForSelector('#panel-systems:not([hidden])', { timeout: 5_000 });
+    const sysClassicBtn = page.locator('#btn-system-mode-classic');
+    if (await sysClassicBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {
+      await sysClassicBtn.click();
+    }
     await assertNoHorizontalOverflow('1440-systems');
 
     // 模板匹配草案生成

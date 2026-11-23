@@ -2,6 +2,7 @@ import type * as echarts from 'echarts';
 import MarkdownIt from 'markdown-it';
 import {
   Activity,
+  ArrowRight,
   CheckCircle2,
   Database,
   Download,
@@ -9,13 +10,15 @@ import {
   GitCompare,
   Play,
   RefreshCw,
+  Scale,
   ShieldAlert,
+  ShieldCheck,
   Square,
   TerminalSquare,
   Trash2,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   evalApi,
   type StoredEvalSummary,
@@ -23,7 +26,7 @@ import {
   type SystemEvaluationOutput,
   type TacticalFeedbackPayload,
 } from '../api.ts';
-import type { IndicatorSystem } from '../../core/types.ts';
+import type { EvaluationDagOutput, IndicatorSystem, MetricDomainTag } from '../../core/types.ts';
 import { EChartPanel } from './EChartPanel.tsx';
 
 const mdParser = new MarkdownIt({ html: false, linkify: true, breaks: true });
@@ -33,8 +36,17 @@ interface CockpitViewProps {
   systems: IndicatorSystem[];
   selectedRunId: string;
   selectedSystemId: string;
+  activeSourceId?: string;
   onSelectRun: (runId: string) => void;
   onSelectSystem: (systemId: string) => void;
+  onOpenV4SystemCanvas?: () => void;
+}
+
+interface V4SystemItem {
+  systemId: string;
+  name: string;
+  version?: string;
+  nodes?: Array<{ id: string; kind?: string; label?: string; refId?: string; inlineEffect?: { domainTag?: MetricDomainTag } }>;
 }
 
 export function CockpitView({
@@ -42,9 +54,104 @@ export function CockpitView({
   systems,
   selectedRunId,
   selectedSystemId,
+  activeSourceId,
   onSelectRun,
   onSelectSystem,
+  onOpenV4SystemCanvas,
 }: CockpitViewProps) {
+  // ─── V4 全链路评估直通车状态 ───
+  const [v4Systems, setV4Systems] = useState<V4SystemItem[]>([]);
+  const [selectedV4SystemId, setSelectedV4SystemId] = useState<string>('sys_v4_metrics_guide_full');
+  const [v4TargetSide, setV4TargetSide] = useState<string>('红方');
+  const [v4Evaluating, setV4Evaluating] = useState<boolean>(false);
+  const [v4EvalOutput, setV4EvalOutput] = useState<EvaluationDagOutput | null>(null);
+  const [v4Error, setV4Error] = useState<string | null>(null);
+
+  const loadV4Systems = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v4/system-dags');
+      if (res.ok) {
+        const json = (await res.json()) as { systems?: V4SystemItem[]; dags?: V4SystemItem[] };
+        const list = Array.isArray(json.systems) ? json.systems : Array.isArray(json.dags) ? json.dags : [];
+        setV4Systems(list);
+        if (list.length > 0) {
+          const preferred = list.find((s) => s.systemId === 'sys_v4_metrics_guide_full') ?? list[0];
+          setSelectedV4SystemId((prev) => (list.some((s) => s.systemId === prev) ? prev : preferred.systemId));
+        }
+      }
+    } catch {
+      // 保持静默
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadV4Systems();
+  }, [loadV4Systems]);
+
+  const handleRunV4Evaluation = useCallback(async () => {
+    if (!selectedV4SystemId) return;
+    setV4Evaluating(true);
+    setV4Error(null);
+    try {
+      const activeSysObj = v4Systems.find((s) => s.systemId === selectedV4SystemId);
+      const res = await fetch('/api/v4/system-dags/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemId: selectedV4SystemId,
+          ...(activeSysObj ? { system: activeSysObj } : {}),
+          runId: selectedRunId,
+          dataSourceId: activeSourceId,
+          targetSide: v4TargetSide,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok || json.ok === false) {
+        throw new Error(typeof json.error === 'string' ? json.error : `评估失败 (HTTP ${res.status})`);
+      }
+      const evalData = (json.evaluation ?? json.result ?? json) as EvaluationDagOutput;
+      setV4EvalOutput(evalData);
+    } catch (e) {
+      setV4Error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setV4Evaluating(false);
+    }
+  }, [selectedV4SystemId, selectedRunId, activeSourceId, v4TargetSide, v4Systems]);
+
+  // 计算四大领域合成效能
+  const v4DomainScores = useMemo(() => {
+    if (!v4EvalOutput?.nodeResults) return [];
+    const activeSysObj = v4Systems.find((s) => s.systemId === selectedV4SystemId);
+    const domains: Array<{ tag: MetricDomainTag; label: string; score: number | null }> = [
+      { tag: 'firepower', label: '火力打击', score: null },
+      { tag: 'isr', label: '侦察预警', score: null },
+      { tag: 'survivability', label: '生存防护', score: null },
+      { tag: 'synergy', label: '体系协同', score: null },
+    ];
+    for (const d of domains) {
+      const scores: number[] = [];
+      for (const [nodeId, nRes] of Object.entries(v4EvalOutput.nodeResults)) {
+        if (nRes && nRes.score !== null && nRes.score !== undefined && nRes.status !== 'unavailable') {
+          const sysNode = activeSysObj?.nodes?.find((n) => n.id === nodeId);
+          const tag = sysNode?.inlineEffect?.domainTag;
+          const matchTag = tag === d.tag;
+          const matchName =
+            (d.tag === 'firepower' && (nRes.label?.includes('火力') || nRes.label?.includes('突击') || nodeId.includes('firepower') || nodeId.includes('strike'))) ||
+            (d.tag === 'isr' && (nRes.label?.includes('侦察') || nRes.label?.includes('预警') || nodeId.includes('isr') || nodeId.includes('sensor'))) ||
+            (d.tag === 'survivability' && (nRes.label?.includes('生存') || nRes.label?.includes('防护') || nodeId.includes('surv') || nodeId.includes('patrol'))) ||
+            (d.tag === 'synergy' && (nRes.label?.includes('协同') || nRes.label?.includes('指控') || nodeId.includes('synergy') || nodeId.includes('c2')));
+          if (matchTag || matchName) {
+            scores.push(nRes.score);
+          }
+        }
+      }
+      if (scores.length > 0) {
+        d.score = scores.reduce((a, b) => a + b, 0) / scores.length;
+      }
+    }
+    return domains;
+  }, [v4EvalOutput, v4Systems, selectedV4SystemId]);
+
   const [targetSide, setTargetSide] = useState<string>('');
   const [evaluations, setEvaluations] = useState<StoredEvalSummary[]>([]);
   const uniqueEvaluations = useMemo(() => {
@@ -243,7 +350,7 @@ export function CockpitView({
                 id: Date.now() + '-' + Math.random().toString(36).slice(2, 6),
                 time: nowTimeStr(),
                 stage: progress.stage,
-                text: progress.log,
+                text: progress.log || '',
               },
             ]);
           }
@@ -580,6 +687,174 @@ export function CockpitView({
 
   return (
     <div className="space-y-3.5">
+      {/* ═════════════════ V4 全链路评估体系直通车 ═════════════════ */}
+      <section className="rounded-xl border border-indigo-500/40 bg-gradient-to-r from-[#161b22] via-[#12162a] to-[#161b22] p-4 shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-500/20 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-lg border border-indigo-500/50 bg-indigo-500/20 p-1.5 text-indigo-300">
+              <Scale className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-100 sm:text-base">
+                  V4 全链路评估体系直通车
+                </h2>
+                <span className="rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-indigo-300">
+                  DAG KERNEL
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                一库算子数据流 ➔ 二库客观指标 ➔ 三库效果合成与红线门控裁决
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 体系选择 */}
+            <select
+              value={selectedV4SystemId}
+              onChange={(e) => setSelectedV4SystemId(e.target.value)}
+              className="rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-indigo-200 focus:border-indigo-500 focus:outline-none max-w-[200px]"
+            >
+              {v4Systems.map((s) => (
+                <option key={s.systemId} value={s.systemId}>
+                  {s.name} ({s.systemId})
+                </option>
+              ))}
+            </select>
+
+            {/* 阵营选择 */}
+            <select
+              value={v4TargetSide}
+              onChange={(e) => setV4TargetSide(e.target.value)}
+              className="rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-indigo-300 focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="红方">红方 (Red)</option>
+              <option value="绿方">绿方 (Green)</option>
+              <option value="蓝方">蓝方 (Blue)</option>
+            </select>
+
+            {/* 运行按钮 */}
+            <button
+              type="button"
+              disabled={v4Evaluating || !selectedV4SystemId || !selectedRunId}
+              onClick={() => void handleRunV4Evaluation()}
+              className="inline-flex items-center gap-1.5 rounded-md border border-indigo-400/60 bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg shadow-indigo-950/60 hover:bg-indigo-500 disabled:opacity-50 transition cursor-pointer"
+            >
+              <Play className={`h-3.5 w-3.5 ${v4Evaluating ? 'animate-spin' : ''}`} />
+              <span>{v4Evaluating ? '评估执行中...' : '▶ 运行 V4 全链路评估'}</span>
+            </button>
+
+            {/* 进入三库体系画布 */}
+            {onOpenV4SystemCanvas && (
+              <button
+                type="button"
+                onClick={onOpenV4SystemCanvas}
+                className="inline-flex items-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition cursor-pointer"
+              >
+                <span>进入三库体系画布</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 评估指标与状态呈现行 */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* 生效总分 */}
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs text-slate-400 font-medium">生效综合效能:</span>
+              <span
+                className={`font-mono text-2xl font-bold tabular-nums ${
+                  !v4EvalOutput || v4EvalOutput.overallScore === null
+                    ? 'text-slate-500'
+                    : v4EvalOutput.gateVerdict === 'DISQUALIFIED'
+                      ? 'text-rose-400'
+                      : v4EvalOutput.overallScore >= 80
+                        ? 'text-emerald-300'
+                        : v4EvalOutput.overallScore >= 60
+                          ? 'text-indigo-200'
+                          : 'text-amber-300'
+                }`}
+              >
+                {v4EvalOutput && v4EvalOutput.overallScore !== null
+                  ? v4EvalOutput.overallScore.toFixed(1)
+                  : '--'}
+              </span>
+              <span className="font-mono text-xs text-slate-500">/ 100</span>
+            </div>
+
+            <div className="h-5 w-px bg-[#30363d]" />
+
+            {/* 门控裁决 */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-400">GATE 门控:</span>
+              <span
+                className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-xs font-bold ${
+                  !v4EvalOutput
+                    ? 'border-slate-700 bg-slate-800/80 text-slate-400'
+                    : v4EvalOutput.gateVerdict === 'DISQUALIFIED'
+                      ? 'border-rose-500/60 bg-rose-500/20 text-rose-200'
+                      : v4EvalOutput.gateVerdict === 'WARNING'
+                        ? 'border-amber-500/55 bg-amber-500/20 text-amber-200'
+                        : 'border-emerald-500/45 bg-emerald-500/15 text-emerald-300'
+                }`}
+              >
+                {v4EvalOutput?.gateVerdict === 'DISQUALIFIED' ? (
+                  <ShieldAlert className="h-3 w-3" />
+                ) : (
+                  <ShieldCheck className="h-3 w-3" />
+                )}
+                <span>{v4EvalOutput?.gateVerdict ?? 'PENDING'}</span>
+              </span>
+            </div>
+
+            <div className="h-5 w-px bg-[#30363d]" />
+
+            {/* 四大领域综合效能 */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-slate-400">领域效能:</span>
+              {(v4DomainScores.length > 0
+                ? v4DomainScores
+                : [
+                    { tag: 'firepower', label: '火力打击', score: null },
+                    { tag: 'isr', label: '侦察预警', score: null },
+                    { tag: 'survivability', label: '生存防护', score: null },
+                    { tag: 'synergy', label: '体系协同', score: null },
+                  ]
+              ).map((d) => (
+                <span
+                  key={d.tag}
+                  className="inline-flex items-center gap-1 rounded bg-[#0d1117] px-2 py-0.5 text-xs font-mono border border-[#30363d]"
+                >
+                  <span className="text-slate-400">{d.label}:</span>
+                  <strong
+                    className={
+                      d.score === null
+                        ? 'text-slate-500'
+                        : d.score >= 80
+                          ? 'text-emerald-300'
+                          : d.score >= 60
+                            ? 'text-indigo-300'
+                            : 'text-amber-300'
+                    }
+                  >
+                    {d.score !== null ? `${d.score.toFixed(1)}分` : '--'}
+                  </strong>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {v4Error && (
+            <span className="text-xs text-rose-400 font-medium">
+              ⚠ {v4Error}
+            </span>
+          )}
+        </div>
+      </section>
+
       {/* 控制顶条 */}
       <section className="rounded-lg border border-[#2a313c] bg-[#161b22] p-3.5">
         <div className="flex flex-wrap items-end gap-3">

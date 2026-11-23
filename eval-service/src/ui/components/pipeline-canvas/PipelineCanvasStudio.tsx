@@ -14,14 +14,18 @@ import {
   Minimize2,
   Minus,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Play,
   RotateCcw,
   Save,
   Settings2,
   Sparkles,
+  Table2,
   Target,
   Trash2,
+  X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -44,6 +48,17 @@ import { getOperatorPipelineBlueprint } from '../../../operators/blueprints.ts';
 import { executeFormulaOrAggPreview } from '../../../operators/pipeline-engine.ts';
 import { getSampleDatasetForTable } from '../../../operators/table-sample-catalog.ts';
 import { OperatorInlineEditor } from '../OperatorInlineEditor.tsx';
+import { V4TablePivotPreview } from '../v4/V4TablePivotPreview.tsx';
+
+interface V4OperatorClientSpec {
+  id: string;
+  name: string;
+  layer: string;
+  requiredTables: string[];
+  optionalTables: string[];
+  outputColumnNames: string[];
+  pythonCode: string;
+}
 
 export interface InjectedAlgorithmData {
   id: string;
@@ -251,16 +266,11 @@ const INITIAL_NODES: CanvasNode[] = [
   {
     id: 'node_out_1',
     type: 'result_output',
-    title: '结果输出：超视距杀伤比指标',
+    title: '二维表输出：超视距交战事实表',
     x: 1140,
     y: 120,
     config: {
       targetField: 'effective_hits',
-      indicatorName: '超视距空战首轮有效拦截击杀数',
-      indicatorUnit: '架',
-      optimalDirection: 'higher_is_better',
-      targetSystemId: 'sys_bvr_air_combat_v1',
-      targetDimensionId: 'dim_bvr_engagement',
     },
     runtime: {
       status: 'idle',
@@ -289,7 +299,10 @@ export function PipelineCanvasStudio({
   if (!isOpen && !embedded) return null;
   const [isFullscreen, setIsFullscreen] = useState(!embedded);
 
-  const effectiveInitialOpId = initialOperator?.id || 'roe.corridor_spatial_compliance';
+  const effectiveInitialOpId =
+    initialOperator?.id === 'comp.corridor_compliance' && allOperators?.some((o) => o.id === 'roe.corridor_spatial_compliance')
+      ? 'roe.corridor_spatial_compliance'
+      : initialOperator?.id || 'roe.corridor_spatial_compliance';
   const initialBuild = useMemo(
     () => buildCanvasFromBlueprint(effectiveInitialOpId, initialOperator?.name),
     [effectiveInitialOpId, initialOperator?.name]
@@ -404,9 +417,16 @@ export function PipelineCanvasStudio({
     };
   }, [isMoreMenuOpen]);
 
+  const canonicalCurrentOpId = useMemo(() => {
+    if (currentOperatorId === 'comp.corridor_compliance' && allOperators?.some((o) => o.id === 'roe.corridor_spatial_compliance')) {
+      return 'roe.corridor_spatial_compliance';
+    }
+    return currentOperatorId;
+  }, [currentOperatorId, allOperators]);
+
   const currentOpMeta = useMemo(
-    () => allOperators?.find((o) => o.id === currentOperatorId) || null,
-    [allOperators, currentOperatorId]
+    () => allOperators?.find((o) => o.id === canonicalCurrentOpId || o.id === currentOperatorId) || null,
+    [allOperators, canonicalCurrentOpId, currentOperatorId]
   );
 
   // 删除当前自定义算子
@@ -476,8 +496,12 @@ export function PipelineCanvasStudio({
   // 算子平滑切换
   const handleSwitchOperator = (opId: string) => {
     pendingFitRef.current = true;
-    setCurrentOperatorId(opId);
-    const op = allOperators?.find((o) => o.id === opId);
+    const canonicalOpId =
+      opId === 'comp.corridor_compliance' && allOperators?.some((o) => o.id === 'roe.corridor_spatial_compliance')
+        ? 'roe.corridor_spatial_compliance'
+        : opId;
+    setCurrentOperatorId(canonicalOpId);
+    const op = allOperators?.find((o) => o.id === canonicalOpId || o.id === opId);
     evalApi
       .getOperatorPipeline(opId)
       .then(async (res) => {
@@ -533,6 +557,95 @@ export function PipelineCanvasStudio({
     const timer = setTimeout(() => setToastMessage(null), 3000);
   };
 
+  // 左侧组件栏折叠状态与 V4 算子规范映射
+  const [isLeftPaletteCollapsed, setIsLeftPaletteCollapsed] = useState(false);
+  const [v4OperatorMap, setV4OperatorMap] = useState<Record<string, V4OperatorClientSpec>>({});
+  const [v4RunModalOpen, setV4RunModalOpen] = useState(false);
+  const [v4RunLoading, setV4RunLoading] = useState(false);
+  const [v4RunError, setV4RunError] = useState<string | null>(null);
+  const [v4RunResult, setV4RunResult] = useState<{
+    status?: string;
+    missingDataReason?: string;
+    outputTable?: TableDataset;
+    executionTimeMs?: number;
+  } | null>(null);
+
+  const injectV4PythonCode = useCallback(
+    (targetNodes: CanvasNode[], opId: string, map: Record<string, V4OperatorClientSpec>): CanvasNode[] => {
+      const spec = map[opId];
+      if (!spec?.pythonCode) return targetNodes;
+      let changed = false;
+      const next = targetNodes.map((n) => {
+        if (n.type !== 'python_script') return n;
+        const currentCode = (n.config?.pythonScriptCode || '').trim();
+        if (!currentCode || currentCode.includes('# 在此编写自定义计算逻辑')) {
+          changed = true;
+          return {
+            ...n,
+            config: {
+              ...(n.config || {}),
+              pythonScriptCode: spec.pythonCode,
+            } as CanvasNode['config'],
+          };
+        }
+        return n;
+      });
+      return changed ? next : targetNodes;
+    },
+    []
+  );
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/v4/operators?layer=all')
+      .then((r) => r.json())
+      .then((res) => {
+        if (!alive || !res?.ok || !Array.isArray(res.operators)) return;
+        const map: Record<string, V4OperatorClientSpec> = {};
+        for (const op of res.operators) {
+          if (op?.id) map[op.id] = op;
+        }
+        setV4OperatorMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentOperatorId || !v4OperatorMap[currentOperatorId]) return;
+    setNodes((prev) => injectV4PythonCode(prev, currentOperatorId, v4OperatorMap));
+  }, [currentOperatorId, v4OperatorMap, injectV4PythonCode]);
+
+  const handleRunV4Preview = async () => {
+    if (!currentOperatorId) return;
+    setV4RunModalOpen(true);
+    setV4RunLoading(true);
+    setV4RunError(null);
+    setV4RunResult(null);
+    try {
+      const resp = await fetch('/api/v4/operators/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operatorId: currentOperatorId,
+          runId: boundRunId || undefined,
+        }),
+      });
+      const json = await resp.json();
+      if (!resp.ok || !json?.ok) {
+        setV4RunError(json?.error || `HTTP ${resp.status}`);
+      } else {
+        setV4RunResult(json.result || null);
+      }
+    } catch (err) {
+      setV4RunError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setV4RunLoading(false);
+    }
+  };
+
   // 初始化时尝试载入已保存的算子流水线
   useEffect(() => {
     if (effectiveInitialOpId) {
@@ -563,7 +676,7 @@ export function PipelineCanvasStudio({
           ...(injectedAlgorithm.type === 'data_input' ? { sourceType: 'csv', csvTable: 'gj11_weapon_fires.csv' } : {}),
           ...(injectedAlgorithm.type === 'inline_calc' ? { derivedColumns: [{ name: 'derived_metric', expression: 'ROUND(firing_range_nm * 1.852, 2)', outputType: 'numeric' }] } : {}),
           ...(injectedAlgorithm.type === 'group_agg' ? { aggregations: [{ op: 'AVERAGE', sourceField: 'damage_percent', targetField: 'avg_damage' }] } : {}),
-          ...(injectedAlgorithm.type === 'result_output' ? { targetField: 'computed_bvr_index', indicatorName: '待挂载业务指标' } : {}),
+          ...(injectedAlgorithm.type === 'result_output' ? { targetField: 'computed_bvr_index' } : {}),
           ...(injectedAlgorithm.type === 'spatial' ? { spatialRule: 'corridor_check', minSafeMarginKm: 15 } : {}),
           ...(injectedAlgorithm.type === 'python_script' ? { pythonScriptCode: '# Python 3.12 算法代码\ndef evaluate(context):\n    return {"status": "computed", "score": 1.0}\n' } : {}),
         },
@@ -1222,138 +1335,41 @@ export function PipelineCanvasStudio({
         }
       } else if (node.type === 'result_output') {
         const latency = Math.round((performance.now() - startT) * 10) / 10;
-        // 如果上游是合规任务级分组聚合，产出全局遵从率评估指标
-        const hasComplianceRate = inputDataset.rows.some((r: any) => r.MissionComplianceRate !== undefined);
-        const hasIdentRate = inputDataset.rows.some((r: any) => r.target_identification_rate !== undefined);
-        let outData: TableDataset;
-        if (hasComplianceRate) {
-          const avgCompliance = inputDataset.rows.length > 0
-            ? Math.round(
-                (inputDataset.rows.reduce((sum: number, r: any) => sum + (Number(r.MissionComplianceRate) || 0.95), 0) /
-                  inputDataset.rows.length) * 1000
-              ) / 1000
-            : 0.95;
-          const totalUnits = inputDataset.rows.reduce((sum: number, r: any) => sum + (Number(r.AssignedUnitsCount) || 2), 0) || 4;
-          const outSchema = [
-            { name: 'IndicatorID', displayName: '指标标识', type: 'string' as const },
-            { name: 'IndicatorName', displayName: '指标名称', type: 'string' as const },
-            { name: 'Side', displayName: '所属阵营', type: 'string' as const },
-            { name: 'OverallComplianceRate', displayName: '阵营全局任务走廊遵从率', type: 'number' as const },
-            { name: 'TotalMissions', displayName: '评估任务总数', type: 'number' as const },
-            { name: 'TotalAssignedUnits', displayName: '参演战机总数', type: 'number' as const },
-            { name: 'EvaluationGrade', displayName: '体系评级', type: 'string' as const },
-            { name: 'ThresholdStatus', displayName: '阈值准则达成状态', type: 'string' as const },
-          ];
-          const outRows = [
-            {
-              IndicatorID: node.config.targetField || 'roe.corridor_spatial_compliance',
-              IndicatorName: node.config.indicatorName || '任务走廊空间遵从率',
-              Side: 'Blue (蓝方)',
-              OverallComplianceRate: avgCompliance,
-              TotalMissions: inputDataset.rows.length,
-              TotalAssignedUnits: totalUnits,
-              EvaluationGrade: avgCompliance >= 0.85 ? '优秀 (达标)' : '不达标 (Fail)',
-              ThresholdStatus: avgCompliance >= 0.85 ? 'Pass (>= 0.85)' : 'Fail (< 0.85)',
+        const upstreamHasError = incomingEdges.some((e) => nodeMap.get(e.sourceNodeId)?.runtime?.status === 'error');
+        if (upstreamHasError) {
+          nodeMap.set(nodeId, {
+            ...node,
+            runtime: {
+              status: 'error',
+              errorMessage: '上游计算或聚合节点未产出有效数据，请检查上游节点配置',
+              latencyMs: latency,
             },
-          ];
-          outData = {
-            id: `dataset_${node.id}`,
-            schema: outSchema,
-            columns: outSchema,
-            rows: outRows,
-            totalRows: 1,
-          };
-        } else if (hasIdentRate) {
-          const rate = Number(inputDataset.rows[0]?.target_identification_rate) || 0.6667;
-          const identSchema = [
-            { name: 'IndicatorID', displayName: '指标标识', type: 'string' as const },
-            { name: 'IndicatorName', displayName: '指标名称', type: 'string' as const },
-            { name: 'TargetSide', displayName: '被探测方阵营', type: 'string' as const },
-            { name: 'IdentifiedTargets', displayName: '已识别目标数 (去重分子)', type: 'number' as const },
-            { name: 'TotalBaseline', displayName: '核心战力底数 (分母)', type: 'number' as const },
-            { name: 'TargetIdentificationRate', displayName: '目标识别率 (0-1)', type: 'number' as const },
-            { name: 'EvaluationGrade', displayName: '效能评估等级', type: 'string' as const },
-          ];
-          const identRows = [
-            {
-              IndicatorID: 'eff.target_identification_rate',
-              IndicatorName: node.config.indicatorName || '目标识别率',
-              TargetSide: '蓝方 (Blue)',
-              IdentifiedTargets: Number(inputDataset.rows[0]?.identified_target_count) || 6,
-              TotalBaseline: Number(inputDataset.rows[0]?.total_enemy_equipment_count) || 9,
-              TargetIdentificationRate: rate,
-              EvaluationGrade: rate >= 0.6 ? '优良 (0.6667)' : '一般',
-            },
-          ];
-          outData = {
-            id: `dataset_${node.id}`,
-            schema: identSchema,
-            columns: identSchema,
-            rows: identRows,
-            totalRows: 1,
-          };
-        } else {
-          // 检查直接上游是否有执行异常
-          const upstreamHasError = incomingEdges.some((e) => nodeMap.get(e.sourceNodeId)?.runtime?.status === 'error');
-          if (upstreamHasError) {
-            nodeMap.set(nodeId, {
-              ...node,
-              runtime: {
-                status: 'error',
-                errorMessage: '上游计算或聚合节点未产出有效数据，请检查上游节点配置',
-                latencyMs: latency,
-              },
-            });
-            continue;
-          }
-
-          const targetField = node.config?.targetField || 'metric_value';
-          const indicatorName = node.config?.indicatorName || node.title;
-          const unit = node.config?.indicatorUnit || '%';
-          const optimalDirection = node.config?.optimalDirection || 'larger_is_better';
-
-          const hasTargetField = inputDataset.rows?.some((r: any) => r[targetField] !== undefined);
-          if (hasTargetField) {
-            const outSchema = [
-              { name: 'Side', displayName: '评估阵营', type: 'string' as const },
-              { name: 'IndicatorName', displayName: '挂载指标', type: 'string' as const },
-              { name: targetField, displayName: `度量值 (${unit})`, type: 'number' as const },
-              { name: 'EvaluationGrade', displayName: '效能评估评级', type: 'string' as const },
-              { name: 'ThresholdStatus', displayName: '门限准则达成状态', type: 'string' as const },
-            ];
-            const outRows = inputDataset.rows.map((r: any) => {
-              const val = typeof r[targetField] === 'number' ? Math.round(r[targetField] * 1000) / 1000 : (Number(r[targetField]) || 1.0);
-              const side = r.Side || r.UnitSide || r.FiringUnitSide || r.TargetSide || 'Blue';
-              const isPass = optimalDirection === 'smaller_is_better' ? val <= 3.0 : val >= 0.5;
-              return {
-                Side: `${side} (${String(side).toLowerCase().includes('blue') ? '蓝方' : '红方'})`,
-                IndicatorName: indicatorName,
-                [targetField]: val,
-                EvaluationGrade: isPass ? '优秀 (达标)' : '需改进 (一般)',
-                ThresholdStatus: isPass ? 'Pass (符合条令要求)' : 'Alert (未达预期)',
-              };
-            });
-            outData = {
-              id: `dataset_${node.id}`,
-              schema: outSchema,
-              columns: outSchema,
-              rows: outRows,
-              totalRows: outRows.length,
-            };
-          } else {
-            outData = inputDataset;
-          }
+          });
+          continue;
         }
+
+        // 一库末节点严格透出上游真实产出的二维事实表 (TableDataset)，不做指标打分、不硬编码阵营
+        const cols = inputDataset.columns || inputDataset.schema || [];
+        const outData: TableDataset = {
+          ...inputDataset,
+          id: `dataset_${node.id}`,
+          schema: cols,
+          columns: cols,
+          rows: inputDataset.rows || [],
+          totalRows: inputDataset.rows?.length ?? inputDataset.totalRows ?? 0,
+        };
+        const targetField = node.config?.targetField;
+        const hasTargetCol = Boolean(targetField && cols.some((c: any) => c.name === targetField));
 
         nodeMap.set(nodeId, {
           ...node,
           runtime: {
             status: 'success',
             rowCount: outData.rows?.length || 0,
-            columnCount: (outData.columns || outData.schema || []).length,
+            columnCount: cols.length,
             latencyMs: latency,
             outputDataset: outData,
-            diffCols: hasComplianceRate ? ['OverallComplianceRate', 'EvaluationGrade', 'ThresholdStatus'] : [node.config?.targetField || 'metric_value'],
+            diffCols: hasTargetCol && targetField ? [targetField] : [],
           },
         });
       }
@@ -1374,7 +1390,7 @@ export function PipelineCanvasStudio({
       data_input: '表输入',
       inline_calc: '公式计算：新衍生计算',
       group_agg: '数据汇总：聚合统计',
-      result_output: '结果输出：三库直通指标',
+      result_output: '二维表输出：TableDataset',
       spatial: '空间几何：任务走廊/合围判定',
       python_script: 'Python脚本：科学计算执行器',
     };
@@ -1701,18 +1717,36 @@ export function PipelineCanvasStudio({
     const graphWidth = maxX - minX + padding * 2;
     const graphHeight = maxY - minY + padding * 2;
     const isDrawerOpen = Boolean(selectedNodeId);
-    const effectiveWidth = isDrawerOpen && rect.width > 900 ? Math.max(rect.width - 480, 260) : rect.width;
+    const activeNode = nodes.find((n) => n.id === selectedNodeId);
+    const drawerReservedWidth = activeNode?.type === 'python_script' ? 860 : 480;
+    const effectiveWidth =
+      isDrawerOpen && rect.width > drawerReservedWidth + 220
+        ? Math.max(rect.width - drawerReservedWidth, 260)
+        : rect.width;
     const scaleX = effectiveWidth / graphWidth;
     const scaleY = rect.height / graphHeight;
-    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.5), 1.15);
+    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.15);
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    const newPanX = effectiveWidth / 2 - centerX * newZoom + (isDrawerOpen && rect.width > 900 ? 10 : 0);
+    const newPanX = effectiveWidth / 2 - centerX * newZoom + (isDrawerOpen && rect.width > drawerReservedWidth + 220 ? 10 : 0);
     const newPanY = rect.height / 2 - centerY * newZoom;
     setViewport({ panX: Math.round(newPanX), panY: Math.round(newPanY), zoom: Math.round(newZoom * 100) / 100 });
   };
 
-  // 首次进入画布或切换算子载入流水线后，自动居中避开右侧属性抽屉
+  // 选中宽屏节点时自动折叠左侧组件栏，并在视口变化后重算居中
+  useEffect(() => {
+    const activeNode = nodes.find((n) => n.id === selectedNodeId);
+    if (activeNode?.type === 'python_script') {
+      setIsLeftPaletteCollapsed(true);
+    }
+    pendingFitRef.current = true;
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    pendingFitRef.current = true;
+  }, [isLeftPaletteCollapsed]);
+
+  // 首次进入画布、切换算子或折叠侧栏后，自动居中避开右侧属性抽屉
   useEffect(() => {
     if (!pendingFitRef.current || nodes.length === 0) return;
     const rafId = window.requestAnimationFrame(() => {
@@ -1722,7 +1756,7 @@ export function PipelineCanvasStudio({
       }
     });
     return () => window.cancelAnimationFrame(rafId);
-  }, [nodes, currentOperatorId, selectedNodeId]);
+  }, [nodes, currentOperatorId, selectedNodeId, isLeftPaletteCollapsed]);
 
   // 以鼠标光标所在点为不动锚点的平滑缩放
   const handleWheel = (e: React.WheelEvent) => {
@@ -1773,31 +1807,48 @@ export function PipelineCanvasStudio({
           {allOperators && allOperators.length > 0 && (
             <div className="flex items-center shrink-0">
               <select
-                value={currentOperatorId}
+                value={canonicalCurrentOpId}
                 onChange={(e) => handleSwitchOperator(e.target.value)}
                 className="rounded-lg border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs font-medium text-cyan-200 hover:border-cyan-500/50 hover:bg-slate-800/80 focus:border-cyan-400 focus:outline-none shadow-sm cursor-pointer transition max-w-[200px] sm:max-w-[260px] md:max-w-[320px] truncate"
                 title="切换编排算子"
               >
-                <optgroup label="── 1. 合规域 (Compliance · 5 个算子) ──">
-                  <option value="comp.corridor_compliance">comp.corridor_compliance · 任务走廊空间遵从率</option>
-                  <option value="comp.wra_compliance">comp.wra_compliance · WRA 射击准则合规率</option>
-                  <option value="comp.emcon_silence_discipline">comp.emcon_silence_discipline · 电磁静默纪律遵从度</option>
-                  <option value="comp.friendly_fire_safety">comp.friendly_fire_safety · 零友军误伤安全红线率</option>
-                  <option value="comp.engagement_range_discipline">comp.engagement_range_discipline · 超视距有效射程交战纪律率</option>
-                </optgroup>
-                <optgroup label="── 2. 效能域基础算子 (Effectiveness) ──">
-                  <option value="eff.sensor_detection_rate">eff.sensor_detection_rate · 传感器目标探测率</option>
-                  <option value="eff.target_identification_rate">eff.target_identification_rate · 目标属性识别率</option>
-                </optgroup>
-                <optgroup label="── 其他领域算子 ──">
-                  {allOperators
-                    .filter((op) => op.category !== 'compliance' && !['eff.sensor_detection_rate', 'eff.target_identification_rate'].includes(op.id))
-                    .map((op) => (
-                      <option key={op.id} value={op.id}>
-                        {op.id} · {op.name}
-                      </option>
-                    ))}
-                </optgroup>
+                {/* 兜底：若当前算子未在列表中匹配到，单独立项展示，杜绝无对应 option 时浏览器默认显示首项的错位问题 */}
+                {canonicalCurrentOpId && !allOperators.some((op) => op.id === canonicalCurrentOpId) && (
+                  <option value={canonicalCurrentOpId}>
+                    {canonicalCurrentOpId} · {currentOpMeta?.name || '当前算子'}
+                  </option>
+                )}
+                {(['time', 'effectiveness', 'situation', 'compliance', 'cost'] as const).map((cat) => {
+                  const catOps = allOperators.filter((op) => op.category === cat);
+                  if (catOps.length === 0) return null;
+                  const catNames: Record<string, string> = {
+                    time: '时效域 (Time)',
+                    effectiveness: '效能域 (Effectiveness)',
+                    situation: '态势域 (Situation)',
+                    compliance: '合规域 (Compliance)',
+                    cost: '成本域 (Cost)',
+                  };
+                  return (
+                    <optgroup key={cat} label={`── ${catNames[cat] || cat} (${catOps.length}) ──`}>
+                      {catOps.map((op) => (
+                        <option key={op.id} value={op.id}>
+                          {op.id} · {op.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+                {allOperators.some((op) => !['time', 'effectiveness', 'situation', 'compliance', 'cost'].includes(op.category)) && (
+                  <optgroup label="── 其他自定义算子 ──">
+                    {allOperators
+                      .filter((op) => !['time', 'effectiveness', 'situation', 'compliance', 'cost'].includes(op.category))
+                      .map((op) => (
+                        <option key={op.id} value={op.id}>
+                          {op.id} · {op.name}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
               </select>
             </div>
           )}
@@ -1910,6 +1961,21 @@ export function PipelineCanvasStudio({
 
             {isMoreMenuOpen && (
               <div className="absolute right-0 top-full mt-1.5 w-48 rounded-xl border border-slate-700/80 bg-[#0f172a] p-1.5 shadow-2xl z-50">
+                {v4OperatorMap[currentOperatorId] && (
+                  <button
+                    type="button"
+                    disabled={v4RunLoading}
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      void handleRunV4Preview();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-violet-300 hover:bg-violet-500/15 transition text-left cursor-pointer disabled:opacity-50"
+                    title="调用 V4 内核独立执行该算子并查看二维透视表"
+                  >
+                    <Table2 className="h-3.5 w-3.5 text-violet-400" />
+                    <span>{v4RunLoading ? 'V4 计算中...' : 'V4 内核独立试算'}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -1962,24 +2028,41 @@ export function PipelineCanvasStudio({
       
 {/* ═════════════════════ 2. 主体工作区 ═════════════════════ */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* ─── 左侧算子库组件栏 ─── */}
-        <div className="w-56 border-r border-slate-800 bg-[#0a0f1d] p-3 flex flex-col space-y-3 z-20 shadow-xl">
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-            基础算法组件 (支持点击或拖拽)
+        {/* ─── 左侧算子库组件栏（支持一键折叠释放画布空间） ─── */}
+        <div
+          className={`border-r border-slate-800 bg-[#0a0f1d] flex flex-col z-20 shadow-xl transition-all duration-200 shrink-0 ${
+            isLeftPaletteCollapsed ? 'w-12 p-1.5 items-center space-y-2' : 'w-56 p-3 space-y-3'
+          }`}
+        >
+          <div className={`flex items-center ${isLeftPaletteCollapsed ? 'justify-center w-full' : 'justify-between'}`}>
+            {!isLeftPaletteCollapsed && (
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">
+                基础算法组件
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsLeftPaletteCollapsed((prev) => !prev)}
+              title={isLeftPaletteCollapsed ? '展开基础算法组件栏' : '收起组件栏以扩大画布视野'}
+              className="rounded-lg border border-slate-800 bg-slate-900/90 p-1 text-slate-400 hover:text-white hover:border-slate-700 transition cursor-pointer"
+            >
+              {isLeftPaletteCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+            </button>
           </div>
 
-          <div className="space-y-2">
+          <div className={isLeftPaletteCollapsed ? 'space-y-1.5 w-full flex flex-col items-center' : 'space-y-2'}>
             {[
               { type: 'data_input' as PipelineNodeType, name: '数据输入', desc: 'CSV 事件表 / 仿真切片', icon: Database, color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
               { type: 'inline_calc' as PipelineNodeType, name: '公式计算', desc: 'LibFormula 行内衍生', icon: Calculator, color: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10' },
               { type: 'group_agg' as PipelineNodeType, name: '跨行汇总', desc: 'Group By 聚合统计', icon: BarChart3, color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' },
-              { type: 'result_output' as PipelineNodeType, name: '结果输出', desc: '评估指标挂载输出', icon: Target, color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+              { type: 'result_output' as PipelineNodeType, name: '二维表输出', desc: '纯二维事实表 (TableDataset) 输出', icon: Target, color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
               { type: 'spatial' as PipelineNodeType, name: '空间几何', desc: '任务走廊空间安全裕度', icon: Compass, color: 'text-violet-400 border-violet-500/30 bg-violet-500/10' },
               { type: 'python_script' as PipelineNodeType, name: 'Python脚本', desc: 'Python 科学计算扩展', icon: Code2, color: 'text-fuchsia-400 border-fuchsia-500/30 bg-fuchsia-500/10' },
             ].map((item) => (
               <div
                 key={item.type}
                 draggable={true}
+                title={isLeftPaletteCollapsed ? `${item.name}：${item.desc}（点击或拖拽添加）` : undefined}
                 onDragStart={(e) => {
                   e.dataTransfer.setData('application/pipeline-node-type', item.type);
                   e.dataTransfer.effectAllowed = 'copy';
@@ -1998,25 +2081,33 @@ export function PipelineCanvasStudio({
                   setNodes((prev) => [...prev, newNode]);
                   setSelectedNodeId(newId);
                 }}
-                className={`flex items-start gap-2.5 rounded-xl border p-2.5 cursor-grab active:cursor-grabbing hover:scale-[1.02] transition shadow-md ${item.color}`}
+                className={
+                  isLeftPaletteCollapsed
+                    ? `flex items-center justify-center rounded-lg border p-2 cursor-grab active:cursor-grabbing hover:scale-105 transition shadow-sm ${item.color}`
+                    : `flex items-start gap-2.5 rounded-xl border p-2.5 cursor-grab active:cursor-grabbing hover:scale-[1.02] transition shadow-md ${item.color}`
+                }
               >
-                <item.icon className="h-4 w-4 mt-0.5 shrink-0" />
-                <div>
-                  <div className="font-semibold text-xs text-slate-100">{item.name}</div>
-                  <div className="text-[10px] text-slate-400">{item.desc}</div>
-                </div>
+                <item.icon className={isLeftPaletteCollapsed ? 'h-4 w-4 shrink-0' : 'h-4 w-4 mt-0.5 shrink-0'} />
+                {!isLeftPaletteCollapsed && (
+                  <div>
+                    <div className="font-semibold text-xs text-slate-100">{item.name}</div>
+                    <div className="text-[10px] text-slate-400">{item.desc}</div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
-          <div className="mt-auto rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-[10px] text-slate-400 space-y-1">
-            <div className="font-medium text-slate-300">操作指引</div>
-            <div>• 拖拽左侧构件：直接拖入画布放置节点</div>
-            <div>• 滚轮缩放：画布视口缩放 (0.25x ~ 2.5x)</div>
-            <div>• 拖拽空白区域：平移视口</div>
-            <div>• 节点右下角 <span className="text-sky-400 font-bold">(+)</span>：添加下游算子节点</div>
-            <div>• 保存流水线：点击顶部[保存流水线]确认持久化</div>
-          </div>
+          {!isLeftPaletteCollapsed && (
+            <div className="mt-auto rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-[10px] text-slate-400 space-y-1">
+              <div className="font-medium text-slate-300">操作指引</div>
+              <div>• 拖拽左侧构件：直接拖入画布放置节点</div>
+              <div>• 滚轮缩放：画布视口缩放 (0.25x ~ 2.5x)</div>
+              <div>• 拖拽空白区域：平移视口</div>
+              <div>• 节点右下角 <span className="text-sky-400 font-bold">(+)</span>：添加下游算子节点</div>
+              <div>• 保存流水线：点击顶部[保存流水线]确认持久化</div>
+            </div>
+          )}
         </div>
 
         {/* ─── 中置无界网格 DAG 画布 ─── */}
@@ -2043,7 +2134,7 @@ export function PipelineCanvasStudio({
               data_input: '表输入：数据接入',
               inline_calc: '公式计算：行内衍生',
               group_agg: '数据汇总：聚合统计',
-              result_output: '结果输出：业务指标',
+              result_output: '二维表输出：TableDataset',
               spatial: '空间几何：任务走廊判定',
               python_script: 'Python脚本：科学计算扩展',
             };
@@ -2219,6 +2310,80 @@ export function PipelineCanvasStudio({
                 handleSwitchOperator('roe.corridor_spatial_compliance');
               }}
             />
+          </div>
+        </div>
+      )}
+      {/* ═════════════════════ 7. V4 算子算法与真机二维表试算弹窗 ═════════════════════ */}
+      {v4RunModalOpen && v4OperatorMap[currentOperatorId] && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-5xl max-h-[90vh] rounded-2xl border border-slate-800 bg-[#0d1424] shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <Code2 className="h-4 w-4 text-violet-400" />
+                <span className="text-sm font-bold text-slate-100">
+                  V4 算子内部算法与二维表试算 · {currentOperatorId}
+                </span>
+                <span className="rounded border border-violet-500/40 bg-violet-500/15 px-2 py-0.5 text-[11px] font-semibold text-violet-300">
+                  {v4OperatorMap[currentOperatorId].layer === 'fact' ? 'V4 事实算子' : 'V4 汇总算子'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setV4RunModalOpen(false)}
+                className="rounded-lg border border-slate-700 bg-slate-800 p-1 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                  <div className="text-slate-400 font-semibold mb-1">必需仿真底表</div>
+                  <div className="text-cyan-300 font-mono">
+                    {v4OperatorMap[currentOperatorId].requiredTables.join(', ') || '无'}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                  <div className="text-slate-400 font-semibold mb-1">输出二维表字段</div>
+                  <div className="text-emerald-300 font-mono">
+                    {v4OperatorMap[currentOperatorId].outputColumnNames.join(', ') || '动态列'}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/90 overflow-hidden">
+                <div className="border-b border-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>内置 Python 算子源码</span>
+                  <button
+                    type="button"
+                    onClick={() => void handleRunV4Preview()}
+                    disabled={v4RunLoading}
+                    className="rounded-md border border-violet-500/50 bg-violet-600/30 px-2.5 py-1 text-[11px] font-semibold text-violet-200 hover:bg-violet-600/50 cursor-pointer disabled:opacity-50"
+                  >
+                    {v4RunLoading ? '重新计算中...' : '重新试算'}
+                  </button>
+                </div>
+                <pre className="max-h-56 overflow-auto p-3.5 text-[11px] leading-relaxed text-slate-200 font-mono select-text">
+                  {v4OperatorMap[currentOperatorId].pythonCode}
+                </pre>
+              </div>
+              {v4RunError && (
+                <div className="rounded-xl border border-rose-500/40 bg-rose-950/40 px-4 py-3 text-xs text-rose-200">
+                  试算失败：{v4RunError}
+                </div>
+              )}
+              {v4RunResult?.status === 'unavailable' && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-950/40 px-4 py-3 text-xs text-amber-200">
+                  数据缺失 (unavailable)：{v4RunResult.missingDataReason || '未命中所需底表数据'}
+                </div>
+              )}
+              {v4RunResult?.outputTable && (
+                <V4TablePivotPreview
+                  dataset={v4RunResult.outputTable}
+                  title={`V4 真机二维表输出 (${v4RunResult.executionTimeMs ?? 0} ms)`}
+                  maxRows={100}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

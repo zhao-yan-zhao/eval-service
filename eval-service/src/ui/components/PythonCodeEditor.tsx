@@ -403,6 +403,7 @@ export function PythonCodeEditor({
   const [isSnippetsOpen, setIsSnippetsOpen] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [insertMode, setInsertMode] = useState<'column_name' | 'extract_stmt'>('column_name');
+  const [rightInspectorTab, setRightInspectorTab] = useState<'assets' | 'contract'>('assets');
   const [hoveredCol, setHoveredCol] = useState<{ col: UpstreamTableColumn; tableName: string; x: number; y: number } | null>(null);
   const [isAccordionOpen, setIsAccordionOpen] = useState(false);
   const [debugTab, setDebugTab] = useState<'grid' | 'stdout' | 'viz'>('grid');
@@ -880,62 +881,85 @@ output_df = pd.DataFrame({
     return upstreamTables.reduce((acc, t) => acc + (t.columns?.length || 0), 0);
   }, [upstreamTables]);
 
-  // 渲染单个数据资产探针组件 (可在右侧侧栏或紧凑展开浮层复用)
+  // 渲染单个数据资产探针组件 (可在右侧侧栏或紧凑展开浮层复用，采用 Tab 切换保证纵向空间充足)
   const renderDataAssetsInspector = (isRightSidebar = false) => (
     <div className={`flex flex-col h-full bg-[#070b16] ${isRightSidebar ? 'p-3' : 'p-3'}`}>
-      {/* 资产探针顶栏 */}
-      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-        <span className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
-          <Database className="h-3.5 w-3.5 text-cyan-400" />
-          <span>上游数据资产 ({upstreamTables.length} 表 · {totalUpstreamColsCount} 列)</span>
-        </span>
-        <div className="flex items-center gap-1 bg-slate-900 rounded p-0.5 border border-slate-800 text-[10px]">
-          <button
-            type="button"
-            onClick={() => setInsertMode('column_name')}
-            className={`px-1.5 py-0.5 rounded text-[9px] ${
-              insertMode === 'column_name' ? 'bg-fuchsia-600 text-white font-medium' : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="点击字段在光标处插入 '字段名'"
-          >
-            '列名'
-          </button>
-          <button
-            type="button"
-            onClick={() => setInsertMode('extract_stmt')}
-            className={`px-1.5 py-0.5 rounded text-[9px] ${
-              insertMode === 'extract_stmt' ? 'bg-fuchsia-600 text-white font-medium' : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="点击字段在光标处插入 C(df, '字段名')"
-          >
-            C(df,'列')
-          </button>
-        </div>
+      {/* 顶部双 Tab 切换：上游资产 vs 输出契约 */}
+      <div className="flex items-center gap-1 pb-2 border-b border-slate-800/80 shrink-0">
+        <button
+          type="button"
+          onClick={() => setRightInspectorTab('assets')}
+          className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-semibold transition ${
+            rightInspectorTab === 'assets'
+              ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+          }`}
+        >
+          <Database className="h-3.5 w-3.5" />
+          <span>上游资产 ({upstreamTables.length}表·{totalUpstreamColsCount}列)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setRightInspectorTab('contract')}
+          className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-semibold transition ${
+            rightInspectorTab === 'contract'
+              ? 'bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/40'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+          }`}
+        >
+          <Target className="h-3.5 w-3.5" />
+          <span>输出契约 ({outputColumns.length}列)</span>
+        </button>
       </div>
 
-      {/* 搜索框 */}
-      <div className="relative my-2">
-        <Search className="h-3 w-3 absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
-        <input
-          type="text"
-          value={searchKeyword}
-          onChange={(e) => setSearchKeyword(e.target.value)}
-          placeholder="快速搜索表名、字段、中文说明..."
-          className="w-full pl-7 pr-6 py-1 rounded-md border border-slate-700/80 bg-slate-900/90 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
-        />
-        {searchKeyword && (
-          <button
-            type="button"
-            onClick={() => setSearchKeyword('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
+      {rightInspectorTab === 'assets' ? (
+        <div className="flex-1 flex flex-col min-h-0 pt-2">
+          <div className="flex items-center justify-between gap-2 mb-2 shrink-0">
+            <div className="relative flex-1">
+              <Search className="h-3 w-3 absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                placeholder="搜索表名、字段、中文说明..."
+                className="w-full pl-7 pr-6 py-1 rounded-md border border-slate-700/80 bg-slate-900/90 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+              />
+              {searchKeyword && (
+                <button
+                  type="button"
+                  onClick={() => setSearchKeyword('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-0.5 bg-slate-900 rounded p-0.5 border border-slate-800 text-[10px] shrink-0">
+              <button
+                type="button"
+                onClick={() => setInsertMode('column_name')}
+                className={`px-1.5 py-0.5 rounded text-[9px] ${
+                  insertMode === 'column_name' ? 'bg-fuchsia-600 text-white font-medium' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="点击字段在光标处插入 '字段名'"
+              >
+                '列名'
+              </button>
+              <button
+                type="button"
+                onClick={() => setInsertMode('extract_stmt')}
+                className={`px-1.5 py-0.5 rounded text-[9px] ${
+                  insertMode === 'extract_stmt' ? 'bg-fuchsia-600 text-white font-medium' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="点击字段在光标处插入 C(df, '字段名')"
+              >
+                C(df,'列')
+              </button>
+            </div>
+          </div>
 
-      {/* 上游数据表与字段树 (带滚动条与悬停样本预览) */}
-      <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+          {/* 上游数据表与字段树 (完整纵向高度) */}
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
         {filteredUpstreamTables.length > 0 ? (
           filteredUpstreamTables.map((tbl) => {
             const varName = tbl.tableName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
@@ -1010,10 +1034,11 @@ output_df = pd.DataFrame({
             {searchKeyword ? '未匹配到包含该关键词的表或字段' : '当前节点暂无直接上游连线'}
           </div>
         )}
-      </div>
-
-      {/* 产出列契约声明与超时参数管理 (置于右栏底端) */}
-      <div className="pt-2.5 mt-2 border-t border-slate-800/80 space-y-2 shrink-0">
+          </div>
+        </div>
+      ) : (
+        /* 产出列契约声明与超时参数管理 (独立 Tab 完整空间) */
+        <div className="flex-1 overflow-y-auto pt-3 space-y-3 min-h-0">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1">
             <Target className="h-3 w-3 text-cyan-400" />
@@ -1151,7 +1176,8 @@ output_df = pd.DataFrame({
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 

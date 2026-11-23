@@ -15,7 +15,10 @@ import type {
   CustomOperatorDefinition,
   DatasetColumn,
   DerivedColumnConfig,
+  EffectDefinition,
   EvalSummaryV2,
+  EvaluationDagOutput,
+  EvaluationSystemDag,
   EvidenceRef,
   F1OutputCatalog,
   FieldDataType,
@@ -26,10 +29,12 @@ import type {
   IndicatorSystem,
   MetricAtomMeta,
   MetricAtomResult,
+  MetricGraphDefinition,
   OperatorCategory,
   OperatorComparisonRow,
   OperatorDefaultParams,
   OperatorFieldContract,
+  OperatorNodeExecutionResult,
   OperatorOutputType,
   OperatorSourceBinding,
   OperatorSweepPoint,
@@ -61,7 +66,10 @@ export type {
   CustomOperatorDefinition,
   DatasetColumn,
   DerivedColumnConfig,
+  EffectDefinition,
   EvalSummaryV2,
+  EvaluationDagOutput,
+  EvaluationSystemDag,
   EvidenceRef,
   F1OutputCatalog,
   FieldDataType,
@@ -72,10 +80,12 @@ export type {
   IndicatorSystem,
   MetricAtomMeta,
   MetricAtomResult,
+  MetricGraphDefinition,
   OperatorCategory,
   OperatorComparisonRow,
   OperatorDefaultParams,
   OperatorFieldContract,
+  OperatorNodeExecutionResult,
   OperatorOutputType,
   OperatorSourceBinding,
   OperatorSweepPoint,
@@ -1103,5 +1113,112 @@ export const evalApi = {
     requestJson<{ ok: boolean; message: string; runsCount: number }>('/api/sample-data/load-builtin', {
       method: 'POST',
       body: JSON.stringify({ force }),
+    }),
+
+  // ─── V4 全链路 DAG 评估中台接口 (/api/v4/*) ───
+  listV4Operators: () =>
+    requestJson<{ ok: boolean; operators: Array<Record<string, unknown>> }>('/api/v4/operators'),
+
+  runV4Operator: (body: {
+    operatorId: string;
+    runId?: string;
+    dataSourceId?: string;
+    csvDir?: string;
+    inputDfDict?: Record<string, unknown>;
+    params?: Record<string, unknown>;
+  }) =>
+    requestJson<{ ok: boolean; result: OperatorNodeExecutionResult }>('/api/v4/operators/run', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  listV4Effects: () =>
+    requestJson<{ ok: boolean; effects: EffectDefinition[] }>('/api/v4/effects'),
+
+  saveV4Effect: (effect: EffectDefinition) =>
+    requestJson<{ ok: boolean; effect: EffectDefinition }>('/api/v4/effects', {
+      method: 'POST',
+      body: JSON.stringify({ effect }),
+    }),
+
+  deleteV4Effect: (effectId: string) =>
+    requestJson<{ ok: boolean; effectId: string; deleted: boolean }>(
+      `/api/v4/effects/${encodeURIComponent(effectId)}`,
+      { method: 'DELETE' },
+    ),
+
+  listV4MetricGraphs: () =>
+    requestJson<{ ok: boolean; graphs: MetricGraphDefinition[] }>('/api/v4/metric-graphs'),
+
+  saveV4MetricGraph: (graph: MetricGraphDefinition) =>
+    requestJson<{ ok: boolean; graph: MetricGraphDefinition }>('/api/v4/metric-graphs', {
+      method: 'POST',
+      body: JSON.stringify({ graph }),
+    }),
+
+  deleteV4MetricGraph: (graphId: string) =>
+    requestJson<{ ok: boolean; graphId: string; deleted: boolean }>(
+      `/api/v4/metric-graphs/${encodeURIComponent(graphId)}`,
+      { method: 'DELETE' },
+    ),
+
+  executeV4MetricGraph: (body: {
+    graph?: MetricGraphDefinition;
+    graphId?: string;
+    runId?: string;
+    dataSourceId?: string;
+    csvDir?: string;
+    operatorResults?: Record<string, unknown>;
+    paramOverrides?: Record<string, Record<string, unknown>>;
+    globalParams?: Record<string, unknown>;
+  }) =>
+    requestJson<Record<string, unknown>>('/api/v4/metric-graphs/execute', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  listV4SystemDags: () =>
+    requestJson<{ ok: boolean; systems: EvaluationSystemDag[] }>('/api/v4/system-dags'),
+
+  saveV4SystemDag: (system: EvaluationSystemDag, normalizeWeights = false) =>
+    requestJson<{ ok: boolean; system: EvaluationSystemDag }>('/api/v4/system-dags', {
+      method: 'POST',
+      body: JSON.stringify({ system, normalizeWeights }),
+    }),
+
+  deleteV4SystemDag: (systemId: string) =>
+    requestJson<{ ok: boolean; systemId: string; deleted: boolean }>(
+      `/api/v4/system-dags/${encodeURIComponent(systemId)}`,
+      { method: 'DELETE' },
+    ),
+
+  validateV4SystemDag: (body: {
+    system?: EvaluationSystemDag;
+    systemId?: string;
+    normalizeWeights?: boolean;
+  }) =>
+    requestJson<Record<string, unknown>>('/api/v4/system-dags/validate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  evaluateV4SystemDag: (body: {
+    system?: EvaluationSystemDag;
+    systemId?: string;
+    metricGraph?: MetricGraphDefinition;
+    metricGraphId?: string;
+    metricInputs?: Record<string, unknown>;
+    runId?: string;
+    dataSourceId?: string;
+    csvDir?: string;
+  }) =>
+    requestJson<{
+      ok: boolean;
+      output: EvaluationDagOutput & { resolvedParamOverrides?: Record<string, Record<string, unknown>> };
+      metricGraphResult?: Record<string, unknown>;
+      operatorResults?: Record<string, unknown>;
+    }>('/api/v4/system-dags/evaluate', {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 };

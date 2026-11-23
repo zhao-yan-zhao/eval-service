@@ -396,31 +396,6 @@ export function OperatorInlineEditor({
           />
         </label>
 
-        <label className="block">
-          <span className="text-slate-400 block mb-1">输出单位</span>
-          <input
-            aria-label="编辑算子单位"
-            value={unit}
-            onChange={(e) => setUnit(e.target.value)}
-            placeholder="秒 / 命中率 / nm"
-            className="w-full rounded-lg border border-white/15 bg-slate-900 px-2.5 py-1.5 text-slate-100"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-slate-400 block mb-1">优劣方向</span>
-          <select
-            aria-label="编辑算子优劣方向"
-            value={direction}
-            onChange={(e) => setDirection(e.target.value as MetricAtomMeta['defaultOptimalDirection'])}
-            className="w-full rounded-lg border border-white/15 bg-slate-900 px-2.5 py-1.5 text-slate-100"
-          >
-            <option value="smaller_is_better">smaller_is_better（越小越好）</option>
-            <option value="larger_is_better">larger_is_better（越大越好）</option>
-            <option value="range_bounded">range_bounded（区间收敛）</option>
-          </select>
-        </label>
-
         {isCustom && (
           <>
             <label className="block">
@@ -436,21 +411,6 @@ export function OperatorInlineEditor({
                 <option value="situation">situation (态势域)</option>
                 <option value="compliance">compliance (合规域)</option>
                 <option value="cost">cost (成本域)</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-slate-400 block mb-1">输出类型</span>
-              <select
-                aria-label="编辑自定义算子输出类型"
-                value={outputType}
-                onChange={(e) => setOutputType(e.target.value as MetricAtomMeta['outputType'])}
-                className="w-full rounded-lg border border-white/15 bg-slate-900 px-2.5 py-1.5 text-slate-100"
-              >
-                <option value="score">score</option>
-                <option value="ratio">ratio</option>
-                <option value="rate">rate</option>
-                <option value="count">count</option>
-                <option value="duration_seconds">duration_seconds</option>
               </select>
             </label>
           </>

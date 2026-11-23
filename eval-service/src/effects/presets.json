@@ -1,0 +1,442 @@
+[
+  {
+    "effectId": "eff_strike_mission",
+    "name": "对地/海突击任务达成效果",
+    "description": "评估对地/对海突击任务目标毁伤与任务完成效用，向下游突击指标透传毁伤判定阈值",
+    "isBuiltin": true,
+    "domainTag": "firepower",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "strike.composite_mission_metrics",
+      "reduce": "mean",
+      "paramOverrides": {
+        "damageThreshold": 0.5
+      },
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.3,
+        "optimal": 0.95
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_patrol_coverage",
+    "name": "空中巡逻掩护效果",
+    "description": "评估空中巡逻任务在阵位保持时长与区域掩护效果，约束最低在位时长与最大可容忍损失",
+    "isBuiltin": true,
+    "domainTag": "survivability",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "patrol.composite_mission_metrics",
+      "reduce": "mean",
+      "paramOverrides": {
+        "minOnStationSec": 1800,
+        "maxLosses": 1
+      },
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.4,
+        "optimal": 0.95
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_isr_awareness",
+    "name": "侦察预警态势感知效果",
+    "description": "评估对战场目标的发现概率与早期预警覆盖效用",
+    "isBuiltin": true,
+    "domainTag": "isr",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "isr.detection_rate",
+      "reduce": "mean",
+      "paramOverrides": {
+        "minDetectionConfidence": 0.7
+      },
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.3,
+        "optimal": 0.95
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_c2_decision_tempo",
+    "name": "指挥控制态势完整效果",
+    "description": "评估指挥控制节点战场态势掌握完整度与指挥决策连续性效用",
+    "isBuiltin": true,
+    "domainTag": "c2",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "c2.situational_completeness",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.4,
+        "optimal": 0.95
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_kill_chain_synergy",
+    "name": "体系杀伤链协同效果",
+    "description": "评估探测-识别-决策-打击全链路闭环敏捷性；支持单指标映射或下级效果短板敏感几何平均叠加",
+    "isBuiltin": true,
+    "domainTag": "synergy",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "fire_control.kill_chain_closure_time",
+      "reduce": "mean",
+      "paramOverrides": {
+        "maxClosureTimeoutSec": 300
+      },
+      "scoringRule": {
+        "type": "smaller_is_better",
+        "optimal": 30,
+        "worst": 600
+      }
+    },
+    "aggregation": {
+      "strategy": "geometric_mean",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_cost_exchange",
+    "name": "作战效费交换效果",
+    "description": "评估分方有效生存战损交换比，衡量兵力兵器消耗的经济性与交换优势",
+    "isBuiltin": true,
+    "domainTag": "cost",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "cost.effective_exchange_ratio",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.5,
+        "optimal": 3.0
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_air_superiority",
+    "name": "复合制空效果",
+    "description": "高阶复合效果模板：通过加权和叠加进攻突击、空中巡逻掩护与态势感知等下级效果形成制空评估分",
+    "isBuiltin": true,
+    "domainTag": "firepower",
+    "role": "effect",
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "gate_fratricide_zero",
+    "name": "误伤红线硬门控",
+    "description": "安全红线硬门控：任一友军误伤事件发生即判定 DISQUALIFIED 并将体系生效总分封顶至 39 分",
+    "isBuiltin": true,
+    "domainTag": "survivability",
+    "role": "gate",
+    "gateMode": "hard",
+    "metricBinding": {
+      "metricId": "roe.fratricide_count",
+      "reduce": "sum",
+      "paramOverrides": {
+        "zeroTolerance": true
+      },
+      "scoringRule": {
+        "type": "smaller_is_better",
+        "optimal": 0,
+        "worst": 1
+      },
+      "alarmThreshold": {
+        "operator": ">",
+        "value": 0,
+        "severity": "major",
+        "messageTemplate": "触发友军误伤红线，发生误伤事件"
+      }
+    },
+    "aggregation": {
+      "strategy": "maximin",
+      "missingPolicy": "fail"
+    }
+  },
+  {
+    "effectId": "gate_roe_corridor",
+    "name": "航路走廊遵从软告警门控",
+    "description": "空域协同软门控：当任务航路走廊空间遵从率低于阈值时触发 WARNING 告警，不封顶总分",
+    "isBuiltin": true,
+    "domainTag": "c2",
+    "role": "gate",
+    "gateMode": "soft",
+    "metricBinding": {
+      "metricId": "roe.corridor_spatial_compliance",
+      "reduce": "mean",
+      "paramOverrides": {
+        "minSafeMarginKm": 15
+      },
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.6,
+        "optimal": 0.98
+      },
+      "alarmThreshold": {
+        "operator": "<",
+        "value": 0.85,
+        "severity": "minor",
+        "messageTemplate": "航路走廊空间遵从率低于 85%"
+      }
+    },
+    "aggregation": {
+      "strategy": "maximin",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_support_mission",
+    "name": "空中支援保障达成效果",
+    "description": "评估空中加油/预警等支援任务在位保持时长与计划达成效用",
+    "isBuiltin": true,
+    "domainTag": "synergy",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "support.composite_mission_metrics",
+      "reduce": "mean",
+      "paramOverrides": {
+        "minOnStationSec": 1800
+      },
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.3,
+        "optimal": 0.95
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_equipment_detection",
+    "name": "装备雷达探测效能",
+    "description": "评估各型号雷达首次发现目标的平均距离与远距态势捕获能力",
+    "isBuiltin": true,
+    "domainTag": "isr",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "detection.model_detection",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 30,
+        "optimal": 250
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_weapon_striking",
+    "name": "弹药打击命中与突防效果",
+    "description": "评估主战武器打击命中概率与突防效能",
+    "isBuiltin": true,
+    "domainTag": "firepower",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "weapon.munition_hit_rate",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.1,
+        "optimal": 0.85
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_survivability_cost",
+    "name": "兵力生存与损耗抑制效果",
+    "description": "评估分方主力平台战时生存率与作战损耗控制水平",
+    "isBuiltin": true,
+    "domainTag": "survivability",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "cost.side_attrition_metrics",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.7,
+        "optimal": 0.98
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_electronic_attack",
+    "name": "电子进攻与持续干扰效果",
+    "description": "评估雷达/通信压制设备战时持续有效干扰时间",
+    "isBuiltin": true,
+    "domainTag": "survivability",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "ew.jamming_duration",
+      "reduce": "sum",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 10,
+        "optimal": 120
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_isr_recon_range",
+    "name": "侦察平台有效探测距离效果",
+    "description": "评估主战侦察平台首次探测目标的最大距离覆盖能力 (海里)",
+    "isBuiltin": true,
+    "domainTag": "isr",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "isr.reconnaissance_range",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 30,
+        "optimal": 250
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_ew_jamming_duration",
+    "name": "电子压制累计受扰秒数效果",
+    "description": "评估电子对抗装备累计有效压制敌方单元秒数 (秒)",
+    "isBuiltin": true,
+    "domainTag": "survivability",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "ew.jamming_duration",
+      "reduce": "sum",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0,
+        "optimal": 3600
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "eff_air_defense_interception",
+    "name": "防空反导拦截保护效果",
+    "description": "评估防空反导对来袭武器的综合拦截概率与空防安全边界",
+    "isBuiltin": true,
+    "domainTag": "firepower",
+    "role": "effect",
+    "metricBinding": {
+      "metricId": "air_defense.composite_interception_probability",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.3,
+        "optimal": 0.95
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    }
+  },
+  {
+    "effectId": "gate_excessive_attrition",
+    "name": "战损崩溃硬红线门控",
+    "description": "战役底线硬门控：当分方战损率超过 35% 时触发 DISQUALIFIED 一票否决并将总分封顶至 39 分",
+    "isBuiltin": true,
+    "domainTag": "survivability",
+    "role": "gate",
+    "gateMode": "hard",
+    "metricBinding": {
+      "metricId": "cost.side_attrition_rate",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "smaller_is_better",
+        "optimal": 0.05,
+        "worst": 0.35
+      },
+      "alarmThreshold": {
+        "operator": ">",
+        "value": 0.35,
+        "severity": "major",
+        "messageTemplate": "战损率超过 35% 临界线，触发战损硬红线一票否决"
+      }
+    },
+    "aggregation": {
+      "strategy": "maximin",
+      "missingPolicy": "fail"
+    }
+  },
+  {
+    "effectId": "gate_interception_warning",
+    "name": "防空漏洞预警软门控",
+    "description": "防空预警软门控：当综合拦截率低于 50% 警戒线时触发 WARNING 告警",
+    "isBuiltin": true,
+    "domainTag": "firepower",
+    "role": "gate",
+    "gateMode": "soft",
+    "metricBinding": {
+      "metricId": "air_defense.composite_interception_probability",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "worst": 0.4,
+        "optimal": 0.9
+      },
+      "alarmThreshold": {
+        "operator": "<",
+        "value": 0.5,
+        "severity": "major",
+        "messageTemplate": "防空综合拦截率低于 50% 预警线"
+      }
+    },
+    "aggregation": {
+      "strategy": "maximin",
+      "missingPolicy": "skip_renormalize"
+    }
+  }
+]

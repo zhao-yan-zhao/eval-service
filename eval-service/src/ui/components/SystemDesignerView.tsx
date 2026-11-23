@@ -47,6 +47,7 @@ import {
   type FlatTreeNode,
   type NodeConfigPatch,
 } from './systems/index.ts';
+import { SystemDagStudioPanel } from './v4/index.ts';
 
 export interface SystemDesignerViewProps {
   systems: IndicatorSystem[];
@@ -57,6 +58,7 @@ export interface SystemDesignerViewProps {
   operators?: MetricAtomMeta[];
   runs?: StoredRunSummary[];
   selectedRunId?: string;
+  activeSourceId?: string;
   onNavigateToTab?: (tab: 'operators' | 'indicators', targetId?: string) => void;
 }
 
@@ -158,6 +160,7 @@ export function SystemDesignerView({
   operators = [],
   runs = [],
   selectedRunId = '',
+  activeSourceId,
   onNavigateToTab,
 }: SystemDesignerViewProps) {
   const sourceSystem = useMemo(
@@ -175,8 +178,8 @@ export function SystemDesignerView({
   } | null>(null);
   const [statusMsg, setStatusMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
-  // 视图模式：'canvas' (聚合透视画布) | 'tree' (层级结构树) | 'topology' (全景拓扑图)
-  const [viewMode, setViewMode] = useState<'canvas' | 'tree' | 'topology'>('canvas');
+  // 视图模式：'canvas' (聚合透视画布) | 'tree' (层级结构树) | 'topology' (全景拓扑图) | 'v4_dag' (V4 自由效果 DAG 画布)
+  const [viewMode, setViewMode] = useState<'canvas' | 'tree' | 'topology' | 'v4_dag'>('v4_dag');
   const [evalSnapshotSignature, setEvalSnapshotSignature] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<FlatTreeNode | null>(null);
   const [mountTargetParentId, setMountTargetParentId] = useState<string | null>(null);
@@ -844,7 +847,36 @@ export function SystemDesignerView({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
+    <div className="space-y-2">
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          id={viewMode === 'v4_dag' ? 'btn-system-mode-classic' : 'btn-system-mode-v4-dag'}
+          onClick={() => setViewMode((prev) => (prev === 'v4_dag' ? 'canvas' : 'v4_dag'))}
+          className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1 text-[11px] font-medium text-[#8b949e] hover:border-slate-500 hover:text-slate-200 transition"
+        >
+          {viewMode === 'v4_dag' ? (
+            <>
+              <FolderTree className="h-3 w-3" />
+              <span>切换经典树形体系</span>
+            </>
+          ) : (
+            <>
+              <Network className="h-3 w-3 text-indigo-400" />
+              <span>返回 V4 效果 DAG 画布</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {viewMode === 'v4_dag' ? (
+        <SystemDagStudioPanel
+          selectedRunId={activeRunId || selectedRunId}
+          activeSourceId={activeSourceId}
+          onDrillDownToMetric={(metricId) => onNavigateToTab?.('indicators', metricId)}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
       {/* 左栏：体系目录 + 模板匹配 */}
       <aside className="min-w-0 space-y-3.5 lg:col-span-3 panel-isolate">
         <div className="rounded-lg border border-[#2a313c] bg-[#161b22] p-3.5">
@@ -1751,6 +1783,8 @@ export function SystemDesignerView({
           </div>
         )}
       </dialog>
+    </div>
+      )}
     </div>
   );
 }

@@ -255,23 +255,20 @@ export function AlgorithmInternalMechanismCard({ node }: AlgorithmInternalMechan
             <div className="rounded-lg bg-emerald-950/30 border border-emerald-800/40 p-3 space-y-1.5">
               <div className="font-semibold text-emerald-300 flex items-center gap-1.5">
                 <Activity className="h-4 w-4 text-emerald-400" />
-                <span>效用函数极性归一化与三库指标直通模型</span>
+                <span>二维事实表 (TableDataset) 契约输出模型</span>
               </div>
               <p className="text-[11px] text-slate-300">
-                本算子作为流水线终点，负责将数据表聚合值转化为标准化综合指标效用值 $U \in [0, 100]$，支持 AHP 层次分析法和熵权法权重乘积。
+                本节点作为一库算子流水线终点，原样透出上游产出的结构化多行多列二维事实表（含 schema 列定义与 rows 数据行），供二库指标计算图引用与聚合。效用极性打分与体系权重请在二库/三库完成。
               </p>
             </div>
 
             <div className="space-y-2">
               <div className="font-semibold text-slate-200 flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                <span>1. 效用函数极性映射模型 (Utility Polarity Normalization)</span>
-              </div>
-              <div className="rounded-md bg-slate-950/80 border border-slate-800 px-3 py-2 font-mono text-[11px] text-emerald-200 text-center">
-                正向效益型: U(x) = (x - x_min) / (x_max - x_min) × 100
+                <span>主事实输出列契约 (Primary Output Field)</span>
               </div>
               <p className="text-[11px] text-slate-400 pl-3">
-                目标输出字段: <code className="text-emerald-300 font-mono font-semibold">{targetField}</code>
+                推荐主输出列: <code className="text-emerald-300 font-mono font-semibold">{targetField}</code>
               </p>
             </div>
           </div>

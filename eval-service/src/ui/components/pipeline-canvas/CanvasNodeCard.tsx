@@ -62,9 +62,9 @@ const CATEGORY_META: Record<
     icon: BarChart3,
   },
   result_output: {
-    name: '结果输出',
+    name: '二维表输出',
     badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-    badgeText: '结果输出',
+    badgeText: '二维表输出',
     borderColor: 'border-emerald-500/40 hover:border-emerald-400',
     accentColor: 'text-emerald-400',
     icon: Target,
@@ -131,9 +131,9 @@ export function CanvasNodeCard({
           : '全表标量归约 (N ➔ 1)';
       }
       case 'result_output':
-        return node.config.indicatorName
-          ? `挂载指标: ${node.config.indicatorName}`
-          : '未绑定评估指标';
+        return node.config.targetField
+          ? `输出二维表 · 主列: ${node.config.targetField}`
+          : '输出结构化二维事实表 (TableDataset)';
       case 'spatial':
         return node.config.spatialRule === 'threat_distance'
           ? '空间威胁几何测距'
@@ -329,7 +329,7 @@ export function CanvasNodeCard({
                 className="w-full flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-emerald-300 hover:bg-emerald-500/20 transition"
               >
                 <Target className="h-3.5 w-3.5" />
-                <span>+ 结果输出</span>
+                <span>+ 二维表输出</span>
               </button>
             </div>
           )}

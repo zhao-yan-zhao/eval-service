@@ -1059,6 +1059,12 @@ export interface TableDataset {
   schema?: DatasetColumn[] | any[];
   rows: Array<Record<string, unknown>>;
   totalRows?: number;
+  /** V4 多维表维度主键列与度量列声明（Tidy Data 元信息） */
+  dimensionKeys?: string[];
+  measureKeys?: string[];
+  /** V4 多方案 / 多局实验自动注入的标识字段 */
+  planId?: string;
+  runId?: string;
 }
 
 export interface DerivedColumnConfig {
@@ -1177,4 +1183,190 @@ export interface OperatorComparisonRow {
   runA: MetricAtomResult;
   runB: MetricAtomResult;
   deltaNumeric: number | null;
+}
+
+// ──────────────────── V4：全链路 DAG 评估架构核心强类型契约 ────────────────────
+
+/** 节点运行时参数声明（支持从效果层向一库/二库透传行级物理阈值） */
+export interface ParameterPortSpec {
+  key: string;
+  label: string;
+  dataType: 'number' | 'string' | 'boolean' | 'json';
+  defaultValue: unknown;
+  description?: string;
+}
+
+/** 三层 DAG 画布强类型隔离标记 */
+export type DagGraphKind = 'operator' | 'metric' | 'system';
+
+export interface DagEdge {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  /** 仅 system 画布有效：指向目标效果节点的局部权重（入边之和=1.0） */
+  weight?: number;
+  /** 可选端口绑定：将上游输出列或结果绑定到目标节点变量别名 */
+  targetAlias?: string;
+}
+
+export interface DagNodeBase {
+  id: string;
+  kind: string;
+  label: string;
+  position: { x: number; y: number };
+  collapsed?: boolean;
+  /** 节点声明的可外部覆盖参数端口 */
+  parameterPorts?: ParameterPortSpec[];
+  /** 当前节点实参或参数透传覆盖 */
+  params?: Record<string, unknown>;
+}
+
+/** 通用 DAG 图定义（一库算子与二库指标共享拓扑骨架，通过 graphKind 强隔离） */
+export interface DagGraphDefinition<TNode extends DagNodeBase = DagNodeBase> {
+  graphId: string;
+  name: string;
+  description?: string;
+  graphKind: DagGraphKind;
+  nodes: TNode[];
+  edges: DagEdge[];
+  globalParams?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** 一库算子节点输出：强契约为 TableDataset + Fail-Closed 证据状态 */
+export interface OperatorNodeExecutionResult {
+  nodeId: string;
+  status: 'valid' | 'degraded' | 'unavailable';
+  dataset?: TableDataset;
+  evidenceRefs: EvidenceRef[];
+  missingDataReason?: string;
+  cacheKey: string;
+  latencyMs: number;
+}
+
+/** 二库指标军事运筹层次与五大能力域标签 */
+export type MetricMilitaryLevel = 'MOP' | 'MOE' | 'MOFE';
+export type MetricDomainTag = 'firepower' | 'isr' | 'survivability' | 'c2' | 'synergy' | 'cost';
+
+/** 二库指标节点配置：支持引用算子表、聚合切片或引用其他指标二次派生（无权重、无主观打分） */
+export interface MetricNodeConfig {
+  metricId: string;
+  name: string;
+  description?: string;
+  militaryLevel: MetricMilitaryLevel;
+  domainTag: MetricDomainTag;
+  mode: 'from_operator' | 'from_metric_agg' | 'from_metric_formula';
+  /** 上游来源 ID（operatorId 或 upstream metricId） */
+  sourceRef?: string;
+  filterCriteria?: Record<string, unknown>;
+  groupBy?: string[];
+  targetField?: string;
+  reduce?: IndicatorReduceMethod;
+  /** 多指标复合计算表达式（走 LibFormula 安全 AST） */
+  formulaExpression?: string;
+  unit?: string;
+}
+
+/** 二库指标 DAG 图定义 */
+export interface MetricGraphDefinition extends DagGraphDefinition<
+  DagNodeBase & { metricConfig?: MetricNodeConfig }
+> {
+  graphKind: 'metric';
+}
+
+/** 三库独立效果定义：效果组件库核心模型，支持人工判定标准、效用映射与无限层级叠加 */
+export interface EffectDefinition {
+  effectId: string;
+  name: string;
+  description?: string;
+  isBuiltin?: boolean;
+  domainTag?: MetricDomainTag;
+  /** 角色：普通效果合成 / 安全红线门控 */
+  role: 'effect' | 'gate';
+  gateMode?: GateMode;
+  /** 接入二库指标时的降维切片与效用转换规则（人工完成标准在此生效） */
+  metricBinding?: {
+    metricId: string;
+    sliceFilter?: Record<string, unknown>;
+    targetField?: string;
+    reduce?: IndicatorReduceMethod;
+    /** 透传给上游算子/指标的参数覆盖（如毁伤达标线 0.5、在阵位最低秒数 1800） */
+    paramOverrides?: Record<string, unknown>;
+    scoringRule: ScoringRule;
+    alarmThreshold?: AlarmThreshold;
+  };
+  /** 合成策略：当由多个子效果/指标入边叠加时生效 */
+  aggregation: {
+    strategy: AggregationStrategy;
+    missingPolicy: NodeMissingPolicy;
+    customFormula?: string;
+    ahpMatrix?: number[][];
+    ahpCr?: number;
+  };
+}
+
+/** 三库评估体系 DAG（替代旧版固定树 Root，支持无限层级自由有向无环图） */
+export interface EvaluationSystemDag {
+  systemId: string;
+  name: string;
+  version: string;
+  description?: string;
+  /** 画布节点：可以是引用二库的 MetricProxy，也可以是内置/独立/私有的 EffectNode */
+  nodes: Array<DagNodeBase & { refId?: string; inlineEffect?: EffectDefinition }>;
+  edges: DagEdge[];
+  /** 指定作为体系最终综合效能输出的终态效果节点 ID */
+  terminalEffectNodeId: string;
+  /** 全局方案级默认参数（如 targetSide、enemySide、WRA 规则等） */
+  globalParams?: Record<string, unknown>;
+}
+
+/** 三库效果 DAG 单节点评估结果 */
+export interface EvaluatedEffectNode {
+  nodeId: string;
+  effectId?: string;
+  label: string;
+  role: 'effect' | 'gate' | 'metric_proxy';
+  gateMode?: GateMode;
+  gateStatus?: GateStatus;
+  rawValue?: number | boolean | null;
+  score: number | null;
+  status: 'valid' | 'degraded' | 'unavailable';
+  availableWeightRatio: number;
+  effectiveWeights: Record<string, number>;
+  strategyUsed?: AggregationStrategy;
+  missingPolicyUsed?: NodeMissingPolicy;
+  missingDataReason?: string;
+  evidenceRefs: EvidenceRef[];
+  incomingEdgeIds: string[];
+  depth: number;
+}
+
+/** 三库评估体系 DAG 整体输出 */
+export interface EvaluationDagOutput {
+  evalId: string;
+  runId: string;
+  systemId: string;
+  systemName: string;
+  systemVersion: string;
+  createdAt: string;
+  terminalEffectNodeId: string;
+  overallScore: number | null;
+  rawOverallScore: number | null;
+  gateVerdict: GateVerdict;
+  gateAudit: GateAuditItem[];
+  availableWeightRatio: number;
+  nodeResults: Record<string, EvaluatedEffectNode>;
+  topologicalOrder: string[];
+}
+
+/** 节点级内容寻址缓存项 */
+export interface NodeExecutionCacheEntry {
+  cacheKey: string;
+  graphKind: DagGraphKind;
+  nodeId: string;
+  status: 'valid' | 'degraded' | 'unavailable';
+  payload: TableDataset | number | boolean | null;
+  missingDataReason?: string;
+  computedAt: string;
 }

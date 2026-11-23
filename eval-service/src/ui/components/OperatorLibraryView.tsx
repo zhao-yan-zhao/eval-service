@@ -33,12 +33,24 @@ import type {
   MetricAtomMeta,
   StoredRunSummary,
 } from '../api.ts';
-import { FormulaOperatorModal } from './FormulaOperatorModal.tsx';
-import { AggregationOperatorModal } from './AggregationOperatorModal.tsx';
 import { PipelineCanvasStudio } from './pipeline-canvas/index.ts';
 import { OperatorInlineEditor } from './OperatorInlineEditor.tsx';
 import { CreateOperatorModal } from './CreateOperatorModal.tsx';
 import { evalApi } from '../api.ts';
+import { V4TablePivotPreview } from './v4/index.ts';
+import type { TableDataset } from '../../core/types.ts';
+
+interface V4OperatorDetailInfo {
+  id: string;
+  name: string;
+  chapter: number;
+  layer?: 'fact' | 'legacy_aggregate';
+  requiredTables?: string[];
+  optionalTables?: string[];
+  outputColumnNames?: string[];
+  parameterPorts?: Array<{ key: string; label: string; defaultValue: unknown; description?: string }>;
+  pythonCode?: string;
+}
 
 /**
  * 业务领域分类定义（一库算子库的核心业务分类）
@@ -118,18 +130,18 @@ export const INITIAL_ALGORITHMS: RegisteredAlgorithm[] = [
     category: '跨行聚合',
     engine: 'Welford 流式多主键聚合器',
     badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-    description: '按指定字段分组聚合统计，支持求和(SUM)、均值(AVERAGE)、极值(MAX/MIN)、计数(COUNT)、方差(STDEV)等聚合计算，将多行明细样本聚合为标量指标。',
+    description: '按指定字段分组聚合统计，支持求和(SUM)、均值(AVERAGE)、极值(MAX/MIN)、计数(COUNT)、方差(STDEV)等聚合计算，输出结构化二维汇总表。',
     iconName: 'BarChart3',
     type: 'group_agg',
   },
   {
     id: 'algo_result_output',
     seq: 4,
-    name: '结果处理',
-    category: '结果输出',
-    engine: '二库指标绑定与体系挂载适配器',
+    name: '二维表输出',
+    category: '二维表输出',
+    engine: 'TableDataset 二维事实表契约适配器',
     badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-    description: '结果处理与指标收口。将计算出的标量指标发布至二库（指标配置），并挂载到三库（评估体系树），打通从特征计算到体系决策的闭环。',
+    description: '一库流水线末端节点。输出结构化二维事实表 (TableDataset)，供二库指标计算图引用与聚合。',
     iconName: 'Target',
     type: 'result_output',
   },
@@ -227,7 +239,7 @@ export function getOperatorPipelineCategory(op: MetricAtomMeta): {
   if (pCat === 'data_input') return { id: 'data_input', label: '表输入 (数据抽取)', badgeBg: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
   if (pCat === 'inline_calc') return { id: 'inline_calc', label: '公式 (行内计算)', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
   if (pCat === 'group_agg') return { id: 'group_agg', label: '数据汇总 (跨行聚合)', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
-  if (pCat === 'result_output') return { id: 'result_output', label: '结果处理 (结果输出)', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+  if (pCat === 'result_output') return { id: 'result_output', label: '二维表输出 (TableDataset)', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
 
   if (
     op.id.includes('corridor') ||
@@ -259,7 +271,7 @@ export function getOperatorPipelineCategory(op: MetricAtomMeta): {
   }
 
   if (op.id.includes('mission_success') || op.outputType === 'score') {
-    return { id: 'result_output', label: '结果处理 (结果输出)', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+    return { id: 'result_output', label: '二维表输出 (TableDataset)', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
   }
 
   return { id: 'inline_calc', label: '公式 (行内计算)', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
@@ -271,6 +283,7 @@ interface OperatorLibraryViewProps {
   systems?: IndicatorSystem[];
   runs: StoredRunSummary[];
   selectedRunId: string;
+  activeSourceId?: string;
   onSelectRun?: (runId: string) => void;
   catalog?: F1OutputCatalog | null;
   focusedOperatorTarget?: { id: string; nonce: number } | null;
@@ -287,21 +300,45 @@ export function OperatorLibraryView({
   systems = [],
   runs,
   selectedRunId,
+  activeSourceId,
   onSelectRun,
   catalog = null,
   focusedOperatorTarget = null,
   onRefresh = async () => {},
   onOpenSettings,
 }: OperatorLibraryViewProps) {
-  // 视图模式：默认直接呈现算子列表；点击操作进入全屏沉浸式画布
+  // 视图模式：默认直接呈现算子列表；点击操作进入内部结构画布 (PipelineCanvasStudio)
   const [viewMode, setViewMode] = useState<'list' | 'canvas'>('list');
   const [selectedCanvasOp, setSelectedCanvasOp] = useState<MetricAtomMeta | null>(null);
 
-  // 单项公式/聚合配置弹窗状态
-  const [formulaModalOpen, setFormulaModalOpen] = useState(false);
-  const [formulaModalOp, setFormulaModalOp] = useState<MetricAtomMeta | null>(null);
-  const [aggModalOpen, setAggModalOpen] = useState(false);
-  const [aggModalOp, setAggModalOp] = useState<MetricAtomMeta | null>(null);
+  // V4 实证算子内部源码与实时二维表试算缓存
+  const [v4SpecMap, setV4SpecMap] = useState<Record<string, V4OperatorDetailInfo>>({});
+  const [v4RunLoading, setV4RunLoading] = useState(false);
+  const [v4RunResult, setV4RunResult] = useState<{
+    operatorId: string;
+    status: string;
+    dataset?: TableDataset;
+    missingDataReason?: string;
+    latencyMs?: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/v4/operators?layer=all')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!active || !json?.operators || !Array.isArray(json.operators)) return;
+        const map: Record<string, V4OperatorDetailInfo> = {};
+        for (const item of json.operators) {
+          if (item?.id) map[item.id] = item;
+        }
+        setV4SpecMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // 新增自定义算子弹窗状态
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -471,31 +508,28 @@ export function OperatorLibraryView({
     }
   }, [detailOp]);
 
-  // 如果处于画布工坊模式，全屏展示画布视图
-  if (viewMode === 'canvas') {
-    return (
-      <div className="w-full">
-        <PipelineCanvasStudio
-          key={selectedCanvasOp?.id ?? 'canvas_all'}
-          isOpen={true}
-          initialOperator={selectedCanvasOp}
-          allOperators={operators}
-          runs={runs}
-          selectedRunId={selectedRunId}
-          onSelectRunId={onSelectRun}
-          onClose={() => setViewMode('list')}
-          onSaved={async () => {
-            await onRefresh();
-          }}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
-      {/* ═════════════════ 1. 顶栏：极简干练，直面算子业务 ═════════════════ */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-800 bg-[#0d1424] px-5 py-4 shadow-xl">
+      {viewMode === 'canvas' ? (
+        <div className="w-full">
+          <PipelineCanvasStudio
+            key={selectedCanvasOp?.id ?? 'canvas_all'}
+            isOpen={true}
+            initialOperator={selectedCanvasOp}
+            allOperators={operators}
+            runs={runs}
+            selectedRunId={selectedRunId}
+            onSelectRunId={onSelectRun}
+            onClose={() => setViewMode('list')}
+            onSaved={async () => {
+              await onRefresh();
+            }}
+          />
+        </div>
+      ) : (
+        <>
+          {/* ═════════════════ 1. 顶栏：极简干练，直面算子业务 ═════════════════ */}
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-800 bg-[#0d1424] px-5 py-4 shadow-xl">
         <div className="space-y-1">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/30">
@@ -509,7 +543,7 @@ export function OperatorLibraryView({
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            涵盖时效域、效能域、态势域、合规域、成本域五大业务领域算子资产，为二库（指标配置）与三库（评估体系）提供特征计算底座。
+            涵盖时效域、效能域、态势域、合规域、成本域五大业务领域算子资产，专注底层数据清洗、计算与二维事实表 (TableDataset) 产出。
           </p>
         </div>
 
@@ -633,7 +667,20 @@ export function OperatorLibraryView({
                         {idx + 1}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-mono text-[11px] text-cyan-400/90 font-medium">{op.id}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[11px] text-cyan-400/90 font-medium">{op.id}</span>
+                          {v4SpecMap[op.id] && (
+                            <span
+                              className={`rounded px-1.5 py-0.2 text-[9px] font-semibold border ${
+                                v4SpecMap[op.id].layer === 'fact'
+                                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                                  : 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                              }`}
+                            >
+                              {v4SpecMap[op.id].layer === 'fact' ? 'V4 事实' : 'V4 汇总'}
+                            </span>
+                          )}
+                        </div>
                         <div className="font-bold text-xs text-slate-100 mt-0.5">{op.name}</div>
                       </td>
                       <td className="px-4 py-3">
@@ -656,9 +703,9 @@ export function OperatorLibraryView({
                             公式: {op.customDef.formulaConfig.derivedColumns[0].expression}
                           </div>
                         )}
-                        {op.customDef?.aggregationConfig?.aggregations?.[0] && (
+                        {(op.customDef?.aggregationConfig?.metrics?.[0] || (op.customDef?.aggregationConfig as any)?.aggregations?.[0]) && (
                           <div className="mt-1 font-mono text-[10px] text-amber-300/80 bg-slate-900/80 rounded px-1.5 py-0.5 inline-block">
-                            聚合: {op.customDef.aggregationConfig.aggregations[0].op}({op.customDef.aggregationConfig.aggregations[0].sourceField})
+                            聚合: {op.customDef?.aggregationConfig?.metrics?.[0]?.method ?? (op.customDef?.aggregationConfig as any)?.aggregations?.[0]?.op}({op.customDef?.aggregationConfig?.metrics?.[0]?.sourceColumn ?? (op.customDef?.aggregationConfig as any)?.aggregations?.[0]?.sourceField})
                           </div>
                         )}
                       </td>
@@ -741,23 +788,31 @@ export function OperatorLibraryView({
           </table>
         </div>
 
-        {/* 原生 HTML <dialog> 算子底层数据映射与调用详情弹窗 */}
+        {/* 原生 HTML <dialog> 算子底层数据映射与内部算法详情弹窗 */}
         <dialog
           ref={detailDialogRef}
           aria-labelledby={detailHeadingId}
           onClose={(e) => {
             e.currentTarget.returnValue = '';
             setDetailOp(null);
+            setV4RunResult(null);
           }}
-          className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-[#0d1424] p-0 text-slate-100 backdrop:bg-black/60 shadow-2xl"
+          className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-[#0d1424] p-0 text-slate-100 backdrop:bg-black/60 shadow-2xl"
         >
           {detailOp && (
-            <div className="flex max-h-[85vh] flex-col">
+            <div className="flex max-h-[88vh] flex-col">
               <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3.5">
                 <div>
-                  <h3 id={detailHeadingId} className="text-sm font-bold text-slate-100">
-                    {detailOp.name}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 id={detailHeadingId} className="text-sm font-bold text-slate-100">
+                      {detailOp.name}
+                    </h3>
+                    {v4SpecMap[detailOp.id] && (
+                      <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                        {v4SpecMap[detailOp.id].layer === 'fact' ? 'V4 客观事实算子' : 'V4 汇总算子'} · 第 {v4SpecMap[detailOp.id].chapter} 章
+                      </span>
+                    )}
+                  </div>
                   <div className="font-mono text-xs text-slate-400">{detailOp.id}</div>
                 </div>
                 <button
@@ -779,23 +834,107 @@ export function OperatorLibraryView({
                     <Database className="h-3.5 w-3.5 text-cyan-400" />
                     <span>底层数据来源与字段映射 (sim-output-fields)</span>
                   </div>
-                  {detailOp.f1FieldContract?.csvTables && (
+                  {(v4SpecMap[detailOp.id]?.requiredTables || detailOp.f1FieldContract?.csvTables) && (
                     <div>
-                      <span className="text-slate-400">CSV 来源表：</span>
+                      <span className="text-slate-400">必需底表：</span>
                       <span className="font-mono text-emerald-300">
-                        {detailOp.f1FieldContract.csvTables.join(', ')}
+                        {(v4SpecMap[detailOp.id]?.requiredTables ?? detailOp.f1FieldContract?.csvTables ?? []).join(', ')}
                       </span>
                     </div>
                   )}
-                  {detailOp.f1FieldContract?.csvColumns && (
+                  {v4SpecMap[detailOp.id]?.optionalTables && v4SpecMap[detailOp.id].optionalTables!.length > 0 && (
                     <div>
-                      <span className="text-slate-400">核心字段列：</span>
+                      <span className="text-slate-400">可选底表：</span>
+                      <span className="font-mono text-slate-300">
+                        {v4SpecMap[detailOp.id].optionalTables!.join(', ')}
+                      </span>
+                    </div>
+                  )}
+                  {(v4SpecMap[detailOp.id]?.outputColumnNames || detailOp.f1FieldContract?.csvColumns) && (
+                    <div>
+                      <span className="text-slate-400">输出二维表列：</span>
                       <span className="font-mono text-slate-200">
-                        {detailOp.f1FieldContract.csvColumns.join(', ')}
+                        {(v4SpecMap[detailOp.id]?.outputColumnNames ?? detailOp.f1FieldContract?.csvColumns ?? []).join(', ')}
                       </span>
                     </div>
                   )}
                 </div>
+
+                {v4SpecMap[detailOp.id]?.pythonCode && (
+                  <div className="space-y-2 rounded-xl border border-slate-800 bg-[#070b14] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 font-medium text-fuchsia-300">
+                        <Code2 className="h-3.5 w-3.5" />
+                        <span>内部算法实现 (Python 沙箱科学计算源码)</span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={v4RunLoading}
+                        onClick={async () => {
+                          setV4RunLoading(true);
+                          setV4RunResult(null);
+                          try {
+                            const resp = await fetch('/api/v4/operators/run', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                operatorId: detailOp.id,
+                                runId: selectedRunId || '55th_taihai_csv',
+                                dataSourceId: activeSourceId || undefined,
+                              }),
+                            });
+                            const json = await resp.json();
+                            const r = json?.result ?? json;
+                            setV4RunResult({
+                              operatorId: detailOp.id,
+                              status: r?.status ?? (json?.ok ? 'valid' : 'unavailable'),
+                              dataset: r?.dataset,
+                              missingDataReason: r?.missingDataReason ?? json?.error,
+                              latencyMs: r?.latencyMs,
+                            });
+                          } catch (err) {
+                            setV4RunResult({
+                              operatorId: detailOp.id,
+                              status: 'unavailable',
+                              missingDataReason: err instanceof Error ? err.message : String(err),
+                            });
+                          } finally {
+                            setV4RunLoading(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/50 bg-emerald-600/25 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-600/40 disabled:opacity-50"
+                      >
+                        <Play className="h-3 w-3" />
+                        <span>{v4RunLoading ? '真机计算中...' : 'V4 真机试算 (二维表)'}</span>
+                      </button>
+                    </div>
+                    <pre className="max-h-60 overflow-auto rounded-lg border border-slate-800/80 bg-[#0b101b] p-3 font-mono text-[11px] leading-relaxed text-slate-200">
+                      <code>{v4SpecMap[detailOp.id].pythonCode}</code>
+                    </pre>
+                  </div>
+                )}
+
+                {v4RunResult && v4RunResult.operatorId === detailOp.id && (
+                  <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-slate-200">
+                        实测输出状态：
+                        <span className={v4RunResult.status === 'valid' ? 'text-emerald-400' : 'text-amber-400'}>
+                          {v4RunResult.status}
+                        </span>
+                        {typeof v4RunResult.latencyMs === 'number' ? ` · ${v4RunResult.latencyMs.toFixed(1)} ms` : ''}
+                      </span>
+                    </div>
+                    {v4RunResult.missingDataReason && (
+                      <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-200">
+                        {v4RunResult.missingDataReason}
+                      </div>
+                    )}
+                    {v4RunResult.dataset && (
+                      <V4TablePivotPreview dataset={v4RunResult.dataset} maxRows={50} />
+                    )}
+                  </div>
+                )}
 
                 <div className="pt-2 flex items-center gap-2.5">
                   <button
@@ -809,20 +948,7 @@ export function OperatorLibraryView({
                     className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-cyan-500/50 bg-cyan-600/30 px-4 py-2.5 text-xs font-bold text-cyan-200 hover:bg-cyan-600/50 transition shadow-md"
                   >
                     <Workflow className="h-4 w-4" />
-                    <span>在一体化画布中进行编排计算</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const target = detailOp;
-                      detailDialogRef.current?.close();
-                      setSelectedCanvasOp(target);
-                      setViewMode('canvas');
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs text-slate-300 hover:text-white hover:bg-slate-700 transition"
-                  >
-                    <CopyPlus className="h-3.5 w-3.5" />
-                    <span>克隆派生</span>
+                    <span>在一体化画布中查看/编排内部结构</span>
                   </button>
                 </div>
               </div>
@@ -865,52 +991,7 @@ export function OperatorLibraryView({
         </dialog>
       </section>
 
-      {/* ═════════════════ 3. 单项公式与聚合配置弹窗 ═════════════════ */}
-      {formulaModalOp && (
-        <FormulaOperatorModal
-          isOpen={formulaModalOpen}
-          onClose={() => {
-            setFormulaModalOpen(false);
-            setFormulaModalOp(null);
-          }}
-          initialConfig={formulaModalOp.customDef?.formulaConfig}
-          onSave={async (newCfg) => {
-            if (formulaModalOp.customDef) {
-              const updatedDef: CustomOperatorDefinition = {
-                ...formulaModalOp.customDef,
-                formulaConfig: newCfg,
-                mode: 'formula_pipeline',
-              };
-              await evalApi.upsertOperator(updatedDef);
-              await onRefresh();
-            }
-          }}
-        />
-      )}
-
-      {aggModalOp && (
-        <AggregationOperatorModal
-          isOpen={aggModalOpen}
-          onClose={() => {
-            setAggModalOpen(false);
-            setAggModalOp(null);
-          }}
-          initialConfig={aggModalOp.customDef?.aggregationConfig}
-          onSave={async (newCfg) => {
-            if (aggModalOp.customDef) {
-              const updatedDef: CustomOperatorDefinition = {
-                ...aggModalOp.customDef,
-                aggregationConfig: newCfg,
-                mode: 'aggregation',
-              };
-              await evalApi.upsertOperator(updatedDef);
-              await onRefresh();
-            }
-          }}
-        />
-      )}
-
-      {/* ═════════════════ 5.5 新建自定义算子全功能弹窗 ═════════════════ */}
+      {/* ═════════════════ 3. 新建自定义算子全功能弹窗 ═════════════════ */}
       <CreateOperatorModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -923,6 +1004,8 @@ export function OperatorLibraryView({
           }
         }}
       />
+        </>
+      )}
     </div>
   );
 }

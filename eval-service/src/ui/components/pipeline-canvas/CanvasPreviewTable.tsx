@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
   Database,
-  Download,
   Eye,
-  Maximize2,
+  Grid3X3,
   Sparkles,
+  Table2,
   Zap,
 } from 'lucide-react';
 import type { CanvasNode } from './canvas-types.ts';
 import type { TableDataset } from '../../../core/types.ts';
+import { V4TablePivotPreview } from '../v4/V4TablePivotPreview.tsx';
 
 interface CanvasPreviewTableProps {
   selectedNode?: CanvasNode | null;
@@ -30,17 +31,48 @@ export function CanvasPreviewTable({
   defaultCollapsed = true,
 }: CanvasPreviewTableProps) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [previewMode, setPreviewMode] = useState<'detail' | 'pivot'>('detail');
+  const [panelHeight, setPanelHeight] = useState(256);
+  const dragStartRef = useRef<{ y: number; h: number } | null>(null);
   const diffColSet = new Set(diffCols);
 
   const columns = dataset?.columns?.length ? dataset.columns : (dataset?.schema || []);
   const rows = dataset?.rows || [];
+  const totalCount = dataset?.totalRows ?? rows.length;
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragStartRef.current = { y: e.clientY, h: panelHeight };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragStartRef.current) return;
+      const delta = dragStartRef.current.y - ev.clientY;
+      setPanelHeight(Math.min(Math.max(dragStartRef.current.h + delta, 160), 520));
+    };
+    const onUp = () => {
+      dragStartRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   return (
     <div
-      className={`border-t border-slate-800 bg-[#090d16] flex flex-col transition-all duration-200 ${
-        isCollapsed ? 'h-10' : 'h-64'
+      style={!isCollapsed ? { height: `${panelHeight}px` } : undefined}
+      className={`border-t border-slate-800 bg-[#090d16] flex flex-col shrink-0 ${
+        isCollapsed ? 'h-10 transition-all duration-200' : ''
       }`}
     >
+      {/* ─── 顶部拖拽调节高度条 ─── */}
+      {!isCollapsed && (
+        <div
+          onMouseDown={handleResizeStart}
+          title="上下拖拽调节预览区高度"
+          className="h-1 w-full cursor-ns-resize bg-transparent hover:bg-cyan-500/40 transition-colors shrink-0"
+        />
+      )}
       {/* ─── 预览区头部控制条 ─── */}
       <div
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -84,7 +116,10 @@ export function CanvasPreviewTable({
                 </span>
               )}
               <span className="text-slate-600">·</span>
-              <span>样本切片: <strong className="text-slate-200">{rows.length}</strong> 行</span>
+              <span>
+                共 <strong className="text-slate-200">{totalCount}</strong> 行
+                {rows.length > 50 && previewMode === 'detail' ? '（当前展示前 50 行）' : ''}
+              </span>
               <span className="text-slate-600">·</span>
               <span>总列数: <strong className="text-slate-200">{columns.length}</strong> 列</span>
               {diffCols.length > 0 && (
@@ -105,6 +140,38 @@ export function CanvasPreviewTable({
         </div>
 
         <div className="flex items-center gap-2">
+          {!isCollapsed && dataset && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-0.5 rounded-lg border border-slate-700/80 bg-slate-900 p-0.5 text-[11px]"
+            >
+              <button
+                type="button"
+                onClick={() => setPreviewMode('detail')}
+                className={`flex items-center gap-1 rounded-md px-2 py-0.5 transition cursor-pointer ${
+                  previewMode === 'detail'
+                    ? 'bg-sky-500/20 text-sky-300 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Table2 className="h-3 w-3" />
+                <span>明细表</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewMode('pivot')}
+                className={`flex items-center gap-1 rounded-md px-2 py-0.5 transition cursor-pointer ${
+                  previewMode === 'pivot'
+                    ? 'bg-violet-500/20 text-violet-300 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Grid3X3 className="h-3 w-3" />
+                <span>分组透视</span>
+              </button>
+            </div>
+          )}
+
           {isExecuting && (
             <span className="flex items-center gap-1.5 text-xs text-sky-400 animate-pulse">
               <span className="h-2 w-2 rounded-full bg-sky-400" />
@@ -139,6 +206,10 @@ export function CanvasPreviewTable({
             <div className="flex h-full flex-col items-center justify-center text-slate-500 space-y-2 py-8">
               <Database className="h-8 w-8 text-slate-700" />
               <p>暂无输出数据切片。请确保上游节点已连接并配置，或点击顶部 [▶ 全链路试运行] 触发数据流推演。</p>
+            </div>
+          ) : previewMode === 'pivot' ? (
+            <div className="p-3">
+              <V4TablePivotPreview dataset={dataset} maxRows={100} />
             </div>
           ) : (
             <table className="w-full border-collapse text-left">

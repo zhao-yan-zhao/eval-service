@@ -14,6 +14,18 @@ import {
   probeSimulationPath,
   type SimulationDataSource,
 } from './adapters/data-source-store.ts';
+import { locateCsvDirectory } from './adapters/csv-adapter.ts';
+import { defaultEffectStore } from './effects/store.ts';
+import { DagNodeCache } from './engine/dag-executor.ts';
+import { handleV4ApiRequest, type V4RouteDeps } from './engine/v4-routes.ts';
+import { defaultMetricGraphStore } from './indicators/metric-graph-store.ts';
+import {
+  disposeV4OperatorPool,
+  listV4BuiltinComponents,
+  listV4OperatorSummaries,
+  runV4OperatorById,
+} from './operators/v4/index.ts';
+import { defaultSystemDagStore } from './systems/system-dag-store.ts';
 import { sampleScoringCurve } from './core/scoring-functions.ts';
 import { buildSituationModel } from './core/situation-model.ts';
 import type {
@@ -331,6 +343,94 @@ export async function createEvalApp(deps?: EvalServerDeps) {
   const monitor = new RealtimeMonitor({ sqliteStore: scenarioSqliteStore, indicatorStore });
   const distUiDir = deps?.distUiDir ?? path.join(EVAL_SERVICE_ROOT, 'dist-ui');
 
+  // ─── V4 全链路 DAG 中台依赖 ───
+  const v4Cache = new DagNodeCache();
+  const resolveV4CsvDir = (runId?: string, dataSourceId?: string): string | undefined => {
+    const checkDir = (rawPath?: string): string | undefined => {
+      if (!rawPath) return undefined;
+      try {
+        if (!fs.existsSync(rawPath)) return undefined;
+        const stat = fs.statSync(rawPath);
+        if (!stat.isDirectory()) return undefined;
+        return locateCsvDirectory(rawPath);
+      } catch {
+        return undefined;
+      }
+    };
+
+    if (dataSourceId) {
+      const ds = dataSourceStore.get(dataSourceId);
+      if (ds?.kind === 'csv_dir') {
+        const hit = checkDir(ds.path);
+        if (hit) return hit;
+      }
+    }
+
+    if (runId) {
+      const sit = sqliteStore.getRunSituation(runId);
+      if (sit?.scenarioPath) {
+        const hit = checkDir(sit.scenarioPath);
+        if (hit) return hit;
+      }
+      const dsByRun = dataSourceStore.get(runId);
+      if (dsByRun?.kind === 'csv_dir') {
+        const hit = checkDir(dsByRun.path);
+        if (hit) return hit;
+      }
+      if (runId === '55th_taihai_csv') {
+        const hit = checkDir(BUILTIN_SAMPLES.taihaiCsvDir);
+        if (hit) return hit;
+      }
+      if (runId === 'gj11_pl15_bvr_real') {
+        const hit = checkDir(BUILTIN_SAMPLES.gj11CsvDir);
+        if (hit) return hit;
+      }
+    }
+
+    const activeId = dataSourceStore.getActiveSourceId();
+    const activeDs = activeId ? dataSourceStore.get(activeId) : undefined;
+    if (activeDs?.kind === 'csv_dir') {
+      const hit = checkDir(activeDs.path);
+      if (hit) return hit;
+    }
+
+    return undefined;
+  };
+
+  const v4RouteDeps: V4RouteDeps = {
+    effectStore: defaultEffectStore,
+    metricGraphStore: defaultMetricGraphStore,
+    systemDagStore: defaultSystemDagStore,
+    cache: v4Cache,
+    listOperators: (opts) => listV4OperatorSummaries(opts),
+    listComponents: () => listV4BuiltinComponents(),
+    resolveCsvDir: resolveV4CsvDir,
+    runOperator: async (operatorId, body) => {
+      const runId =
+        typeof body.runId === 'string' && body.runId.trim() ? body.runId.trim() : 'default_v4_run';
+      const dataSourceId =
+        typeof body.dataSourceId === 'string' && body.dataSourceId.trim()
+          ? body.dataSourceId.trim()
+          : undefined;
+      const csvDir =
+        (typeof body.csvDir === 'string' && body.csvDir.trim() ? body.csvDir.trim() : undefined) ??
+        resolveV4CsvDir(runId, dataSourceId);
+      const rawParams =
+        body.params && typeof body.params === 'object' && !Array.isArray(body.params)
+          ? (body.params as Record<string, unknown>)
+          : undefined;
+      return runV4OperatorById(operatorId, {
+        runId,
+        ...(csvDir ? { csvDir } : {}),
+        ...(body.inputDfDict && typeof body.inputDfDict === 'object'
+          ? { inputDfDict: body.inputDfDict as Record<string, any> }
+          : {}),
+        ...(rawParams ? { paramOverrides: rawParams } : {}),
+        cache: v4Cache,
+      });
+    },
+  };
+
   async function ensureSeedData(force = false): Promise<void> {
     if (force || sqliteStore.listRuns().length === 0) {
       if (fs.existsSync(BUILTIN_SAMPLES.gj11CsvDir) && (!sqliteStore.getRunSituation('gj11_pl15_bvr_real') || force)) {
@@ -529,6 +629,19 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           },
         });
         return;
+      }
+
+      // ─── V4 全链路 DAG 评估中台 REST API (/api/v4/*) ───
+      if (pathname.startsWith('/api/v4')) {
+        const handled = await handleV4ApiRequest(
+          req,
+          res,
+          pathname,
+          readJsonBody,
+          sendJson,
+          v4RouteDeps,
+        );
+        if (handled) return;
       }
 
       // ─── 数据库解耦管理接口（算子库归算子库，想定数据归想定数据） ───
@@ -2742,6 +2855,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
         c.end();
       }
       sseClients.clear();
+      await disposeV4OperatorPool().catch(() => {});
       await new Promise<void>((resolve) => server.close(() => resolve()));
       sqliteStore.close();
     },

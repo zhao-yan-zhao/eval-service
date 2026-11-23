@@ -41,9 +41,9 @@
       "id": "ds_stage18_custom_jsonl",
       "label": "Stage 18 自定义流",
       "sourceKind": "jsonl_file",
-      "path": "C:\\Users\\zhaoyan\\AppData\\Local\\Temp\\f1-stage18-95Ec7M\\custom-stream.jsonl",
+      "path": "C:\\Users\\zhaoyan\\AppData\\Local\\Temp\\f1-stage18-dtrB1S\\custom-stream.jsonl",
       "createdAt": "2026-11-22T03:17:21.892Z",
-      "updatedAt": "2026-11-22T15:45:36.074Z"
+      "updatedAt": "2026-11-23T09:39:05.095Z"
     }
   ]
 }

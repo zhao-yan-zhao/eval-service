@@ -39,9 +39,9 @@ type TabKey =
 
 const TABS: Array<{ key: TabKey; label: string; short: string; icon: typeof Gauge }> = [
   { key: 'cockpit', label: '评估总览', short: '总览', icon: Gauge },
-  { key: 'operators', label: '算子库', short: '算子', icon: Cpu },
-  { key: 'indicators', label: '指标配置', short: '指标', icon: Layers },
-  { key: 'systems', label: '评估体系', short: '体系', icon: GitBranch },
+  { key: 'operators', label: '一库 · 算子画布', short: '一库算子', icon: Cpu },
+  { key: 'indicators', label: '二库 · 指标画布', short: '二库指标', icon: Layers },
+  { key: 'systems', label: '三库 · 效果体系', short: '三库体系', icon: GitBranch },
   { key: 'catalog', label: '输出字段规范', short: '规范', icon: BookOpen },
   { key: 'data', label: '推演数据', short: '数据', icon: Database },
   { key: 'realtime', label: '实时研判', short: '实时', icon: Activity },
@@ -243,8 +243,10 @@ export function App() {
                   systems={systems}
                   selectedRunId={selectedRunId}
                   selectedSystemId={selectedSystemId}
+                  activeSourceId={activeSourceId}
                   onSelectRun={setSelectedRunId}
                   onSelectSystem={setSelectedSystemId}
+                  onOpenV4SystemCanvas={() => setActiveTab('systems')}
                 />
               </ErrorBoundary>
             </section>
@@ -262,12 +264,13 @@ export function App() {
                   systems={systems}
                   runs={runs}
                   selectedRunId={selectedRunId}
+                  activeSourceId={activeSourceId}
                   onSelectRun={setSelectedRunId}
                   catalog={catalog}
                   focusedOperatorTarget={focusedOperatorTarget}
                   onRefresh={loadAll}
                   onOpenSettings={(tab) => {
-                    setSettingsInitialTab(tab || 'components');
+                    setSettingsInitialTab((tab as SettingsTabKey) || 'components');
                     setSettingsModalOpen(true);
                   }}
                 />
@@ -286,8 +289,13 @@ export function App() {
                   operators={operators}
                   runs={runs}
                   selectedRunId={selectedRunId}
+                  activeSourceId={activeSourceId}
                   focusedIndicatorTarget={focusedIndicatorTarget}
                   onRefresh={loadAll}
+                  onDrillDownToOperator={(operatorId) => {
+                    setActiveTab('operators');
+                    setFocusedOperatorTarget({ id: operatorId, nonce: Date.now() });
+                  }}
                 />
               </ErrorBoundary>
             </section>
@@ -306,6 +314,7 @@ export function App() {
                   runs={runs}
                   selectedRunId={selectedRunId}
                   selectedSystemId={selectedSystemId}
+                  activeSourceId={activeSourceId}
                   onSelectSystem={setSelectedSystemId}
                   onRefresh={loadAll}
                   onNavigateToTab={(tab, targetId) => {
@@ -345,7 +354,7 @@ export function App() {
                   onSelectRun={setSelectedRunId}
                   onRefresh={loadAll}
                   onOpenSettings={(tab) => {
-                    setSettingsInitialTab(tab || 'database');
+                    setSettingsInitialTab((tab as SettingsTabKey) || 'database');
                     setSettingsModalOpen(true);
                   }}
                 />

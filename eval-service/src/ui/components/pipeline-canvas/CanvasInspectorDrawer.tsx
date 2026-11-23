@@ -588,15 +588,17 @@ export function CanvasInspectorDrawer({
             </button>
           </div>
 
-          <button
-            type="button"
-            title="试算并刷新底部预览"
-            onClick={onTriggerPreview}
-            className="flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/30 transition shadow-sm"
-          >
-            <Sparkles className="h-3 w-3" />
-            <span>试算预览</span>
-          </button>
+          {node.type !== 'python_script' && (
+            <button
+              type="button"
+              title="试算并刷新底部预览"
+              onClick={onTriggerPreview}
+              className="flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/30 transition shadow-sm"
+            >
+              <Sparkles className="h-3 w-3" />
+              <span>试算预览</span>
+            </button>
+          )}
           <button
             type="button"
             title="收起抽屉"
@@ -1583,11 +1585,21 @@ export function CanvasInspectorDrawer({
           </div>
         )}
 
-        {/* ═════════════════ 类型 4: 结果输出 & 三库直通 (result_output) ═════════════════ */}
+        {/* ═════════════════ 类型 4: 二维表输出 (result_output -> TableDataset) ═════════════════ */}
         {node.type === 'result_output' && (
           <div className="space-y-4">
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 text-xs text-emerald-200 leading-relaxed space-y-1">
+              <div className="font-semibold text-emerald-300 flex items-center gap-1.5">
+                <Target className="h-4 w-4" />
+                <span>一库算子末节点 · 纯二维事实表 (TableDataset) 输出</span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                算子流水线末端仅负责输出结构化的多行多列二维事实表，供「二库指标库」提取与聚合。指标名称、单位、最优方向及评估体系挂载请在二库与三库中完成。
+              </p>
+            </div>
+
             <div className="space-y-2">
-              <label className="text-[11px] font-medium text-slate-300">目标输出字段 (上游指标结果)</label>
+              <label className="text-[11px] font-medium text-slate-300">主数值/事实输出列 (供二库指标引用)</label>
               <select
                 value={config.targetField || upstreamColumns[0] || ''}
                 onChange={(e) => updateConfig({ targetField: e.target.value })}
@@ -1601,192 +1613,41 @@ export function CanvasInspectorDrawer({
               </select>
             </div>
 
-            {/* 二库指标定义表单 */}
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-3">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                <Target className="h-4 w-4" />
-                <span>二库 · 标准指标定义</span>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-200">输出二维表列契约 ({upstreamColumns.length} 列)</span>
+                <span className="text-[11px] text-emerald-400 font-mono">TableDataset</span>
               </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400">指标显示名称*</label>
-                <input
-                  type="text"
-                  placeholder="如：超视距导弹攻击战损比"
-                  value={config.indicatorName || ''}
-                  onChange={(e) => updateConfig({ indicatorName: e.target.value })}
-                  className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400">单位 (可选)</label>
-                  <input
-                    type="text"
-                    placeholder="如: % 或 Nm"
-                    value={config.indicatorUnit || ''}
-                    onChange={(e) => updateConfig({ indicatorUnit: e.target.value })}
-                    className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  />
+              {upstreamColumns.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {upstreamColumns.map((col) => (
+                    <span
+                      key={col}
+                      className={`rounded-md border px-2 py-0.5 text-[11px] font-mono ${
+                        col === (config.targetField || upstreamColumns[0])
+                          ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300 font-semibold'
+                          : 'border-slate-700 bg-slate-900 text-slate-300'
+                      }`}
+                    >
+                      {col}
+                    </span>
+                  ))}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400">最优方向</label>
-                  <select
-                    value={config.optimalDirection || 'higher_is_better'}
-                    onChange={(e) =>
-                      updateConfig({
-                        optimalDirection: e.target.value as OptimalDirection,
-                      })
-                    }
-                    className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  >
-                    <option value="higher_is_better">越大越好 (Higher is better)</option>
-                    <option value="lower_is_better">越小越好 (Lower is better)</option>
-                    <option value="neutral">区间最优 (Neutral)</option>
-                  </select>
-                </div>
-              </div>
+              ) : (
+                <div className="text-[11px] text-slate-500">请先连接上游算子节点以继承二维表字段契约。</div>
+              )}
             </div>
 
-            {/* 三库评估体系挂载表单 */}
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-3">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-sky-400">
-                <Layers className="h-4 w-4" />
-                <span>三库 · 评估体系挂载</span>
+            {node.runtime?.outputDataset && (
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-1.5 text-xs">
+                <div className="font-semibold text-cyan-300">最近一次试算二维表输出</div>
+                <div className="text-[11px] text-slate-300">
+                  行数：<span className="font-mono text-emerald-300">{node.runtime.outputDataset.rows?.length ?? 0}</span> 行
+                  {' · '}
+                  列数：<span className="font-mono text-cyan-300">{node.runtime.outputDataset.schema?.length ?? node.runtime.outputDataset.columns?.length ?? 0}</span> 列
+                </div>
               </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400">挂载目标预置评估体系</label>
-                <select
-                  value={config.targetSystemId || 'sys_bvr_air_combat_v1'}
-                  onChange={(e) => updateConfig({ targetSystemId: e.target.value })}
-                  className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                >
-                  <option value="sys_bvr_air_combat_v1">超视距空战 (BVR) 杀伤链体系 (sys_bvr)</option>
-                  <option value="sys_littoral_swarm_v1">无人艇/机近岸集群突击体系 (sys_littoral)</option>
-                  <option value="sys_air_defense_v1">区域防空反导体系拦截评估体系 (sys_air_defense)</option>
-                  <option value="sys_asw_barrier_v1">海上反潜巡逻与航道封锁体系 (sys_asw)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400">挂载目标维度节点</label>
-                <select
-                  value={config.targetDimensionId || 'dim_bvr_engagement'}
-                  onChange={(e) => updateConfig({ targetDimensionId: e.target.value })}
-                  className="w-full rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                >
-                  <option value="dim_bvr_engagement">交战与杀伤效能维度 (dim_bvr_engagement)</option>
-                  <option value="dim_bvr_survivability">生存防护能力维度 (dim_bvr_survivability)</option>
-                  <option value="dim_bvr_command_control">指挥协同与时效维度 (dim_bvr_command_control)</option>
-                  <option value="dim_bvr_cost_effectiveness">效费比综合评价 (dim_bvr_cost)</option>
-                </select>
-              </div>
-
-              <div className="pt-1 space-y-2">
-                <button
-                  type="button"
-                  disabled={isPublishingIndicator}
-                  onClick={async () => {
-                    setIsPublishingIndicator(true);
-                    setPublishIndicatorStatus(null);
-                    try {
-                      const rawTargetField = config.targetField || upstreamColumns[0] || 'result';
-                      const cleanOpId = (currentOperatorId || 'custom_pipeline').replace(/[^a-zA-Z0-9_]/g, '_');
-                      const cleanField = rawTargetField.replace(/[^a-zA-Z0-9_]/g, '_');
-                      const indId = `ind_${cleanOpId}_${cleanField}`.toLowerCase();
-                      const indName = config.indicatorName?.trim() || `${currentOperatorId || '自定义流水线'} · ${rawTargetField}`;
-
-                      let scoringRule: any;
-                      if (config.optimalDirection === 'lower_is_better') {
-                        scoringRule = { type: 'smaller_is_better', optimal: 0, worst: 1 };
-                      } else if (config.optimalDirection === 'neutral') {
-                        scoringRule = { type: 'linear', bounds: [0, 1] };
-                      } else {
-                        scoringRule = { type: 'larger_is_better', optimal: 1, worst: 0 };
-                      }
-
-                      const def = {
-                        indicatorId: indId,
-                        name: indName,
-                        description: `来自算子流水线 [${currentOperatorId || '自定义流水线'}] 输出字段 [${rawTargetField}] 的发布指标`,
-                        atomRef: currentOperatorId || 'custom.pipeline',
-                        targetField: rawTargetField,
-                        unit: config.indicatorUnit?.trim() || undefined,
-                        scoring: scoringRule,
-                        tags: ['流水线发布', '自定义'],
-                      };
-
-                      // 1. 持久化到二库标准指标
-                      await evalApi.upsertIndicator(def);
-
-                      // 2. 挂载到三库体系
-                      const sysId = config.targetSystemId || 'sys_bvr_air_combat_v1';
-                      const dimId = config.targetDimensionId || 'dim_bvr_engagement';
-                      const sysRes = await evalApi.listSystems();
-                      const targetSys = sysRes?.systems?.find((s: any) => s.systemId === sysId);
-
-                      if (targetSys) {
-                        const addLeafToDimension = (item: any): boolean => {
-                          if (item?.id === dimId && Array.isArray(item.children)) {
-                            const exists = item.children.some((c: any) => c.indicatorRef === def.indicatorId);
-                            if (!exists) {
-                              item.children.push({
-                                id: `leaf_${def.indicatorId}`,
-                                indicatorRef: def.indicatorId,
-                                weight: 0.1,
-                                customLabel: def.name,
-                              });
-                            }
-                            return true;
-                          }
-                          if (Array.isArray(item?.children)) {
-                            for (const ch of item.children) {
-                              if (addLeafToDimension(ch)) return true;
-                            }
-                          }
-                          return false;
-                        };
-
-                        if (addLeafToDimension(targetSys.root)) {
-                          const valRes = await evalApi.validateSystem(targetSys, true);
-                          await evalApi.upsertSystem(valRes.system);
-                        }
-                      }
-
-                      setPublishIndicatorStatus({
-                        kind: 'ok',
-                        text: `✓ 成功发布！指标「${indName}」(${indId}) 已持久化至二库，并成功挂载至三库评估体系 [${sysId}]。`,
-                      });
-                    } catch (err: any) {
-                      setPublishIndicatorStatus({
-                        kind: 'err',
-                        text: `发布失败: ${err?.message || String(err)}`,
-                      });
-                    } finally {
-                      setIsPublishingIndicator(false);
-                    }
-                  }}
-                  className="w-full rounded-lg border border-sky-500/50 bg-sky-600/30 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-600/50 transition shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  <span>{isPublishingIndicator ? '正在发布并挂载…' : '发布并挂载至评估体系树'}</span>
-                </button>
-
-                {publishIndicatorStatus && (
-                  <div
-                    className={`rounded-lg p-2.5 text-xs leading-relaxed border ${
-                      publishIndicatorStatus.kind === 'ok'
-                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
-                    }`}
-                  >
-                    {publishIndicatorStatus.text}
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
         )}
 
