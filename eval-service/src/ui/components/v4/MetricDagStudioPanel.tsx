@@ -1627,38 +1627,352 @@ export function MetricDagStudioPanel({
         </div>
       )}
 
-      {/* 主工作区：左侧/中间 DAG 画布 + 右侧属性检查器 */}
-      <div className="grid min-h-[470px] flex-1 grid-cols-1 gap-3 lg:grid-cols-12">
-        <div className="lg:col-span-8 flex min-h-[470px] flex-col">
-          <DagCanvasBoard
-            graphKind="metric"
-            title={activeGraph.name}
-            nodes={canvasNodes}
-            edges={canvasEdges}
-            selectedNodeId={selectedNodeId}
-            selectedEdgeId={selectedEdgeId}
-            showOutline={false}
-            outlineSide="left"
-            emptyStateText="点击上方 [+ 算子引用] / [+ 二次聚合] / [+ 复合公式] 添加指标节点"
-            onSelectNode={(nid) => {
-              setSelectedNodeId(nid);
-              if (nid) setSelectedEdgeId(null);
-            }}
-            onSelectEdge={(eid) => {
-              setSelectedEdgeId(eid);
-              if (eid) setSelectedNodeId(null);
-            }}
-            onNodesChange={handleCanvasNodesChange}
-            onEdgesChange={handleCanvasEdgesChange}
-            onConnect={handleConnect}
-            onDeleteNode={handleDeleteNode}
-            onDeleteEdge={handleDeleteEdge}
-            onDrillDown={handleDrillDown}
-          />
-        </div>
+      {/* 主工作区：画布编排视图 vs 指标清单+血缘总览视图 */}
+      {workspaceView === 'list' ? (
+        <div className="flex flex-1 flex-col gap-3 rounded-xl border border-[#30363d] bg-[#161b22] p-3.5">
+          {/* 清单过滤条与分层统计 */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#30363d] pb-2.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-slate-200 mr-1">
+                指标清单与血缘总览
+              </span>
+              <button
+                type="button"
+                onClick={() => setListLevelFilter('ALL')}
+                className={`rounded-md border px-2 py-0.5 text-[11px] transition cursor-pointer ${
+                  listLevelFilter === 'ALL'
+                    ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-200 font-semibold'
+                    : 'border-[#30363d] bg-[#0d1117] text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                全部 ({activeGraph.nodes.length})
+              </button>
+              {MILITARY_LEVELS.map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => setListLevelFilter(lvl)}
+                  className={`rounded-md border px-2 py-0.5 font-mono text-[11px] transition cursor-pointer ${
+                    listLevelFilter === lvl
+                      ? MILITARY_LEVEL_BADGES[lvl]
+                      : 'border-[#30363d] bg-[#0d1117] text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {lvl} ({levelCounts[lvl] ?? 0})
+                </button>
+              ))}
+            </div>
 
-        {/* 右侧指标节点配置抽屉 */}
-        <aside className="lg:col-span-4 flex max-h-[600px] flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22]">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={listDomainFilter}
+                onChange={(e) =>
+                  setListDomainFilter(e.target.value as 'ALL' | MetricDomainTag)
+                }
+                className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+              >
+                <option value="ALL">全部能力域 (domainTag)</option>
+                {DOMAIN_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                  placeholder="搜索指标 ID / 名称 / 算子 / 列..."
+                  className="w-56 rounded-md border border-[#30363d] bg-[#0d1117] py-1 pl-7 pr-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 指标清单表格 */}
+          <div className="flex-1 overflow-auto rounded-lg border border-[#30363d] bg-[#0d1117]">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#161b22] text-[11px] text-slate-400">
+                <tr>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">层次 / 域</th>
+                  <th className="px-3 py-2 font-medium">指标名称与 ID</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">计算模式</th>
+                  <th className="px-3 py-2 font-medium">上游引用 / 血缘</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">单位</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap text-right">
+                    最近试算值
+                  </th>
+                  {sideComparison &&
+                    sideComparison.sides.map((side, idx) => {
+                      const pal = DYNAMIC_SIDE_PALETTES[idx % DYNAMIC_SIDE_PALETTES.length];
+                      return (
+                        <th
+                          key={`list-side-hdr-${side}`}
+                          className={`px-3 py-2 font-medium whitespace-nowrap text-right ${pal.text}`}
+                        >
+                          {side}
+                        </th>
+                      );
+                    })}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#30363d]/60">
+                {filteredSortedNodes.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6 + (sideComparison?.sides.length ?? 0)}
+                      className="px-4 py-10 text-center text-xs text-slate-500"
+                    >
+                      当前过滤条件下无匹配指标节点
+                    </td>
+                  </tr>
+                ) : (
+                  filteredSortedNodes.map((node) => {
+                    const cfg = node.metricConfig;
+                    const level = cfg?.militaryLevel ?? 'MOP';
+                    const domainLabel =
+                      DOMAIN_OPTIONS.find((d) => d.value === cfg?.domainTag)?.value ??
+                      cfg?.domainTag ??
+                      '—';
+                    const mode = cfg?.mode ?? 'from_operator';
+                    const opMeta =
+                      mode === 'from_operator' && cfg?.sourceRef
+                        ? operatorMap.get(cfg.sourceRef)
+                        : undefined;
+                    const inLinks = lineageByNodeId.incoming.get(node.id) ?? [];
+                    const outLinks = lineageByNodeId.outgoing.get(node.id) ?? [];
+                    const latestExec =
+                      execResults[node.id] ??
+                      (sideComparison
+                        ? extractNodeResultsFromSlice(sideComparison.overall)[node.id]
+                        : undefined);
+                    const statusMeta = getExecStatusMeta(latestExec?.status);
+                    const isSelected = node.id === selectedNodeId;
+
+                    return (
+                      <tr
+                        key={node.id}
+                        onClick={() => {
+                          setSelectedNodeId(node.id);
+                          setSelectedEdgeId(null);
+                          setWorkspaceView('canvas');
+                        }}
+                        title="点击切回画布并高亮选中该节点"
+                        className={`cursor-pointer transition hover:bg-[#161b22]/90 ${
+                          isSelected ? 'bg-emerald-950/30' : ''
+                        }`}
+                      >
+                        <td className="px-3 py-2.5 align-top whitespace-nowrap">
+                          <div className="flex flex-col items-start gap-1">
+                            <span
+                              className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${MILITARY_LEVEL_BADGES[level]}`}
+                            >
+                              {level}
+                            </span>
+                            <span className="rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.5 font-mono text-[10px] text-slate-300">
+                              {domainLabel}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-2.5 align-top">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-slate-100">
+                              {cfg?.name || node.label}
+                            </span>
+                            {isSelected && (
+                              <span className="rounded bg-emerald-500/20 px-1.5 py-0.2 text-[9px] text-emerald-300">
+                                当前选中
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 font-mono text-[10px] text-slate-400">
+                            {cfg?.metricId || node.id}
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-2.5 align-top whitespace-nowrap">
+                          <span
+                            className={`inline-block rounded border px-1.5 py-0.5 font-mono text-[10px] ${
+                              mode === 'from_operator'
+                                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300'
+                                : mode === 'from_metric_agg'
+                                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                  : 'border-teal-500/40 bg-teal-500/10 text-teal-300'
+                            }`}
+                          >
+                            {mode}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-2.5 align-top">
+                          <div className="space-y-1">
+                            {mode === 'from_operator' && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-mono text-[11px] text-cyan-200">
+                                  {opMeta ? `${opMeta.name} (${cfg?.sourceRef})` : cfg?.sourceRef || '—'}
+                                </span>
+                                {cfg?.targetField && (
+                                  <span className="rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.2 font-mono text-[10px] text-slate-300">
+                                    列: {cfg.targetField}
+                                    {cfg.reduce ? ` · ${cfg.reduce}` : ''}
+                                  </span>
+                                )}
+                                {cfg?.sourceRef && onDrillDownToOperator && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDrillDownToOperator(cfg.sourceRef!);
+                                    }}
+                                    className="inline-flex items-center gap-0.5 rounded border border-cyan-500/45 bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-medium text-cyan-200 hover:bg-cyan-500/25 cursor-pointer"
+                                  >
+                                    <ArrowDownRight className="h-3 w-3" />
+                                    <span>下钻算子</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {mode === 'from_metric_agg' && (
+                              <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-emerald-200">
+                                <span>上游: {cfg?.sourceRef || '—'}</span>
+                                {cfg?.groupBy?.length ? (
+                                  <span className="rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.2 text-[10px] text-slate-300">
+                                    groupBy: {cfg.groupBy.join(',')}
+                                  </span>
+                                ) : null}
+                                {cfg?.targetField && (
+                                  <span className="rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.2 text-[10px] text-slate-300">
+                                    {cfg.targetField}
+                                    {cfg.reduce ? ` (${cfg.reduce})` : ''}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {mode === 'from_metric_formula' && (
+                              <div className="space-y-1">
+                                <div className="font-mono text-[11px] text-teal-200">
+                                  {cfg?.formulaExpression || '—'}
+                                </div>
+                                {inLinks.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {inLinks.map(({ edge, sourceNode }) => (
+                                      <span
+                                        key={edge.id}
+                                        className="rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.2 font-mono text-[10px] text-slate-400"
+                                      >
+                                        {edge.targetAlias ||
+                                          sanitizeVarAlias(
+                                            sourceNode?.metricConfig?.metricId || edge.sourceNodeId,
+                                          )}{' '}
+                                        ← {sourceNode?.metricConfig?.name || edge.sourceNodeId}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {outLinks.length > 0 && (
+                              <div className="text-[10px] text-slate-500">
+                                下游引用:{' '}
+                                {outLinks
+                                  .map(({ targetNode }) => targetNode?.metricConfig?.name || targetNode?.id)
+                                  .filter(Boolean)
+                                  .join('、')}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-2.5 align-top font-mono text-[11px] text-slate-300 whitespace-nowrap">
+                          {cfg?.unit || '—'}
+                        </td>
+
+                        <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="font-mono font-semibold text-slate-100 tabular-nums">
+                              {formatMetricExecValue(latestExec)}
+                            </span>
+                            <span
+                              title={latestExec?.missingDataReason}
+                              className={`rounded border px-1.5 py-0.2 font-mono text-[9px] ${statusMeta.cls}`}
+                            >
+                              {statusMeta.label}
+                            </span>
+                          </div>
+                        </td>
+
+                        {sideComparison &&
+                          sideComparison.sides.map((side) => {
+                            const sideNodeExec = extractNodeResultsFromSlice(
+                              sideComparison.bySide[side],
+                            )[node.id];
+                            const sMeta = getExecStatusMeta(sideNodeExec?.status);
+                            return (
+                              <td
+                                key={`list-cell-${node.id}-${side}`}
+                                className="px-3 py-2.5 align-top text-right whitespace-nowrap"
+                              >
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className="font-mono font-semibold text-slate-100 tabular-nums">
+                                    {formatMetricExecValue(sideNodeExec)}
+                                  </span>
+                                  <span
+                                    title={sideNodeExec?.missingDataReason}
+                                    className={`rounded border px-1.5 py-0.2 font-mono text-[9px] ${sMeta.cls}`}
+                                  >
+                                    {sMeta.label}
+                                  </span>
+                                </div>
+                              </td>
+                            );
+                          })}
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="grid min-h-[470px] flex-1 grid-cols-1 gap-3 lg:grid-cols-12">
+          <div className="lg:col-span-7 flex min-h-[470px] flex-col">
+            <DagCanvasBoard
+              graphKind="metric"
+              title={activeGraph.name}
+              nodes={canvasNodes}
+              edges={canvasEdges}
+              selectedNodeId={selectedNodeId}
+              selectedEdgeId={selectedEdgeId}
+              showOutline={false}
+              outlineSide="left"
+              emptyStateText="点击上方 [+ 算子引用] / [+ 二次聚合] / [+ 复合公式] 添加指标节点"
+              onSelectNode={(nid) => {
+                setSelectedNodeId(nid);
+                if (nid) setSelectedEdgeId(null);
+              }}
+              onSelectEdge={(eid) => {
+                setSelectedEdgeId(eid);
+                if (eid) setSelectedNodeId(null);
+              }}
+              onNodesChange={handleCanvasNodesChange}
+              onEdgesChange={handleCanvasEdgesChange}
+              onConnect={handleConnect}
+              onDeleteNode={handleDeleteNode}
+              onDeleteEdge={handleDeleteEdge}
+              onDrillDown={handleDrillDown}
+            />
+          </div>
+
+          {/* 右侧指标节点配置抽屉 */}
+          <aside className="lg:col-span-5 flex max-h-[680px] flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22]">
           <div className="flex items-center justify-between border-b border-[#30363d] bg-[#0d1117]/80 px-3.5 py-2.5">
             <div className="flex items-center gap-2 min-w-0">
               <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
@@ -2144,6 +2458,124 @@ export function MetricDagStudioPanel({
                   </div>
                 )}
 
+                {/* 选一库算子直接预览二维表并点击选列（所见即所得） */}
+                {selectedNode.metricConfig?.mode === 'from_operator' &&
+                  Boolean(selectedNode.metricConfig.sourceRef?.trim()) && (
+                    <div className="space-y-2 rounded-lg border border-cyan-500/35 bg-[#0d1117] p-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Table2 className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
+                          <span className="truncate text-[11px] font-semibold text-cyan-200">
+                            预览该算子二维表与点击选列
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {opPreview?.status && (
+                            <span
+                              className={`rounded border px-1.5 py-0.2 font-mono text-[10px] ${getExecStatusMeta(opPreview.status).cls}`}
+                            >
+                              {opPreview.status}
+                              {typeof opPreview.latencyMs === 'number'
+                                ? ` · ${opPreview.latencyMs.toFixed(0)}ms`
+                                : ''}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void runOperatorPreview(
+                                selectedNode.metricConfig!.sourceRef!,
+                                true,
+                              )
+                            }
+                            disabled={opPreview?.loading}
+                            className="inline-flex items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/15 px-2 py-0.5 text-[10px] text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50 cursor-pointer"
+                          >
+                            <RefreshCw
+                              className={`h-3 w-3 ${opPreview?.loading ? 'animate-spin' : ''}`}
+                            />
+                            <span>{opPreview?.loading ? '试算中...' : '刷新预览'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {opPreview?.error && (
+                        <div className="rounded border border-rose-500/40 bg-rose-950/40 px-2 py-1.5 text-[11px] text-rose-200">
+                          {opPreview.error}
+                        </div>
+                      )}
+
+                      {opPreview?.status === 'unavailable' && opPreview.missingDataReason && (
+                        <div className="flex items-start gap-1.5 rounded border border-rose-500/40 bg-rose-950/40 px-2 py-1.5 text-[11px] text-rose-200">
+                          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
+                          <span>{opPreview.missingDataReason}</span>
+                        </div>
+                      )}
+
+                      {/* 可点击输出列胶囊：点击一键填入 targetField */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-slate-400">
+                          <span>点击输出列胶囊一键填入提取字段 (targetField)：</span>
+                          {selectedNode.metricConfig.targetField && (
+                            <span className="font-mono text-emerald-300">
+                              已选: {selectedNode.metricConfig.targetField}
+                            </span>
+                          )}
+                        </div>
+                        {opPreviewColumns.length === 0 ? (
+                          <div className="text-[10px] text-slate-500">
+                            {opPreview?.loading ? '正在运行一库算子获取输出列...' : '暂无输出列定义'}
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {opPreviewColumns.map((col) => {
+                              const isActiveField =
+                                selectedNode.metricConfig?.targetField === col.name;
+                              return (
+                                <button
+                                  key={`op-pill-${col.name}`}
+                                  type="button"
+                                  onClick={() =>
+                                    updateSelectedMetricConfig({ targetField: col.name })
+                                  }
+                                  title={
+                                    col.description
+                                      ? `${col.description}（点击填入 targetField）`
+                                      : `点击将 ${col.name} 填入 targetField`
+                                  }
+                                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] transition cursor-pointer ${
+                                    isActiveField
+                                      ? 'border-emerald-400 bg-emerald-500/25 font-semibold text-emerald-100 shadow-sm shadow-emerald-950/60'
+                                      : 'border-[#30363d] bg-[#161b22] text-cyan-200 hover:border-cyan-400/70 hover:bg-cyan-500/10'
+                                  }`}
+                                >
+                                  <span>{col.name}</span>
+                                  {col.type && (
+                                    <span className="text-[9px] opacity-70">{col.type}</span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 嵌入式二维表实时预览 */}
+                      <V4TablePivotPreview
+                        dataset={opPreview?.dataset ?? null}
+                        maxRows={50}
+                        title={`${selectedNodeOpMeta?.name || selectedNode.metricConfig.sourceRef} · 算子实测二维表`}
+                        emptyText={
+                          opPreview?.loading
+                            ? '正在调用 POST /api/v4/operators/run 预览真实二维表...'
+                            : opPreview?.status === 'unavailable'
+                              ? `Fail-Closed 缺数：${opPreview.missingDataReason || '底表缺失'}`
+                              : '点击「刷新预览」获取该一库算子的真实二维表输出'
+                        }
+                      />
+                    </div>
+                  )}
+
                 {/* 当前节点运行诊断 */}
                 {selectedExec && (
                   <div className="space-y-1.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-2.5">
@@ -2276,6 +2708,245 @@ export function MetricDagStudioPanel({
           </div>
         </aside>
       </div>
+      )}
+
+      {/* 多阵营同屏对比试算专属面板（分方列表完全由后端动态返回） */}
+      {sideComparison && (
+        <div className="rounded-xl border border-cyan-500/35 bg-[#161b22] overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#30363d] bg-[#0d1117]/80 px-3.5 py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCompareCollapsed((prev) => !prev)}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-200 hover:text-cyan-100 cursor-pointer"
+              >
+                {compareCollapsed ? (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+                <Scale className="h-3.5 w-3.5 text-cyan-400" />
+                <span>多阵营同屏对比试算</span>
+              </button>
+
+              <span className="rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.5 font-mono text-[10px] text-slate-300">
+                动态发现 {sideComparison.sides.length} 个分方
+              </span>
+
+              {sideComparison.sides.map((side, idx) => {
+                const pal = DYNAMIC_SIDE_PALETTES[idx % DYNAMIC_SIDE_PALETTES.length];
+                return (
+                  <span
+                    key={`cmp-badge-${side}`}
+                    className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] ${pal.badge}`}
+                  >
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${pal.bar}`} />
+                    <span>{side}</span>
+                  </span>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {sideComparison.runId && (
+                <span className="font-mono text-[10px] text-slate-400">
+                  runId: {sideComparison.runId}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setCompareCollapsed((prev) => !prev)}
+                className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5 text-[10px] text-slate-300 hover:border-slate-500 cursor-pointer"
+              >
+                {compareCollapsed ? '展开对比' : '收起对比'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSideComparison(null)}
+                className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5 text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+
+          {!compareCollapsed && (
+            <div className="max-h-[340px] overflow-auto bg-[#0d1117]">
+              {sideComparison.sides.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-amber-300">
+                  本次推演数据未发现可切片的分方列（后端返回 sides = []），请检查算子输出是否包含分方字段。
+                </div>
+              ) : (
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#161b22] text-[11px] text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">指标节点 (层次 / 单位)</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap text-right">
+                        全量 (overall)
+                      </th>
+                      {sideComparison.sides.map((side, idx) => {
+                        const pal = DYNAMIC_SIDE_PALETTES[idx % DYNAMIC_SIDE_PALETTES.length];
+                        return (
+                          <th
+                            key={`cmp-col-${side}`}
+                            className={`px-3 py-2 font-medium whitespace-nowrap ${pal.text}`}
+                          >
+                            {side} · 实测与差异条
+                          </th>
+                        );
+                      })}
+                      <th className="px-3 py-2 font-medium whitespace-nowrap text-right">
+                        阵营极差 Δ
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#30363d]/60">
+                    {activeGraph.nodes.map((node) => {
+                      const cfg = node.metricConfig;
+                      const level = cfg?.militaryLevel ?? 'MOP';
+                      const overallExec = extractNodeResultsFromSlice(sideComparison.overall)[
+                        node.id
+                      ];
+                      const overallStatus = getExecStatusMeta(overallExec?.status);
+
+                      const sideEntries = sideComparison.sides.map((side) => {
+                        const exec = extractNodeResultsFromSlice(
+                          sideComparison.bySide[side],
+                        )[node.id];
+                        return {
+                          side,
+                          exec,
+                          num: getNumericMetricExecValue(exec),
+                        };
+                      });
+
+                      const numericVals = sideEntries
+                        .map((e) => e.num)
+                        .filter((v): v is number => v !== null);
+                      const maxVal = numericVals.length > 0 ? Math.max(...numericVals) : 0;
+                      const minVal = numericVals.length > 0 ? Math.min(...numericVals) : 0;
+                      const maxAbs =
+                        numericVals.length > 0
+                          ? Math.max(...numericVals.map((v) => Math.abs(v)), 1e-9)
+                          : 1;
+                      const spread = numericVals.length >= 2 ? maxVal - minVal : null;
+
+                      return (
+                        <tr
+                          key={`cmp-row-${node.id}`}
+                          onClick={() => {
+                            setSelectedNodeId(node.id);
+                            setSelectedEdgeId(null);
+                            if (workspaceView !== 'canvas') setWorkspaceView('canvas');
+                          }}
+                          className={`cursor-pointer transition hover:bg-[#161b22]/85 ${
+                            node.id === selectedNodeId ? 'bg-emerald-950/25' : ''
+                          }`}
+                        >
+                          <td className="px-3 py-2 align-middle">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`rounded border px-1.5 py-0.2 font-mono text-[10px] font-semibold ${MILITARY_LEVEL_BADGES[level]}`}
+                              >
+                                {level}
+                              </span>
+                              <span className="font-medium text-slate-100">
+                                {cfg?.name || node.label}
+                              </span>
+                              {cfg?.unit && (
+                                <span className="rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.2 font-mono text-[10px] text-slate-400">
+                                  {cfg.unit}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 font-mono text-[10px] text-slate-500">
+                              {cfg?.metricId || node.id}
+                            </div>
+                          </td>
+
+                          <td className="px-3 py-2 align-middle text-right whitespace-nowrap">
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="font-mono font-semibold text-slate-200 tabular-nums">
+                                {formatMetricExecValue(overallExec)}
+                              </span>
+                              <span
+                                title={overallExec?.missingDataReason}
+                                className={`rounded border px-1.5 py-0.2 font-mono text-[9px] ${overallStatus.cls}`}
+                              >
+                                {overallStatus.label}
+                              </span>
+                            </div>
+                          </td>
+
+                          {sideEntries.map(({ side, exec, num }, idx) => {
+                            const pal =
+                              DYNAMIC_SIDE_PALETTES[idx % DYNAMIC_SIDE_PALETTES.length];
+                            const sMeta = getExecStatusMeta(exec?.status);
+                            const barPct =
+                              num === null
+                                ? 0
+                                : minVal >= 0 && maxVal > 0
+                                  ? Math.max(4, Math.min(100, (num / maxVal) * 100))
+                                  : Math.max(4, Math.min(100, (Math.abs(num) / maxAbs) * 100));
+                            const isLeader =
+                              num !== null && numericVals.length >= 2 && num === maxVal && spread !== 0;
+
+                            return (
+                              <td
+                                key={`cmp-cell-${node.id}-${side}`}
+                                className="min-w-[155px] px-3 py-2 align-middle"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span
+                                    className={`font-mono font-semibold tabular-nums ${
+                                      exec?.status === 'unavailable'
+                                        ? 'text-rose-300'
+                                        : isLeader
+                                          ? pal.text
+                                          : 'text-slate-100'
+                                    }`}
+                                  >
+                                    {formatMetricExecValue(exec)}
+                                    {cfg?.unit && num !== null ? ` ${cfg.unit}` : ''}
+                                  </span>
+                                  <span
+                                    title={exec?.missingDataReason}
+                                    className={`rounded border px-1.5 py-0.2 font-mono text-[9px] ${sMeta.cls}`}
+                                  >
+                                    {sMeta.label}
+                                  </span>
+                                </div>
+                                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#161b22]">
+                                  {num !== null ? (
+                                    <div
+                                      className={`h-full rounded-full transition-all ${pal.bar}`}
+                                      style={{ width: `${barPct.toFixed(1)}%` }}
+                                    />
+                                  ) : (
+                                    <div className="h-full w-0" />
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          })}
+
+                          <td className="px-3 py-2 align-middle text-right font-mono text-[11px] text-slate-300 tabular-nums whitespace-nowrap">
+                            {spread !== null
+                              ? Number.isInteger(spread)
+                                ? spread.toLocaleString()
+                                : Number(spread.toFixed(4)).toString()
+                              : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 底部实时多维明细 / 交叉透视预览区 */}
       <div className="space-y-1.5">
