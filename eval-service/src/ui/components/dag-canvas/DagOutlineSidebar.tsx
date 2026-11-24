@@ -233,7 +233,7 @@ export function DagOutlineSidebar({
             <Layers className="h-4 w-4 text-cyan-400 shrink-0" />
           )}
           <span className="truncate text-xs font-semibold text-slate-100">
-            {graphKind === 'system' ? '拓扑大纲与局部权重矩阵' : 'DAG 拓扑大纲'}
+            {graphKind === 'system' ? '结构大纲与权重矩阵' : '拓扑结构大纲'}
           </span>
         </div>
 
@@ -399,7 +399,7 @@ export function DagOutlineSidebar({
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-300">
                 <GitBranch className="h-3.5 w-3.5" />
-                <span>入边局部权重矩阵 (Σw = 1.00)</span>
+                <span>入边权重配置 (Σw = 1.00)</span>
               </div>
               <span className="font-mono text-[10px] text-slate-500">
                 {systemWeightTargets.length} 合成节点
@@ -408,7 +408,7 @@ export function DagOutlineSidebar({
 
             {systemWeightTargets.length === 0 ? (
               <div className="rounded-lg border border-dashed border-[#30363d] bg-[#161b22]/50 p-3 text-center text-[11px] text-slate-500">
-                当前尚无合成入边连线，拖拽节点连线后可在此实时调节局部权重
+                暂无入边连线，连接节点后可在此配置权重
               </div>
             ) : (
               <div className="space-y-2.5">

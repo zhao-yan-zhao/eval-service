@@ -227,8 +227,8 @@ export function DataExplorerView({
             kind: 'ok',
             text:
               templateChoice === 'empty'
-                ? `已新建并激活全新空白三库标准库「${res.created}」（0 算子、0 指标、0 体系），可在算子工作台与指标中心从零自主构建！`
-                : `已新建并激活三库标准库「${res.created}」，已基于军标模板初始化 36 项物理算子与 4 套经典体系！`,
+                ? `已新建并激活空白标准库「${res.created}」（0 算子、0 指标、0 体系）`
+                : `已新建并激活标准库「${res.created}」，已基于模板初始化基础算子与体系`,
           });
         } else {
           setActiveScenarioDbName(res.created);
@@ -649,7 +649,7 @@ export function DataExplorerView({
               <span className="text-slate-600 hidden sm:inline">|</span>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
-                <span className="text-slate-400">标准三库知识库:</span>
+                <span className="text-slate-400">标准评估资产库:</span>
                 <span className="font-mono font-bold text-cyan-300">{activeOperatorDbName || 'operators.db'}</span>
                 <span className="text-[11px] text-slate-400">
                   ({operatorDbStats?.counts?.builtinOperators ?? 36} 算子 · {operatorDbStats?.counts?.systems ?? 4} 体系)

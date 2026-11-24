@@ -14,9 +14,10 @@
    - 军事仿真评估的核心价值在于**可溯源的事实证据链**。
    - 当推演日志缺失（例如缺少对应 CSV 表、关键列为空、或 BS 帧中未命中目标航迹时），**必须严格返回 `status: "unavailable"` 并给出明确的 `missingDataReason`**。
    - **严禁使用 `|| 0.85` 或随手编造默认数值糊弄通过**。
-3. **安全计算红线（Zero `eval`）**：
+3. **安全计算红线（Zero `eval` & AST 沙箱）**：
    - 严禁在任何地方使用原生 `eval()` 或 `new Function()` 执行用户或动态表达式。
-   - 所有行内公式衍生计算必须严格走 [`src/engine/libformula/`](src/engine/libformula/) 纯 AST 词法与递归下降语法树引擎。
+   - 所有行内公式衍生计算必须严格走 [`src/operators/formula-engine.ts`](src/operators/formula-engine.ts) 纯 AST 词法与递归下降语法树引擎；
+   - V4 Python 算子脚本必须严格通过 [`src/engine/python-worker.ts`](src/engine/python-worker.ts) 与 [`src/engine/python_worker.py`](src/engine/python_worker.py) 的 AST 安全沙箱执行，严禁绕过沙箱校验或放行危险导入与 `__builtins__` 越权访问。
 
 ---
 
@@ -61,15 +62,18 @@
 
 ---
 
-## 4. 三库分层与运筹学约束 (Three-Library Invariants)
+## 4. 三库分层、数据库持久化与运筹学约束 (Three-Library & Persistence Invariants)
 
-1. **一库 ➔ 二库绑定**：
-   - 二库指标定义（`catalog.json`）中的 `atomRef` 必须对应一库 38 个内置物理算子或自定义算子；
-   - 指标的 `targetField` 必须精确匹配流水线末端节点（`result_output`）的产出字段。
-2. **三库体系树权重完整性**：
-   - 评估体系树同级节点权重之和必须严格满足 $\sum = 1.0000 \pm 1e-4$；
-   - 某维度缺数导致 `unavailable` 时，通过 `availableWeightRatio` 自动重新归一化，严禁强改原始体系定义。
-3. **MCDA 运筹学严谨性**：
+1. **三库全量入库持久化（Database-First Persistence）**：
+   - 一库（算子定义、算子覆盖配置与算子流水线）、二库（指标定义与 V4 指标 DAG 图 `MetricGraphStore`）、三库（评估体系树与 V4 效果 DAG `EffectStore` / `SystemDagStore`）的**全部数据必须持久化存储到 SQLite 数据库**（[`src/adapters/sqlite-store.ts`](src/adapters/sqlite-store.ts)，默认库文件 `data/eval.db`）。
+   - 严禁将用户新增、编辑的算子/指标/体系或运行期状态仅保存在纯内存或零散 JSON 文件中；内置静态配置（如 `src/indicators/catalog.json`、`src/effects/presets.json` 及内置 V1-V4 算子定义）仅作为初始化种子数据同步入库。
+2. **一库 ➔ 二库 ➔ 三库 DAG 绑定**：
+   - 传统指标定义中的 `atomRef` 与 V4 指标 DAG 节点必须绑定到一库内置算子（含 V1/V2/V3/V4 体系）或自定义算子；
+   - 指标的 `targetField` 必须精确匹配算子/流水线末端节点的产出字段；V4 体系通过 `/api/v4/*` 与全阵营同屏对比（`compare-sides`）贯通。
+3. **三库体系树权重完整性**：
+   - 评估体系树与效果 DAG 同级入边权重之和必须严格满足 $\sum = 1.0000 \pm 1e-4$；
+   - 某维度缺数导致 `unavailable` 时，通过 `availableWeightRatio` 自动重新归一化（或按门控规则处理），严禁强改原始体系定义。
+4. **MCDA 运筹学严谨性**：
    - 调用 Python AHP 算法时，成对比较判断矩阵必须满足 Saaty 一致性比率 $CR < 0.10$。
 
 ---
@@ -77,11 +81,11 @@
 ## 5. 验证与交付守则 (Verification & Quality Protocol)
 
 1. **全套自动化测试必须全绿**：
-   - 任何核心逻辑、适配器、算子或 API 修改后，必须执行：
+   - 任何核心逻辑、适配器、算子、数据库持久化或 API 修改后，必须执行：
      ```bash
      npm --prefix eval-service test
      ```
-   - 必须确认全量 **50 项测试 100% 通过（50 pass, 0 fail）**。
+   - 必须确认**全量自动化测试 100% 通过（0 fail）**（当前套件已覆盖 Stage 1-26 与 V4 全链路共 139 项测试）。
 2. **禁止篡改断言硬凑测试通过**：
    - 测试报错代表真实业务或契约冲突，必须定位并修复实现逻辑，严禁以放宽条件、删除断言的方式伪造通过。
 3. **生产构建验证**：

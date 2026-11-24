@@ -1401,7 +1401,7 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
                     </span>
                   </h4>
                   <p className="text-xs text-[#8b949e] mt-0.5">
-                    一库原子算子流水线的计算积木块。支持通过标准 JSON Schema 规范导入第三方自定义算法组件（Python/公式/HTTP 微服务）。
+                    算子流水线的基础计算构件，支持导入自定义算法组件（Python、公式与外部微服务）。
                   </p>
                 </div>
 

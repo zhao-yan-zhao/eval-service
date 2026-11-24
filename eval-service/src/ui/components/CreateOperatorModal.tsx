@@ -220,7 +220,7 @@ export function CreateOperatorModal({
             id: outNodeId,
             type: 'result_output' as const,
             title: `二维表输出：${trimmedName}`,
-            description: '输出结构化二维事实表 (TableDataset)，供二库指标计算图引用',
+            description: '输出结构化特征表，供上层指标计算引用',
             x: 920,
             y: 180,
             config: {
@@ -269,7 +269,7 @@ export function CreateOperatorModal({
             <div>
               <h2 className="text-base font-bold text-slate-100">新建自定义评估算子</h2>
               <span className="text-xs text-slate-400">
-                向一库（算子库）注册全新特征计算算子，支持在画布工坊中自主编排多节点流水线
+                注册新特征计算算子，支持在画布中编排多节点流水线
               </span>
             </div>
           </div>

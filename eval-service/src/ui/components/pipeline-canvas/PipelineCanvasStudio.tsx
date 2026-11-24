@@ -10,6 +10,7 @@ import {
   Database,
   Download,
   FolderOpen,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   Minus,
@@ -37,12 +38,17 @@ import type {
 } from './canvas-types.ts';
 import { CanvasConnectionLines } from './CanvasConnectionLines.tsx';
 import { CanvasNodeCard } from './CanvasNodeCard.tsx';
+import {
+  autoLayoutPipelineNodes,
+  ensureNonOverlappingLayout,
+} from './pipeline-layout.ts';
 import { CanvasInspectorDrawer } from './CanvasInspectorDrawer.tsx';
 import { CanvasPreviewTable } from './CanvasPreviewTable.tsx';
 import { SchemaDictionaryModal } from './SchemaDictionaryModal.tsx';
 import { ALL_SPEC_EVENTS, findCatalogTable, type CatalogTableSpec } from './schema-catalog.ts';
 import { getNodeOutputColumns } from './lineage-analyzer.ts';
 import { evalApi, type MetricAtomMeta } from '../../api.ts';
+import { UnifiedAssetSelector, type UnifiedAssetOption } from '../v4/index.ts';
 import type { TableDataset } from '../../../core/types.ts';
 import { getOperatorPipelineBlueprint } from '../../../operators/blueprints.ts';
 import { executeFormulaOrAggPreview } from '../../../operators/pipeline-engine.ts';
@@ -157,11 +163,12 @@ function buildCanvasFromBlueprint(operatorId: string, opName?: string): {
       targetNodeId: be.targetNodeId,
       label: be.label,
     }));
-    const firstTable = loadedNodes[0]?.config?.csvTable;
+    const layoutedNodes = ensureNonOverlappingLayout(loadedNodes, loadedEdges);
+    const firstTable = layoutedNodes[0]?.config?.csvTable;
     const tableDataset = firstTable ? getSampleDatasetForTable(firstTable) : null;
     return {
       title: `【${bp.category === 'compliance' ? '合规域' : bp.category}】${bp.name} · 算法流水线 (${bp.algorithmLabel})`,
-      nodes: loadedNodes,
+      nodes: layoutedNodes,
       edges: loadedEdges,
       dataset: bp.defaultDataset || tableDataset || DEFAULT_SAMPLE_DATASET,
     };
@@ -506,8 +513,9 @@ export function PipelineCanvasStudio({
       .getOperatorPipeline(opId)
       .then(async (res) => {
         if (res?.ok && res.pipeline && res.pipeline.nodes?.length > 0) {
-          const loadedNodes = res.pipeline.nodes;
-          setEdges(res.pipeline.edges || []);
+          const loadedEdges = res.pipeline.edges || [];
+          const loadedNodes = ensureNonOverlappingLayout(res.pipeline.nodes, loadedEdges);
+          setEdges(loadedEdges);
           setPipelineTitle(res.pipeline.pipelineTitle || `算子 [${op?.name || opId}] 流水线`);
           const firstTable = loadedNodes[0]?.config?.csvTable;
           const tableDataset = firstTable ? getSampleDatasetForTable(firstTable) : null;
@@ -651,11 +659,14 @@ export function PipelineCanvasStudio({
     if (effectiveInitialOpId) {
       evalApi.getOperatorPipeline(effectiveInitialOpId).then((res) => {
         if (res?.ok && res.pipeline && res.pipeline.nodes?.length > 0) {
-          setNodes(res.pipeline.nodes);
-          setEdges(res.pipeline.edges || []);
+          const loadedEdges = res.pipeline.edges || [];
+          const layoutedNodes = ensureNonOverlappingLayout(res.pipeline.nodes, loadedEdges);
+          setNodes(layoutedNodes);
+          setEdges(loadedEdges);
           if (res.pipeline.pipelineTitle) setPipelineTitle(res.pipeline.pipelineTitle);
           if (res.pipeline.dataset) setActiveDataset(res.pipeline.dataset);
-          setSelectedNodeId(res.pipeline.nodes[0]?.id ?? null);
+          setSelectedNodeId(layoutedNodes[0]?.id ?? null);
+          pendingFitRef.current = true;
         }
       }).catch(() => {});
     }
@@ -1733,6 +1744,13 @@ export function PipelineCanvasStudio({
     setViewport({ panX: Math.round(newPanX), panY: Math.round(newPanY), zoom: Math.round(newZoom * 100) / 100 });
   };
 
+  const handleAutoLayout = () => {
+    setNodes((prev) => autoLayoutPipelineNodes(prev, edges));
+    pendingFitRef.current = true;
+    setToastMessage('已自动重排节点布局');
+    setTimeout(() => setToastMessage(null), 2000);
+  };
+
   // 选中宽屏节点时自动折叠左侧组件栏，并在视口变化后重算居中
   useEffect(() => {
     const activeNode = nodes.find((n) => n.id === selectedNodeId);
@@ -1781,7 +1799,7 @@ export function PipelineCanvasStudio({
 
   const containerClass = isFullscreen
     ? 'fixed inset-0 z-50 flex flex-col bg-[#070b14] text-slate-100 select-none overflow-hidden font-sans'
-    : 'flex flex-col h-[calc(100vh-210px)] min-h-[660px] w-full rounded-2xl border border-slate-800 bg-[#070b14] text-slate-100 select-none overflow-hidden relative shadow-2xl font-sans';
+    : 'flex flex-col h-[calc(100dvh-150px)] min-h-[660px] w-full rounded-2xl border border-slate-800 bg-[#070b14] text-slate-100 select-none overflow-hidden relative shadow-2xl font-sans';
 
   return (
     <div className={containerClass}>
@@ -1803,63 +1821,53 @@ export function PipelineCanvasStudio({
 
           <div className="h-4 w-px bg-slate-800 shrink-0" />
 
-          {/* 算子快速切换器 */}
+          {/* 算子快速切换器（统一可搜索分组下拉框） */}
           {allOperators && allOperators.length > 0 && (
-            <div className="flex items-center shrink-0">
-              <select
-                value={canonicalCurrentOpId}
-                onChange={(e) => handleSwitchOperator(e.target.value)}
-                className="rounded-lg border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs font-medium text-cyan-200 hover:border-cyan-500/50 hover:bg-slate-800/80 focus:border-cyan-400 focus:outline-none shadow-sm cursor-pointer transition max-w-[200px] sm:max-w-[260px] md:max-w-[320px] truncate"
-                title="切换编排算子"
-              >
-                {/* 兜底：若当前算子未在列表中匹配到，单独立项展示，杜绝无对应 option 时浏览器默认显示首项的错位问题 */}
-                {canonicalCurrentOpId && !allOperators.some((op) => op.id === canonicalCurrentOpId) && (
-                  <option value={canonicalCurrentOpId}>
-                    {canonicalCurrentOpId} · {currentOpMeta?.name || '当前算子'}
-                  </option>
-                )}
-                {(['time', 'effectiveness', 'situation', 'compliance', 'cost'] as const).map((cat) => {
-                  const catOps = allOperators.filter((op) => op.category === cat);
-                  if (catOps.length === 0) return null;
-                  const catNames: Record<string, string> = {
-                    time: '时效域 (Time)',
-                    effectiveness: '效能域 (Effectiveness)',
-                    situation: '态势域 (Situation)',
-                    compliance: '合规域 (Compliance)',
-                    cost: '成本域 (Cost)',
-                  };
-                  return (
-                    <optgroup key={cat} label={`── ${catNames[cat] || cat} (${catOps.length}) ──`}>
-                      {catOps.map((op) => (
-                        <option key={op.id} value={op.id}>
-                          {op.id} · {op.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
-                {allOperators.some((op) => !['time', 'effectiveness', 'situation', 'compliance', 'cost'].includes(op.category)) && (
-                  <optgroup label="── 其他自定义算子 ──">
-                    {allOperators
-                      .filter((op) => !['time', 'effectiveness', 'situation', 'compliance', 'cost'].includes(op.category))
-                      .map((op) => (
-                        <option key={op.id} value={op.id}>
-                          {op.id} · {op.name}
-                        </option>
-                      ))}
-                  </optgroup>
-                )}
-              </select>
-            </div>
+            <UnifiedAssetSelector
+              value={canonicalCurrentOpId}
+              accent="cyan"
+              placeholder="定位算子..."
+              searchPlaceholder="搜索名称、ID 或领域..."
+              options={(() => {
+                const catNames: Record<string, string> = {
+                  time: '时效域',
+                  effectiveness: '效能域',
+                  situation: '态势域',
+                  compliance: '合规域',
+                  cost: '成本域',
+                };
+                const opts: UnifiedAssetOption[] = [];
+                if (
+                  canonicalCurrentOpId &&
+                  !allOperators.some((op) => op.id === canonicalCurrentOpId)
+                ) {
+                  opts.push({
+                    id: canonicalCurrentOpId,
+                    label: currentOpMeta?.name || canonicalCurrentOpId,
+                    subLabel: canonicalCurrentOpId,
+                    group: '当前算子',
+                  });
+                }
+                for (const op of allOperators) {
+                  opts.push({
+                    id: op.id,
+                    label: op.name || op.id,
+                    subLabel: op.id,
+                    group: catNames[op.category] ?? '通用算子',
+                    badge: op.layer === 'fact' ? '基础事实' : '复合算子',
+                    badgeTone: op.layer === 'fact' ? 'cyan' : 'slate',
+                  });
+                }
+                return opts;
+              })()}
+              onChange={(opId) => handleSwitchOperator(opId)}
+            />
           )}
 
-          {/* 🎯 算子试运算推演场景绑定切换器 */}
-          <div className="flex items-center gap-1.5 shrink-0 bg-slate-900/90 border border-emerald-500/40 rounded-lg px-2.5 py-1 shadow-sm" title="当前算子试运算挂载的真实推演场景">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span className="text-[11px] font-semibold text-emerald-300">场景数据:</span>
+          {/* 算子试算关联推演样本 */}
+          <div className="flex items-center gap-1.5 shrink-0 bg-slate-900/90 border border-slate-700 rounded-lg px-2.5 py-1" title="当前算子试算挂载的推演样本">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <span className="text-[11px] font-medium text-slate-300">推演样本:</span>
             <select
               value={boundRunId}
               onChange={(e) => void handleSwitchScenario(e.target.value)}
@@ -2248,6 +2256,15 @@ export function PipelineCanvasStudio({
             >
               <Maximize2 className="h-3 w-3" />
               <span>全貌居中</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleAutoLayout}
+              title="按拓扑层级自动重排节点并消除重叠"
+              className="flex items-center gap-1 rounded bg-cyan-950/60 border border-cyan-800/80 px-2 py-0.5 text-[11px] text-cyan-300 hover:bg-cyan-900/80 transition cursor-pointer"
+            >
+              <LayoutGrid className="h-3 w-3" />
+              <span>自动布局</span>
             </button>
           </div>
         </div>

@@ -1,5 +1,5 @@
 {
-  "activeSourceId": "55th_taihai_csv",
+  "activeSourceId": "gj11_bvr_real",
   "sources": [
     {
       "id": "gj11_bvr_real",
@@ -41,9 +41,9 @@
       "id": "ds_stage18_custom_jsonl",
       "label": "Stage 18 自定义流",
       "sourceKind": "jsonl_file",
-      "path": "C:\\Users\\zhaoyan\\AppData\\Local\\Temp\\f1-stage18-dtrB1S\\custom-stream.jsonl",
+      "path": "C:\\Users\\zhaoyan\\AppData\\Local\\Temp\\f1-stage18-inaKcP\\custom-stream.jsonl",
       "createdAt": "2026-11-22T03:17:21.892Z",
-      "updatedAt": "2026-11-23T09:39:05.095Z"
+      "updatedAt": "2026-11-24T14:34:48.626Z"
     }
   ]
 }

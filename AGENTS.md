@@ -5,9 +5,9 @@
 ## 一、 子项目分工与施工边界
 
 1. **推演评估中台服务 (`eval-service/`)**：
-   - 当前正在高频迭代的核心独立服务（Node 24 + TypeScript + React 19 + Python MCDA）。
+   - 当前正在高频迭代的核心独立服务（Node 24 + TypeScript + React 19 + Python MCDA / AST 沙箱 + SQLite）。
    - **详尽开发铁律与防坑指南请务必读取**：[`eval-service/AGENTS.md`](eval-service/AGENTS.md) 与 [`eval-service/.cursorrules`](eval-service/.cursorrules)。
-   - 核心原则：零入侵主仓库、单一真相源（画布自动同步契约）、纯净契约输出、Fail-Closed 实证门控、全量 50 项测试通过（`npm --prefix eval-service test`）。
+   - 核心原则：零入侵主仓库、单一真相源（画布自动同步契约）、纯净契约输出、Fail-Closed 实证门控、三库全量入库持久化（SQLite `data/eval.db`）、全量自动化测试通过（`npm --prefix eval-service test`）。
 
 2. **既有主干工程（只读受保护）**：
    - `CMO-netcore-src/`（C# 仿真桥与核心引擎代码）：严禁随意改动，须通过独立测试与严格审查。

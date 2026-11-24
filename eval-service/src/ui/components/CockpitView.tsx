@@ -697,14 +697,14 @@ export function CockpitView({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-slate-100 sm:text-base">
-                  V4 全链路评估体系直通车
+                  综合评估分析
                 </h2>
                 <span className="rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-indigo-300">
                   DAG KERNEL
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                一库算子数据流 ➔ 二库客观指标 ➔ 三库效果合成与红线门控裁决
+                物理算子提取 ➔ 客观指标计算 ➔ 体系综合评估
               </p>
             </div>
           </div>
@@ -742,17 +742,17 @@ export function CockpitView({
               className="inline-flex items-center gap-1.5 rounded-md border border-indigo-400/60 bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg shadow-indigo-950/60 hover:bg-indigo-500 disabled:opacity-50 transition cursor-pointer"
             >
               <Play className={`h-3.5 w-3.5 ${v4Evaluating ? 'animate-spin' : ''}`} />
-              <span>{v4Evaluating ? '评估执行中...' : '▶ 运行 V4 全链路评估'}</span>
+              <span>{v4Evaluating ? '评估计算中...' : '运行评估'}</span>
             </button>
 
-            {/* 进入三库体系画布 */}
+            {/* 进入评估体系 */}
             {onOpenV4SystemCanvas && (
               <button
                 type="button"
                 onClick={onOpenV4SystemCanvas}
                 className="inline-flex items-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition cursor-pointer"
               >
-                <span>进入三库体系画布</span>
+                <span>查看评估体系</span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}

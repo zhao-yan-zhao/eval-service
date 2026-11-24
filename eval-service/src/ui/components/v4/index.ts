@@ -14,3 +14,8 @@ export {
   SystemDagStudioPanel,
   type SystemDagStudioPanelProps,
 } from './SystemDagStudioPanel.tsx';
+export {
+  UnifiedAssetSelector,
+  type UnifiedAssetOption,
+  type UnifiedAssetSelectorProps,
+} from './UnifiedAssetSelector.tsx';

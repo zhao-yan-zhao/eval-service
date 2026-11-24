@@ -38,6 +38,7 @@ import {
   evaluateSystemDag,
   normalizeIncomingWeights,
   validateSystemDag,
+  type EvaluationDagRunOutput,
   type SystemDagEvaluationInputs,
 } from '../systems/dag-evaluator.ts';
 import type {
@@ -1220,6 +1221,180 @@ async function executeMetricGraphWithOperators(
   };
 }
 
+interface PreparedSystemDagContext {
+  dag: StoredEvaluationSystemDag;
+  runId: string;
+  dataSourceId?: string;
+  csvDir?: string;
+  evalId?: string;
+  targetSide?: string;
+  globalParams: Record<string, unknown>;
+  mergedParamOverrides: Record<string, Record<string, unknown>>;
+  providedOpResults?: Record<string, MetricOperatorInput>;
+  explicitMetricInputs?: SystemDagEvaluationInputs;
+  metricGraph?: MetricGraphDefinition;
+  strictWeightValidation: boolean;
+}
+
+/**
+ * 统一解析三库体系评估与多阵营对比的请求上下文（体系定义、权重归一/校验、参数透传与上游二库指标图）。
+ */
+function prepareSystemDagContext(
+  body: Record<string, unknown>,
+  deps: V4RouteDeps,
+  options?: {
+    urlSystemId?: string;
+    requireMetricGraph?: boolean;
+  },
+):
+  | { ok: true; context: PreparedSystemDagContext }
+  | { ok: false; status: number; error: string; extra?: Record<string, unknown> } {
+  let dag: StoredEvaluationSystemDag | undefined;
+
+  if (asPlainRecord(body.system)) {
+    dag = body.system as unknown as StoredEvaluationSystemDag;
+  } else if (asPlainRecord(body.dag)) {
+    dag = body.dag as unknown as StoredEvaluationSystemDag;
+  } else {
+    const sysId = asNonEmptyString(options?.urlSystemId) ?? asNonEmptyString(body.systemId);
+    if (!sysId) {
+      return { ok: false, status: 400, error: '必须提供 system 或 systemId' };
+    }
+    dag = deps.systemDagStore.get(sysId);
+    if (!dag) {
+      return { ok: false, status: 404, error: `未找到评估体系 DAG: ${sysId}` };
+    }
+  }
+
+  if (body.normalizeWeights === true) {
+    dag = normalizeIncomingWeights(dag, deps.effectStore);
+  }
+
+  const strictWeightValidation = body.strictWeightValidation === true;
+  if (strictWeightValidation) {
+    const check = validateSystemDag(dag, deps.effectStore);
+    if (!check.valid) {
+      return {
+        ok: false,
+        status: 400,
+        error: `评估体系 DAG 校验未通过: ${check.errors.join('; ')}`,
+        extra: { validation: check },
+      };
+    }
+  }
+
+  const runId = asNonEmptyString(body.runId) ?? 'v4_run_default';
+  const dataSourceId = asNonEmptyString(body.dataSourceId);
+  const csvDir = asNonEmptyString(body.csvDir);
+  const evalId = asNonEmptyString(body.evalId);
+  const bodyParams = asPlainRecord(body.params);
+  const targetSide =
+    asNonEmptyString(body.targetSide) ??
+    asNonEmptyString(bodyParams?.targetSide) ??
+    asNonEmptyString(dag.globalParams?.targetSide);
+
+  // 从三库效果节点收集行级物理阈值覆盖并向上游透传
+  const dagParamOverrides = collectDagParamOverrides(dag, deps.effectStore);
+  const explicitParamOverrides = asNestedParamOverrides(body.paramOverrides);
+  const mergedParamOverrides = mergeParamMaps(dagParamOverrides, explicitParamOverrides);
+
+  const globalParams: Record<string, unknown> = {
+    ...(dag.globalParams ?? {}),
+    ...(bodyParams ?? {}),
+  };
+
+  const providedOpResults = asPlainRecord(body.operatorResults) as
+    | Record<string, MetricOperatorInput>
+    | undefined;
+  const explicitMetricInputs = asPlainRecord(body.metricInputs) as
+    | SystemDagEvaluationInputs
+    | undefined;
+
+  let metricGraph: MetricGraphDefinition | undefined;
+  if (asPlainRecord(body.metricGraph)) {
+    metricGraph = body.metricGraph as unknown as MetricGraphDefinition;
+  } else if (asNonEmptyString(body.metricGraphId)) {
+    const mgId = asNonEmptyString(body.metricGraphId)!;
+    metricGraph = deps.metricGraphStore.get(mgId);
+    if (!metricGraph) {
+      return { ok: false, status: 404, error: `未找到指标 DAG: ${mgId}` };
+    }
+  } else if (
+    (options?.requireMetricGraph || !explicitMetricInputs) &&
+    asNonEmptyString(dag.metricGraphId)
+  ) {
+    const mgId = asNonEmptyString(dag.metricGraphId)!;
+    metricGraph = deps.metricGraphStore.get(mgId);
+    if (options?.requireMetricGraph && !metricGraph) {
+      return { ok: false, status: 404, error: `未找到指标 DAG: ${mgId}` };
+    }
+  }
+
+  if (options?.requireMetricGraph && !metricGraph) {
+    return {
+      ok: false,
+      status: 400,
+      error: '评估体系未关联有效的上游指标 DAG (metricGraphId)',
+    };
+  }
+
+  if (metricGraph) {
+    const mgValidation = deps.metricGraphStore.validate(metricGraph);
+    if (!mgValidation.valid) {
+      return {
+        ok: false,
+        status: 400,
+        error: `上游指标 DAG 校验未通过: ${mgValidation.errors.join('; ')}`,
+        extra: { validation: mgValidation },
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    context: {
+      dag,
+      runId,
+      dataSourceId,
+      csvDir,
+      evalId,
+      targetSide,
+      globalParams,
+      mergedParamOverrides,
+      providedOpResults,
+      explicitMetricInputs,
+      metricGraph,
+      strictWeightValidation,
+    },
+  };
+}
+
+/**
+ * 合并上游二库指标输入与显式覆写输入，执行三库评估体系 DAG。
+ */
+function evaluateSystemDagWithInputs(
+  dag: StoredEvaluationSystemDag,
+  baseMetricInputs: SystemDagEvaluationInputs,
+  explicitMetricInputs: SystemDagEvaluationInputs | undefined,
+  deps: V4RouteDeps,
+  options: {
+    evalId?: string;
+    runId: string;
+    strictWeightValidation: boolean;
+  },
+): EvaluationDagRunOutput {
+  const effectiveMetricInputs: SystemDagEvaluationInputs = explicitMetricInputs
+    ? { ...baseMetricInputs, ...explicitMetricInputs }
+    : { ...baseMetricInputs };
+
+  return evaluateSystemDag(dag, effectiveMetricInputs, {
+    effectStore: deps.effectStore,
+    evalId: options.evalId,
+    runId: options.runId,
+    strictWeightValidation: options.strictWeightValidation,
+  });
+}
+
 // ──────────────────── V4 REST API 路由总分发器 ────────────────────
 
 export async function handleV4ApiRequest(
@@ -1940,131 +2115,50 @@ export async function handleV4ApiRequest(
 
     if (method === 'POST' && pathname === '/api/v4/system-dags/evaluate') {
       const body = await readJsonBody(req);
-      let dag: StoredEvaluationSystemDag | undefined;
-
-      if (asPlainRecord(body.system)) {
-        dag = body.system as unknown as StoredEvaluationSystemDag;
-      } else if (asPlainRecord(body.dag)) {
-        dag = body.dag as unknown as StoredEvaluationSystemDag;
-      } else if (asNonEmptyString(body.systemId)) {
-        const sysId = asNonEmptyString(body.systemId)!;
-        dag = deps.systemDagStore.get(sysId);
-        if (!dag) {
-          sendError(sendJson, res, 404, `未找到评估体系 DAG: ${sysId}`);
-          return true;
-        }
-      } else {
-        sendError(sendJson, res, 400, '必须提供 system 或 systemId');
+      const prepared = prepareSystemDagContext(body, deps);
+      if (!prepared.ok) {
+        sendError(sendJson, res, prepared.status, prepared.error, prepared.extra);
         return true;
       }
 
-      if (body.normalizeWeights === true) {
-        dag = normalizeIncomingWeights(dag, deps.effectStore);
-      }
-
-      if (body.strictWeightValidation === true) {
-        const check = validateSystemDag(dag, deps.effectStore);
-        if (!check.valid) {
-          sendError(sendJson, res, 400, `评估体系 DAG 校验未通过: ${check.errors.join('; ')}`, {
-            validation: check,
-          });
-          return true;
-        }
-      }
-
-      const runId = asNonEmptyString(body.runId) ?? 'v4_run_default';
-      const dataSourceId = asNonEmptyString(body.dataSourceId);
-      const csvDir = asNonEmptyString(body.csvDir);
-      const evalId = asNonEmptyString(body.evalId);
-      const bodyParams = asPlainRecord(body.params);
-      const targetSide =
-        asNonEmptyString(body.targetSide) ??
-        asNonEmptyString(bodyParams?.targetSide) ??
-        asNonEmptyString(dag.globalParams?.targetSide);
-
-      // 从三库效果节点收集行级物理阈值覆盖并向上游透传
-      const dagParamOverrides = collectDagParamOverrides(dag, deps.effectStore);
-      const explicitParamOverrides = asNestedParamOverrides(body.paramOverrides);
-      const mergedParamOverrides = mergeParamMaps(dagParamOverrides, explicitParamOverrides);
-
-      // 解析可选上游二库指标 DAG
-      let metricGraph: MetricGraphDefinition | undefined;
-      if (asPlainRecord(body.metricGraph)) {
-        metricGraph = body.metricGraph as unknown as MetricGraphDefinition;
-      } else if (asNonEmptyString(body.metricGraphId)) {
-        const mgId = asNonEmptyString(body.metricGraphId)!;
-        metricGraph = deps.metricGraphStore.get(mgId);
-        if (!metricGraph) {
-          sendError(sendJson, res, 404, `未找到指标 DAG: ${mgId}`);
-          return true;
-        }
-      } else if (!asPlainRecord(body.metricInputs) && asNonEmptyString(dag.metricGraphId)) {
-        metricGraph = deps.metricGraphStore.get(dag.metricGraphId!);
-      }
-
+      const ctx = prepared.context;
       let metricGraphResult: MetricGraphExecutionResult | null = null;
       let operatorResults: Record<string, MetricOperatorInput> | null = null;
-      let effectiveMetricInputs: SystemDagEvaluationInputs = {};
+      let baseMetricInputs: SystemDagEvaluationInputs = {};
 
-      if (metricGraph) {
-        const mgValidation = deps.metricGraphStore.validate(metricGraph);
-        if (!mgValidation.valid) {
-          sendError(
-            sendJson,
-            res,
-            400,
-            `上游指标 DAG 校验未通过: ${mgValidation.errors.join('; ')}`,
-            { validation: mgValidation },
-          );
-          return true;
-        }
-
-        const globalParams = {
-          ...(dag.globalParams ?? {}),
-          ...(bodyParams ?? {}),
-        };
-
-        const providedOpResults = asPlainRecord(body.operatorResults) as
-          | Record<string, MetricOperatorInput>
-          | undefined;
-
+      if (ctx.metricGraph) {
         const upstreamExec = await executeMetricGraphWithOperators(
-          metricGraph,
+          ctx.metricGraph,
           {
-            runId,
-            dataSourceId,
-            csvDir,
+            runId: ctx.runId,
+            dataSourceId: ctx.dataSourceId,
+            csvDir: ctx.csvDir,
             inputDfDict: body.inputDfDict,
-            targetSide,
-            globalParams,
-            paramOverrides: mergedParamOverrides,
-            providedOperatorResults: providedOpResults,
+            targetSide: ctx.targetSide,
+            globalParams: ctx.globalParams,
+            paramOverrides: ctx.mergedParamOverrides,
+            providedOperatorResults: ctx.providedOpResults,
           },
           deps,
         );
         metricGraphResult = upstreamExec.metricResult;
         operatorResults = upstreamExec.operatorResults;
-        effectiveMetricInputs = { ...metricGraphResult.metricInputsForSystem };
+        baseMetricInputs = metricGraphResult.metricInputsForSystem;
       }
 
-      const explicitMetricInputs = asPlainRecord(body.metricInputs) as
-        | SystemDagEvaluationInputs
-        | undefined;
-      if (explicitMetricInputs) {
-        effectiveMetricInputs = {
-          ...effectiveMetricInputs,
-          ...explicitMetricInputs,
-        };
-      }
-
-      let evalOutput;
+      let evalOutput: EvaluationDagRunOutput;
       try {
-        evalOutput = evaluateSystemDag(dag, effectiveMetricInputs, {
-          effectStore: deps.effectStore,
-          evalId,
-          runId,
-          strictWeightValidation: body.strictWeightValidation === true,
-        });
+        evalOutput = evaluateSystemDagWithInputs(
+          ctx.dag,
+          baseMetricInputs,
+          ctx.explicitMetricInputs,
+          deps,
+          {
+            evalId: ctx.evalId,
+            runId: ctx.runId,
+            strictWeightValidation: ctx.strictWeightValidation,
+          },
+        );
       } catch (err) {
         sendError(
           sendJson,
@@ -2077,11 +2171,138 @@ export async function handleV4ApiRequest(
 
       sendJson(res, 200, {
         ok: true,
-        ...(targetSide ? { targetSide } : {}),
+        ...(ctx.targetSide ? { targetSide: ctx.targetSide } : {}),
         evaluation: evalOutput,
         ...evalOutput,
         metricGraphResult,
         operatorResults,
+      });
+      return true;
+    }
+
+    const systemCompareSidesMatch = pathname.match(
+      /^\/api\/v4\/system-dags\/([^/]+)\/compare-sides$/,
+    );
+    if (method === 'POST' && systemCompareSidesMatch) {
+      const systemId = decodeURIComponent(systemCompareSidesMatch[1]);
+      const body = await readJsonBody(req);
+      const prepared = prepareSystemDagContext(body, deps, {
+        urlSystemId: systemId,
+        requireMetricGraph: true,
+      });
+      if (!prepared.ok) {
+        sendError(sendJson, res, prepared.status, prepared.error, prepared.extra);
+        return true;
+      }
+
+      const ctx = prepared.context;
+      const rawMetricGraph = ctx.metricGraph!;
+      // 多阵营对比必须跑全量数据，剔除可能残留于 system.globalParams / paramOverrides / metricGraph.globalParams 的单阵营 targetSide
+      const { targetSide: _ignoredSide, ...compareGlobalParams } = ctx.globalParams;
+      const compareParamOverrides: Record<string, Record<string, unknown>> = {};
+      for (const [k, v] of Object.entries(ctx.mergedParamOverrides)) {
+        const { targetSide: _ignoredNodeSide, ...rest } = v;
+        if (Object.keys(rest).length > 0) {
+          compareParamOverrides[k] = rest;
+        }
+      }
+      const metricGraph =
+        rawMetricGraph.globalParams && 'targetSide' in rawMetricGraph.globalParams
+          ? {
+              ...rawMetricGraph,
+              globalParams: (({ targetSide: _ignoredMgSide, ...rest }) => rest)(
+                rawMetricGraph.globalParams,
+              ),
+            }
+          : rawMetricGraph;
+
+      const { resolvedOperatorResults, nodeOverrides } = await resolveOperatorsForMetricGraph(
+        metricGraph,
+        {
+          runId: ctx.runId,
+          dataSourceId: ctx.dataSourceId,
+          csvDir: ctx.csvDir,
+          inputDfDict: body.inputDfDict,
+          globalParams: compareGlobalParams,
+          paramOverrides: compareParamOverrides,
+          providedOperatorResults: ctx.providedOpResults,
+        },
+        deps,
+      );
+
+      const sides = discoverSidesFromOperatorResults(resolvedOperatorResults);
+
+      const overallMetricResult = await evaluateMetricGraph(
+        metricGraph,
+        resolvedOperatorResults,
+        {
+          runId: ctx.runId,
+          cache: deps.cache,
+          paramOverrides: nodeOverrides,
+          globalParamOverrides: compareGlobalParams,
+        },
+      );
+
+      let overall: EvaluationDagRunOutput;
+      const bySide: Record<string, EvaluationDagRunOutput> = {};
+      try {
+        overall = evaluateSystemDagWithInputs(
+          ctx.dag,
+          overallMetricResult.metricInputsForSystem,
+          ctx.explicitMetricInputs,
+          deps,
+          {
+            evalId: ctx.evalId,
+            runId: ctx.runId,
+            strictWeightValidation: ctx.strictWeightValidation,
+          },
+        );
+
+        for (const side of sides) {
+          const slicedOpResults = sliceOperatorResultsBySide(resolvedOperatorResults, side);
+          const sideMetricResult = await evaluateMetricGraph(
+            metricGraph,
+            slicedOpResults,
+            {
+              runId: ctx.runId,
+              cache: deps.cache,
+              paramOverrides: nodeOverrides,
+              globalParamOverrides: compareGlobalParams,
+            },
+          );
+          bySide[side] = evaluateSystemDagWithInputs(
+            ctx.dag,
+            sideMetricResult.metricInputsForSystem,
+            ctx.explicitMetricInputs,
+            deps,
+            {
+              evalId: ctx.evalId ? `${ctx.evalId}_${side}` : undefined,
+              runId: ctx.runId,
+              strictWeightValidation: ctx.strictWeightValidation,
+            },
+          );
+        }
+      } catch (err) {
+        sendError(
+          sendJson,
+          res,
+          400,
+          err instanceof Error ? err.message : String(err),
+        );
+        return true;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        systemId: asNonEmptyString(ctx.dag.systemId) ?? systemId,
+        runId: ctx.runId,
+        metricGraphId:
+          asNonEmptyString(metricGraph.graphId) ??
+          asNonEmptyString(body.metricGraphId) ??
+          asNonEmptyString(ctx.dag.metricGraphId),
+        sides,
+        overall,
+        bySide,
       });
       return true;
     }

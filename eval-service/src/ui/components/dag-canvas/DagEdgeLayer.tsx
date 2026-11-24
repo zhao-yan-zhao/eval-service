@@ -346,9 +346,13 @@ export function DagEdgeLayer({
           const showDelete = !readOnly && !edge.isVirtualCollapsed && Boolean(onDeleteEdge) && (isSelected || isHovered);
 
           const hasLabel = Boolean(edge.label && edge.label.trim().length > 0);
+          const hasExplicitWeight = typeof edge.weight === 'number' && Number.isFinite(edge.weight);
+          const showSystemWeight = isSystemMode && (hasExplicitWeight || isSelected || isEditing);
+
           const showBadge =
-            isSystemMode ||
+            showSystemWeight ||
             edge.isVirtualCollapsed ||
+            showDelete ||
             isSelected ||
             isHovered ||
             effectiveStatus === 'unavailable' ||
@@ -357,7 +361,7 @@ export function DagEdgeLayer({
 
           if (!showBadge) return null;
 
-          const weightNum = typeof edge.weight === 'number' && Number.isFinite(edge.weight) ? edge.weight : 0;
+          const weightNum = hasExplicitWeight ? edge.weight! : 0;
           const hasRenormalized =
             typeof edge.effectiveWeight === 'number' &&
             Number.isFinite(edge.effectiveWeight) &&
@@ -377,7 +381,7 @@ export function DagEdgeLayer({
               onMouseDown={(e) => e.stopPropagation()}
             >
               {/* 三库 system 画布局部入边权重交互徽章 */}
-              {isSystemMode && (
+              {showSystemWeight && (
                 isEditing ? (
                   <div className="flex items-center gap-1 rounded-md border border-indigo-400 bg-[#0d1117] px-1.5 py-0.5 shadow-xl">
                     <span className="font-mono text-[10px] text-indigo-300">w=</span>
@@ -442,8 +446,8 @@ export function DagEdgeLayer({
                 )
               )}
 
-              {/* 非 system 模式下的连线状态/别名徽章 */}
-              {!isSystemMode && (edge.isVirtualCollapsed || effectiveStatus === 'unavailable' || effectiveStatus === 'violated' || hasLabel) && (
+              {/* 连线状态/别名徽章（非系统权重或无显式权重时展示） */}
+              {!showSystemWeight && (edge.isVirtualCollapsed || effectiveStatus === 'unavailable' || effectiveStatus === 'violated' || hasLabel) && (
                 <button
                   type="button"
                   onClick={(e) => {

@@ -20,11 +20,10 @@ import {
 } from './api.ts';
 import { CockpitView } from './components/CockpitView.tsx';
 import { DataExplorerView } from './components/DataExplorerView.tsx';
-import { IndicatorStudioView } from './components/IndicatorStudioView.tsx';
 import { OperatorLibraryView } from './components/OperatorLibraryView.tsx';
 import { RealtimeMonitorView } from './components/RealtimeMonitorView.tsx';
 import { SimulationCatalogPanel } from './components/SimulationCatalogPanel.tsx';
-import { SystemDesignerView } from './components/SystemDesignerView.tsx';
+import { MetricDagStudioPanel, SystemDagStudioPanel } from './components/v4/index.ts';
 import { GlobalSettingsModal, type SettingsTabKey } from './components/GlobalSettingsModal.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 
@@ -39,10 +38,10 @@ type TabKey =
 
 const TABS: Array<{ key: TabKey; label: string; short: string; icon: typeof Gauge }> = [
   { key: 'cockpit', label: '评估总览', short: '总览', icon: Gauge },
-  { key: 'operators', label: '一库 · 算子画布', short: '一库算子', icon: Cpu },
-  { key: 'indicators', label: '二库 · 指标画布', short: '二库指标', icon: Layers },
-  { key: 'systems', label: '三库 · 效果体系', short: '三库体系', icon: GitBranch },
-  { key: 'catalog', label: '输出字段规范', short: '规范', icon: BookOpen },
+  { key: 'operators', label: '算子库', short: '算子', icon: Cpu },
+  { key: 'indicators', label: '指标库', short: '指标', icon: Layers },
+  { key: 'systems', label: '评估体系', short: '体系', icon: GitBranch },
+  { key: 'catalog', label: '字段规范', short: '规范', icon: BookOpen },
   { key: 'data', label: '推演数据', short: '数据', icon: Database },
   { key: 'realtime', label: '实时研判', short: '实时', icon: Activity },
 ];
@@ -60,7 +59,6 @@ export function App() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabKey>('datasources');
   const [focusedOperatorTarget, setFocusedOperatorTarget] = useState<{ id: string; nonce: number } | null>(null);
-  const [focusedIndicatorTarget, setFocusedIndicatorTarget] = useState<{ id: string; nonce: number } | null>(null);
   const [loadingInit, setLoadingInit] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
 
@@ -124,14 +122,14 @@ export function App() {
                 <h1 className="truncate text-sm font-semibold tracking-tight text-slate-100 sm:text-base">
                   F1 仿真推演评估工具
                 </h1>
-                <div className="flex items-center gap-2 text-[11px] text-[#8b949e] font-mono mt-0.5">
-                  <span className="flex items-center gap-1">算子 <strong className="text-cyan-300 font-semibold">{operators.length}</strong></span>
-                  <span className="text-[#30363d]">|</span>
-                  <span className="flex items-center gap-1">指标 <strong className="text-emerald-300 font-semibold">{indicators.length}</strong></span>
-                  <span className="text-[#30363d]">|</span>
-                  <span className="flex items-center gap-1">体系 <strong className="text-indigo-300 font-semibold">{systems.length}</strong></span>
-                  <span className="text-[#30363d]">|</span>
-                  <span className="flex items-center gap-1">样本 <strong className="text-blue-300 font-semibold">{runs.length}</strong> 局</span>
+                <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
+                  <span>{operators.length} 算子</span>
+                  <span className="text-[#30363d]">·</span>
+                  <span>{indicators.length} 指标</span>
+                  <span className="text-[#30363d]">·</span>
+                  <span>{systems.length} 体系</span>
+                  <span className="text-[#30363d]">·</span>
+                  <span>{runs.length} 局样本</span>
                 </div>
               </div>
             </div>
@@ -144,14 +142,13 @@ export function App() {
                   setSettingsInitialTab('datasources');
                   setSettingsModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#0f141a] px-2.5 py-1 text-xs text-slate-200 transition hover:border-purple-500/70 hover:text-white"
-                title="配置当前用于算子测试、指标验证与体系评估的默认数据"
+                className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#0f141a] px-2.5 py-1 text-xs text-slate-200 transition hover:border-slate-500 hover:text-white"
+                title="选择当前用于评估计算的推演样本数据"
               >
-                <SlidersHorizontal className="h-3.5 w-3.5 text-purple-400" />
-                <span className="text-[#8b949e]">测试数据:</span>
-                <span className="max-w-[140px] sm:max-w-[220px] lg:max-w-[300px] truncate font-medium text-blue-300" title={runs.find((r) => r.runId === selectedRunId)?.scenarioName ?? selectedRunId ?? "未配置"}>
-                  {runs.find((r) => r.runId === selectedRunId)?.scenarioName ??
-                    (selectedRunId || '未配置')}
+                <SlidersHorizontal className="h-3.5 w-3.5 text-slate-400" />
+                <span className="text-[#8b949e]">推演样本:</span>
+                <span className="max-w-[140px] sm:max-w-[220px] lg:max-w-[300px] truncate font-medium text-slate-200" title={runs.find((r) => r.runId === selectedRunId)?.scenarioName ?? selectedRunId ?? "未配置"}>
+                  {(runs.find((r) => r.runId === selectedRunId)?.scenarioName ?? (selectedRunId || '未配置')).replace(/\s*\(EventExport_CSV\)/i, '')}
                 </span>
               </button>
 
@@ -162,16 +159,16 @@ export function App() {
                   setSettingsInitialTab('datasources');
                   setSettingsModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1 text-xs text-slate-200 transition hover:border-blue-500/80 hover:bg-[#1f242c] hover:text-white font-medium"
-                title="打开系统设置与环境控制台 (数据源 / 数据库 / 沙箱 / 告警 / 资产备份)"
+                className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1 text-xs text-slate-200 transition hover:border-slate-500 hover:bg-[#1f242c] hover:text-white font-medium"
+                title="系统配置与数据源管理"
               >
-                <Settings className="h-3.5 w-3.5 text-blue-400" />
-                <span>系统设置</span>
+                <Settings className="h-3.5 w-3.5 text-slate-400" />
+                <span>系统配置</span>
               </button>
 
-              <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-slate-400">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                服务就绪 · {runs.length} 局样本
+              <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-slate-400 font-mono">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                服务正常
               </span>
             </div>
           </div>
@@ -284,14 +281,9 @@ export function App() {
               hidden={activeTab !== 'indicators'}
             >
               <ErrorBoundary fallbackTitle="指标中心渲染异常">
-                <IndicatorStudioView
-                  indicators={indicators}
-                  operators={operators}
-                  runs={runs}
+                <MetricDagStudioPanel
                   selectedRunId={selectedRunId}
                   activeSourceId={activeSourceId}
-                  focusedIndicatorTarget={focusedIndicatorTarget}
-                  onRefresh={loadAll}
                   onDrillDownToOperator={(operatorId) => {
                     setActiveTab('operators');
                     setFocusedOperatorTarget({ id: operatorId, nonce: Date.now() });
@@ -307,23 +299,11 @@ export function App() {
               hidden={activeTab !== 'systems'}
             >
               <ErrorBoundary fallbackTitle="评估体系设计器渲染异常">
-                <SystemDesignerView
-                  systems={systems}
-                  indicators={indicators}
-                  operators={operators}
-                  runs={runs}
+                <SystemDagStudioPanel
                   selectedRunId={selectedRunId}
-                  selectedSystemId={selectedSystemId}
                   activeSourceId={activeSourceId}
-                  onSelectSystem={setSelectedSystemId}
-                  onRefresh={loadAll}
-                  onNavigateToTab={(tab, targetId) => {
-                    setActiveTab(tab);
-                    if (tab === 'operators' && targetId) {
-                      setFocusedOperatorTarget({ id: targetId, nonce: Date.now() });
-                    } else if (tab === 'indicators' && targetId) {
-                      setFocusedIndicatorTarget({ id: targetId, nonce: Date.now() });
-                    }
+                  onDrillDownToMetric={() => {
+                    setActiveTab('indicators');
                   }}
                 />
               </ErrorBoundary>

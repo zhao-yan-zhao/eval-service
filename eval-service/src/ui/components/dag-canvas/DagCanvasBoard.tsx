@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
+  LayoutGrid,
   Maximize2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -16,6 +17,7 @@ import type { DagGraphKind } from '../../../core/types.ts';
 import { DagEdgeLayer } from './DagEdgeLayer.tsx';
 import { DagNodeItem } from './DagNodeItem.tsx';
 import { DagOutlineSidebar } from './DagOutlineSidebar.tsx';
+import { autoLayoutDagNodes, hasOverlappingDagNodes } from './dag-layout.ts';
 import {
   canConnectNodes,
   computeDagTopologicalInfo,
@@ -239,6 +241,7 @@ export function DagCanvasBoard({
 
     const collapsible = new Set<string>();
     const wMap = new Map<string, ReturnType<typeof computeIncomingWeightSummary>>();
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
     let imbalanced = 0;
 
     for (const n of nodes) {
@@ -251,6 +254,26 @@ export function DagCanvasBoard({
         collapsible.add(n.id);
       }
       if (graphKind === 'system') {
+        const isProxyNode =
+          n.kind === 'metric_proxy' ||
+          n.kind === 'metric' ||
+          n.summary?.role === 'metric_proxy';
+        if (isProxyNode) continue;
+
+        const incoming = edges.filter(
+          (e) => !e.isVirtualCollapsed && e.targetNodeId === n.id,
+        );
+        const singleSrc =
+          incoming.length === 1 ? nodeMap.get(incoming[0].sourceNodeId) : undefined;
+        const isPureProxyBinding =
+          incoming.length === 1 &&
+          incoming[0].weight === undefined &&
+          singleSrc &&
+          (singleSrc.kind === 'metric_proxy' ||
+            singleSrc.kind === 'metric' ||
+            singleSrc.summary?.role === 'metric_proxy');
+        if (isPureProxyBinding) continue;
+
         const ws = computeIncomingWeightSummary(n.id, edges);
         wMap.set(n.id, ws);
         if (ws.incomingCount > 0 && !ws.isBalanced) {
@@ -337,6 +360,34 @@ export function DagCanvasBoard({
     });
     return () => window.cancelAnimationFrame(rafId);
   }, [autoFitOnMount, nodes.length, handleFitView]);
+
+  // 载入防重叠自动拓扑布局
+  const autoLayoutCheckedSignaturesRef = useRef<Set<string>>(new Set());
+  const isDraggingNodeRef = useRef(false);
+
+  const visibleNodeSignature = useMemo(
+    () => `${graphKind}::${visibleNodes.map((n) => n.id).sort().join('|')}`,
+    [graphKind, visibleNodes],
+  );
+
+  useEffect(() => {
+    if (readOnly || isDraggingNodeRef.current || visibleNodes.length <= 1) return;
+    if (autoLayoutCheckedSignaturesRef.current.has(visibleNodeSignature)) return;
+
+    autoLayoutCheckedSignaturesRef.current.add(visibleNodeSignature);
+    if (hasOverlappingDagNodes(visibleNodes)) {
+      const nextNodes = autoLayoutDagNodes(nodes, edges);
+      commitNodes(nextNodes);
+      window.requestAnimationFrame(() => handleFitView());
+    }
+  }, [commitNodes, edges, handleFitView, nodes, readOnly, visibleNodeSignature, visibleNodes]);
+
+  const handleAutoLayout = useCallback(() => {
+    if (readOnly || nodes.length === 0) return;
+    const nextNodes = autoLayoutDagNodes(nodes, edges);
+    commitNodes(nextNodes);
+    window.requestAnimationFrame(() => handleFitView());
+  }, [commitNodes, edges, handleFitView, nodes, readOnly]);
 
   // 居中定位并高亮指定节点（大纲联动）
   const focusAndHighlightNode = useCallback(
@@ -502,6 +553,7 @@ export function DagCanvasBoard({
       };
 
       const onWindowUp = () => {
+        isDraggingNodeRef.current = false;
         window.removeEventListener('mousemove', onWindowMove);
         window.removeEventListener('mouseup', onWindowUp);
         if (!hasMoved) {
@@ -510,6 +562,7 @@ export function DagCanvasBoard({
         }
       };
 
+      isDraggingNodeRef.current = true;
       window.addEventListener('mousemove', onWindowMove);
       window.addEventListener('mouseup', onWindowUp);
     },
@@ -753,7 +806,10 @@ export function DagCanvasBoard({
           </span>
 
           {title && (
-            <span className="truncate text-xs font-semibold text-slate-200 max-w-[240px]" title={title}>
+            <span
+              className="truncate text-xs font-semibold text-slate-200 max-w-[400px] xl:max-w-[520px]"
+              title={title}
+            >
               {title}
             </span>
           )}
@@ -768,8 +824,8 @@ export function DagCanvasBoard({
             >
               <Scale className="h-3 w-3" />
               {imbalancedSystemTargets === 0
-                ? '局部权重已平衡 (Σw=1.00)'
-                : `${imbalancedSystemTargets} 个节点权重失衡`}
+                ? '权重校验通过 (100%)'
+                : `${imbalancedSystemTargets} 处入边权重未平衡`}
             </span>
           )}
         </div>
@@ -818,6 +874,18 @@ export function DagCanvasBoard({
             <Maximize2 className="h-3 w-3" />
             <span>全貌</span>
           </button>
+
+          {!readOnly && nodes.length > 0 && (
+            <button
+              type="button"
+              onClick={handleAutoLayout}
+              title="按拓扑层级自动重排节点并消除重叠"
+              className="inline-flex items-center gap-1 rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 text-[11px] text-cyan-200 transition hover:border-cyan-500/60 hover:bg-cyan-500/10 cursor-pointer"
+            >
+              <LayoutGrid className="h-3 w-3" />
+              <span>自动布局</span>
+            </button>
+          )}
 
           <button
             type="button"

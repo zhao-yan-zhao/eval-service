@@ -3,7 +3,8 @@
 ## 1. 核心边界与实证门控
 - 施工边界：仅限在 `eval-service/` 内部开发，严禁修改外部 `CMO-netcore-src/`, `LabConsole/`, `demo-ui/` 等主仓库代码。
 - 实证门控（Fail-Closed）：推演数据缺失时必须返回 `status: "unavailable"` 与明确 `missingDataReason`，严禁编造默认假数据。
-- 零 eval 约束：公式计算仅走 `src/engine/libformula/` 纯 AST 词法与语法树，严禁原生 eval 或 new Function。
+- 安全计算红线（零 eval）：行内公式计算仅走 `src/operators/formula-engine.ts` 纯 AST 解析引擎；Python 算子仅通过 `src/engine/python-worker.ts` 的 AST 安全沙箱执行，严禁原生 `eval()`、`new Function()` 或非受控动态执行。
+- 三库全量入库：算子库（含流水线）、指标库（含指标 DAG）与评估体系/效果库数据必须全部持久化存储到 SQLite 数据库（`src/adapters/sqlite-store.ts`，默认 `data/eval.db`），禁止仅依赖散落 JSON 文件或纯内存保存运行态与用户配置。
 
 ## 2. 算子与流水线编排核心铁律
 - 单一真相源（Single Source of Truth）：画布编排（DAG）必须通过 `deriveContractFromNodes(nodes)` 自动反推底表和字段契约并写回存储库，严禁出现画布与配置两套割裂逻辑。
@@ -19,6 +20,6 @@
 - 底表与字段名必须严格查对 `sim-output-fields/schemas/f1-output-catalog.json` 44 类事件标准。
 
 ## 4. 验证与交付守则
-- 交付前必须运行 `npm --prefix eval-service test`，确保全量 50 项测试 100% 通过（0 fail）。
+- 交付前必须运行 `npm --prefix eval-service test`，确保全量自动化测试 100% 通过（0 fail）。
 - 涉及前端修改必须执行 `npm --prefix eval-service run build:ui` 验证打包无报错。
 - 严禁通过修改测试断言的方式硬凑测试通过。

@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef, useState, useEffect } from 'react';
+import React, { useId, useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
 import {
   ArrowUpDown,
   BarChart3,
@@ -37,7 +37,11 @@ import { PipelineCanvasStudio } from './pipeline-canvas/index.ts';
 import { OperatorInlineEditor } from './OperatorInlineEditor.tsx';
 import { CreateOperatorModal } from './CreateOperatorModal.tsx';
 import { evalApi } from '../api.ts';
-import { V4TablePivotPreview } from './v4/index.ts';
+import {
+  UnifiedAssetSelector,
+  V4TablePivotPreview,
+  type UnifiedAssetOption,
+} from './v4/index.ts';
 import type { TableDataset } from '../../core/types.ts';
 
 interface V4OperatorDetailInfo {
@@ -57,11 +61,11 @@ interface V4OperatorDetailInfo {
  */
 export const DOMAIN_CATEGORIES = [
   { id: 'all' as const, label: '全部算子' },
-  { id: 'time' as const, label: '时效域 (Time)' },
-  { id: 'effectiveness' as const, label: '效能域 (Effectiveness)' },
-  { id: 'situation' as const, label: '态势域 (Situation)' },
-  { id: 'compliance' as const, label: '合规域 (Compliance)' },
-  { id: 'cost' as const, label: '成本域 (Cost)' },
+  { id: 'time' as const, label: '时效域' },
+  { id: 'effectiveness' as const, label: '效能域' },
+  { id: 'situation' as const, label: '态势域' },
+  { id: 'compliance' as const, label: '合规域' },
+  { id: 'cost' as const, label: '成本域' },
 ];
 
 export type DomainFilterKey = 'all' | 'time' | 'effectiveness' | 'situation' | 'compliance' | 'cost';
@@ -70,15 +74,15 @@ export type AlgorithmFilterKey = 'all' | 'inline_calc' | 'group_agg' | 'data_inp
 export function getDomainBadge(category: string): { label: string; badgeBg: string } {
   switch (category) {
     case 'time':
-      return { label: '时效域 (Time)', badgeBg: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
+      return { label: '时效域', badgeBg: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
     case 'effectiveness':
-      return { label: '效能域 (Effectiveness)', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+      return { label: '效能域', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
     case 'situation':
-      return { label: '态势域 (Situation)', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
+      return { label: '态势域', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
     case 'compliance':
-      return { label: '合规域 (Compliance)', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
+      return { label: '合规域', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
     case 'cost':
-      return { label: '成本域 (Cost)', badgeBg: 'bg-rose-500/15 text-rose-400 border-rose-500/30' };
+      return { label: '成本域', badgeBg: 'bg-rose-500/15 text-rose-400 border-rose-500/30' };
     default:
       return { label: category || '通用域', badgeBg: 'bg-slate-500/15 text-slate-300 border-slate-500/30' };
   }
@@ -117,9 +121,9 @@ export const INITIAL_ALGORITHMS: RegisteredAlgorithm[] = [
     seq: 2,
     name: '公式',
     category: '行内计算',
-    engine: 'LibFormula AST 表达式解析器 (零 eval)',
+    engine: '行内公式衍生引擎',
     badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
-    description: '使用 LibFormula 计算公式。支持行内四则运算、函数嵌套 (数学/逻辑/文本/时间函数) 及多字段逻辑处理，生成衍生计算列。',
+    description: '使用计算公式支持行内四则运算、函数嵌套 (数学/逻辑/文本/时间函数) 及多字段逻辑处理，生成衍生计算列。',
     iconName: 'Calculator',
     type: 'inline_calc',
   },
@@ -128,7 +132,7 @@ export const INITIAL_ALGORITHMS: RegisteredAlgorithm[] = [
     seq: 3,
     name: '数据汇总',
     category: '跨行聚合',
-    engine: 'Welford 流式多主键聚合器',
+    engine: '流式多主键聚合器',
     badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
     description: '按指定字段分组聚合统计，支持求和(SUM)、均值(AVERAGE)、极值(MAX/MIN)、计数(COUNT)、方差(STDEV)等聚合计算，输出结构化二维汇总表。',
     iconName: 'BarChart3',
@@ -139,9 +143,9 @@ export const INITIAL_ALGORITHMS: RegisteredAlgorithm[] = [
     seq: 4,
     name: '二维表输出',
     category: '二维表输出',
-    engine: 'TableDataset 二维事实表契约适配器',
+    engine: '结构化二维事实表输出契约',
     badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-    description: '一库流水线末端节点。输出结构化二维事实表 (TableDataset)，供二库指标计算图引用与聚合。',
+    description: '流水线末端节点。输出结构化二维事实表，供指标计算图引用与聚合。',
     iconName: 'Target',
     type: 'result_output',
   },
@@ -150,7 +154,7 @@ export const INITIAL_ALGORITHMS: RegisteredAlgorithm[] = [
     seq: 5,
     name: '空间几何算法',
     category: '空间态势',
-    engine: 'Turf.js 空间几何分析引擎',
+    engine: '空间几何分析引擎',
     badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
     description: '基于经纬度与高程进行空间任务走廊安全裕度、合围多边形穿透、凸包几何以及威胁距离计算，支持三维态势几何判断。',
     iconName: 'Compass',
@@ -234,12 +238,12 @@ export function getOperatorPipelineCategory(op: MetricAtomMeta): {
   badgeBg: string;
 } {
   const pCat = (op as any).pipelineCategory || op.customDef?.pipelineCategory;
-  if (pCat === 'spatial') return { id: 'spatial', label: '空间几何 (Turf.js)', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
-  if (pCat === 'python_script') return { id: 'python_script', label: 'Python (科学计算)', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' };
-  if (pCat === 'data_input') return { id: 'data_input', label: '表输入 (数据抽取)', badgeBg: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
-  if (pCat === 'inline_calc') return { id: 'inline_calc', label: '公式 (行内计算)', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
-  if (pCat === 'group_agg') return { id: 'group_agg', label: '数据汇总 (跨行聚合)', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
-  if (pCat === 'result_output') return { id: 'result_output', label: '二维表输出 (TableDataset)', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+  if (pCat === 'spatial') return { id: 'spatial', label: '空间几何', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
+  if (pCat === 'python_script') return { id: 'python_script', label: 'Python 脚本', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' };
+  if (pCat === 'data_input') return { id: 'data_input', label: '数据抽取', badgeBg: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
+  if (pCat === 'inline_calc') return { id: 'inline_calc', label: '行内公式', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
+  if (pCat === 'group_agg') return { id: 'group_agg', label: '跨行聚合', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
+  if (pCat === 'result_output') return { id: 'result_output', label: '二维表输出', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
 
   if (
     op.id.includes('corridor') ||
@@ -248,11 +252,11 @@ export function getOperatorPipelineCategory(op: MetricAtomMeta): {
     op.id.includes('hull') ||
     op.id.includes('area_coverage')
   ) {
-    return { id: 'spatial', label: '空间几何 (Turf.js)', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
+    return { id: 'spatial', label: '空间几何', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
   }
 
   if (op.id.includes('saturation') || op.id.includes('mcda') || op.id.includes('python')) {
-    return { id: 'python_script', label: 'Python (科学计算)', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' };
+    return { id: 'python_script', label: 'Python 脚本', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' };
   }
 
   if (
@@ -267,11 +271,11 @@ export function getOperatorPipelineCategory(op: MetricAtomMeta): {
     op.id.includes('emcon') ||
     op.id.includes('detection')
   ) {
-    return { id: 'group_agg', label: '数据汇总 (跨行聚合)', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
+    return { id: 'group_agg', label: '跨行聚合', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
   }
 
   if (op.id.includes('mission_success') || op.outputType === 'score') {
-    return { id: 'result_output', label: '二维表输出 (TableDataset)', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+    return { id: 'result_output', label: '二维表输出', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
   }
 
   return { id: 'inline_calc', label: '公式 (行内计算)', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
@@ -350,6 +354,15 @@ export function OperatorLibraryView({
   const detailDialogRef = useRef<HTMLDialogElement | null>(null);
   const editorHeadingId = useId();
   const detailHeadingId = useId();
+
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const savedListScrollTopRef = useRef<number>(0);
+
+  useLayoutEffect(() => {
+    if (viewMode === 'list' && listScrollRef.current) {
+      listScrollRef.current.scrollTop = savedListScrollTopRef.current;
+    }
+  }, [viewMode]);
 
   // 算子业务领域分类筛选（时效域、效能域、态势域、合规域、成本域）
   const [domainFilter, setDomainFilter] = useState<DomainFilterKey>('all');
@@ -508,8 +521,26 @@ export function OperatorLibraryView({
     }
   }, [detailOp]);
 
+  const operatorSelectorOptions = useMemo<UnifiedAssetOption[]>(() => {
+    const domainLabelMap: Record<string, string> = {
+      time: '时效域',
+      effectiveness: '效能域',
+      situation: '态势域',
+      compliance: '合规域',
+      cost: '成本域',
+    };
+    return operators.map((op) => ({
+      id: op.id,
+      label: op.name || op.id,
+      subLabel: op.id,
+      group: domainLabelMap[op.category] ?? '通用算子',
+      badge: op.layer === 'fact' ? '基础事实' : '复合算子',
+      badgeTone: op.layer === 'fact' ? 'cyan' : 'slate',
+    }));
+  }, [operators]);
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-3 text-slate-100">
       {viewMode === 'canvas' ? (
         <div className="w-full">
           <PipelineCanvasStudio
@@ -528,128 +559,153 @@ export function OperatorLibraryView({
         </div>
       ) : (
         <>
-          {/* ═════════════════ 1. 顶栏：极简干练，直面算子业务 ═════════════════ */}
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-800 bg-[#0d1424] px-5 py-4 shadow-xl">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/30">
-              <Cpu className="h-5 w-5" />
+          {/* ═════════════════ 1. 统一单行紧凑顶栏（下拉直切 + 筛选 + 操作） ═════════════════ */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#30363d] bg-[#161b22] px-3.5 py-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 rounded-md border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-1 text-xs font-semibold text-cyan-300">
+                <Cpu className="h-3.5 w-3.5" />
+                <span>算子资产</span>
+              </div>
+
+              <span className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono text-[11px] text-slate-300 tabular-nums">
+                {filteredOperators.length === operators.length
+                  ? `全部算子 · ${operators.length}`
+                  : `${filteredOperators.length} / ${operators.length} 项`}
+              </span>
+
+              <UnifiedAssetSelector
+                value={selectedCanvasOp?.id ?? ''}
+                options={operatorSelectorOptions}
+                placeholder="定位算子..."
+                searchPlaceholder="搜索名称、ID 或领域..."
+                accent="cyan"
+                onChange={(opId) => {
+                  const target = operators.find((o) => o.id === opId) ?? null;
+                  if (target) {
+                    setSelectedCanvasOp(target);
+                    setViewMode('canvas');
+                  }
+                }}
+              />
             </div>
-            <h1 className="text-base font-bold text-slate-100 tracking-wide">
-              算子列表 (一库 · 评估体系计算底座)
-            </h1>
-            <span className="rounded-md border border-slate-700 bg-slate-800/80 px-2.5 py-0.5 text-xs text-slate-400 font-medium">
-              共 {operators.length} 项
-            </span>
-          </div>
-          <p className="text-xs text-slate-400">
-            涵盖时效域、效能域、态势域、合规域、成本域五大业务领域算子资产，专注底层数据清洗、计算与二维事实表 (TableDataset) 产出。
-          </p>
-        </div>
 
-        {/* 右侧操作：新建算子 + 算法库管理 + 打开可视化画布 */}
-        <div className="flex items-center gap-2.5">
-          {/* 新建自定义算子 */}
-          <button
-            type="button"
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-emerald-500/50 bg-gradient-to-r from-emerald-600/30 to-teal-600/30 px-3.5 py-2 text-xs font-bold text-emerald-200 hover:from-emerald-600/50 hover:to-teal-600/50 hover:text-white transition shadow-md shadow-emerald-950/30 hover:scale-[1.02]"
-            title="新建自定义评估算子，并支持直接进入画布进行算法流水线编排"
-          >
-            <Plus className="h-4 w-4 text-emerald-300" />
-            <span>新建算子</span>
-          </button>
-
-          {/* 算子组件库与导入：跳转系统设置统一管理 */}
-          <button
-            type="button"
-            onClick={() => (onOpenSettings ? onOpenSettings('components') : undefined)}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition shadow-sm"
-            title="前往系统设置统一管理与导入算子组件规范 (JSON Schema)"
-          >
-            <Layers className="h-4 w-4 text-sky-400" />
-            <span>算子组件与扩展</span>
-          </button>
-
-          {/* 打开可视化画布工坊 */}
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedCanvasOp(null);
-              setViewMode('canvas');
-            }}
-            className="flex items-center gap-2 rounded-xl border border-cyan-400/50 bg-gradient-to-r from-cyan-500/25 to-sky-500/25 px-4 py-2 text-xs font-bold text-cyan-200 hover:from-cyan-500/35 hover:to-sky-500/35 shadow-lg shadow-cyan-950/40 hover:scale-[1.02] transition"
-          >
-            <Workflow className="h-4 w-4 text-cyan-300" />
-            <span>打开可视化画布工坊</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ═════════════════ 2. 首屏核心内容：立即呈现算子大表 ═════════════════ */}
-      <section
-        id="op-panel-catalog"
-        role="tabpanel"
-        aria-labelledby="tab-operators"
-        className="rounded-xl border border-slate-800 bg-[#0b111f] shadow-xl overflow-hidden space-y-3.5"
-      >
-        {/* 筛选与搜索工具条：主筛选为 5 大领域分类！去除重复的下拉框 */}
-        <div className="border-b border-slate-800/80 bg-[#0d1424] px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          {/* 业务领域筛选 Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {DOMAIN_CATEGORIES.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setDomainFilter(f.id)}
-                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-                  domainFilter === f.id
-                    ? 'bg-sky-500/25 text-sky-200 border border-sky-400/50'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent'
-                }`}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={domainFilter}
+                onChange={(e) => setDomainFilter(e.target.value as DomainFilterKey)}
+                aria-label="按业务领域筛选算子"
+                className="h-8 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none cursor-pointer"
               >
-                {f.label} · {domainCounts[f.id] ?? 0}
-              </button>
-            ))}
-          </div>
+                {DOMAIN_CATEGORIES.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.id === 'all' ? `全部算子 · ${domainCounts.all ?? 0}` : `${f.label} (${domainCounts[f.id] ?? 0})`}
+                  </option>
+                ))}
+              </select>
 
-          {/* 搜索输入框（单行保持极简干净） */}
-          <div className="relative w-72">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
-            <input
-              type="text"
-              placeholder="搜索算子名称 / 标识 / 算法说明..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-900/90 pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-sky-500 focus:outline-none transition"
-            />
-          </div>
-        </div>
+              <select
+                value={algoFilter}
+                onChange={(e) => setAlgoFilter(e.target.value as AlgorithmFilterKey)}
+                aria-label="按算法实现方式筛选算子"
+                className="h-8 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none cursor-pointer"
+              >
+                <option value="all">全部实现方式</option>
+                <option value="formula">行内公式 ({algoCounts.formula ?? 0})</option>
+                <option value="agg">跨行聚合 ({algoCounts.agg ?? 0})</option>
+                <option value="input">数据输入 ({algoCounts.input ?? 0})</option>
+                <option value="output">结果输出 ({algoCounts.output ?? 0})</option>
+              </select>
 
-        {/* 算子列表表格 */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-800/80 bg-slate-900/60 text-slate-400 font-semibold text-[11px]">
-                <th className="px-4 py-3 w-14 text-center">序号</th>
-                <th className="px-4 py-3 w-64">算子 ID / 名称</th>
-                <th className="px-4 py-3 w-36">业务领域</th>
-                <th className="px-4 py-3 w-36">算法实现方式</th>
-                <th className="px-4 py-3 w-24">输出类型</th>
-                <th className="px-4 py-3">算法描述与计算公式</th>
-                <th className="px-4 py-3 w-28">
+              <div className="relative w-44 xl:w-52">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="搜索算子..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-8 w-full rounded-md border border-[#30363d] bg-[#0d1117] pl-8 pr-7 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                />
+                {searchQuery && (
                   <button
                     type="button"
-                    onClick={() => toggleSort('readiness')}
-                    className="inline-flex items-center gap-1 font-semibold text-slate-300 hover:text-white"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 cursor-pointer"
                   >
-                    <span>就绪门控</span>
-                    <ArrowUpDown className="h-3 w-3" />
+                    <X className="h-3.5 w-3.5" />
                   </button>
-                </th>
-                <th className="px-4 py-3 w-44 text-right pr-4">操作</th>
-              </tr>
-            </thead>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(true)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-cyan-400/60 bg-cyan-600 px-3 text-xs font-semibold text-white shadow-lg shadow-cyan-950/60 hover:bg-cyan-500 transition cursor-pointer"
+                title="新建评估算子"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>新建算子</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => (onOpenSettings ? onOpenSettings('components') : undefined)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs text-slate-200 hover:border-slate-500 hover:text-white transition cursor-pointer"
+                title="扩展管理与组件规范导入"
+              >
+                <Layers className="h-3.5 w-3.5 text-cyan-400" />
+                <span className="hidden xl:inline">扩展管理</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCanvasOp(null);
+                  setViewMode('canvas');
+                }}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-cyan-500/45 bg-cyan-500/15 px-2.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/25 transition cursor-pointer"
+              >
+                <Workflow className="h-3.5 w-3.5" />
+                <span>画布编排</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ═════════════════ 2. 响应式限高内滚动算子列表 ═════════════════ */}
+          <section
+            id="op-panel-catalog"
+            role="tabpanel"
+            aria-labelledby="tab-operators"
+            className="overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22]"
+          >
+            <div
+              ref={listScrollRef}
+              onScroll={(e) => {
+                savedListScrollTopRef.current = e.currentTarget.scrollTop;
+              }}
+              className="max-h-[calc(100dvh-200px)] min-h-[380px] overflow-auto"
+            >
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 z-10 bg-[#161b22]">
+                  <tr className="border-b border-[#30363d] text-slate-400 font-semibold text-[11px]">
+                    <th className="px-2.5 py-2.5 w-11 text-center whitespace-nowrap">序号</th>
+                    <th className="px-2.5 py-2.5 whitespace-nowrap">标识与名称</th>
+                    <th className="px-2.5 py-2.5 whitespace-nowrap">领域</th>
+                    <th className="px-2.5 py-2.5 whitespace-nowrap">实现方式</th>
+                    <th className="px-2.5 py-2.5 whitespace-nowrap">类型</th>
+                    <th className="px-2.5 py-2.5">算法说明</th>
+                    <th className="px-2.5 py-2.5 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('readiness')}
+                        className="inline-flex items-center gap-1 font-semibold text-slate-300 hover:text-white whitespace-nowrap"
+                      >
+                        <span>就绪门控</span>
+                        <ArrowUpDown className="h-3 w-3" />
+                      </button>
+                    </th>
+                    <th className="px-2.5 py-2.5 text-right whitespace-nowrap">操作</th>
+                  </tr>
+                </thead>
             <tbody className="divide-y divide-slate-800/60 font-sans">
               {filteredOperators.length === 0 ? (
                 <tr>
@@ -661,8 +717,12 @@ export function OperatorLibraryView({
                 filteredOperators.map((op, idx) => {
                   const domainInfo = getDomainBadge(op.category);
                   const pCat = getOperatorPipelineCategory(op);
+                  const isLastVisited = selectedCanvasOp?.id === op.id;
                   return (
-                    <tr key={op.id} className="hover:bg-slate-800/30 transition">
+                    <tr
+                      key={op.id}
+                      className={`transition ${isLastVisited ? 'bg-cyan-500/10 hover:bg-cyan-500/15' : 'hover:bg-slate-800/30'}`}
+                    >
                       <td className="px-4 py-3 text-center font-mono text-slate-500 text-[11px]">
                         {idx + 1}
                       </td>

@@ -1,13 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
   ArrowDownRight,
+  ArrowLeft,
+  ArrowRight,
   BookmarkPlus,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   FilePlus2,
   GitBranch,
   Layers,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   Plus,
   RefreshCw,
@@ -19,8 +26,10 @@ import {
   ShieldCheck,
   Sliders,
   Sparkles,
+  Table2,
   Target,
   Trash2,
+  X,
 } from 'lucide-react';
 import type {
   AggregationStrategy,
@@ -44,6 +53,7 @@ import {
   type DagCanvasNode,
   type DagNodeStatus,
 } from '../dag-canvas/index.ts';
+import { UnifiedAssetSelector, type UnifiedAssetOption } from './UnifiedAssetSelector.tsx';
 
 export interface SystemDagStudioPanelProps {
   activeSourceId?: string;
@@ -66,12 +76,41 @@ interface EvaluationDagRunOutputLike extends EvaluationDagOutput {
   resolvedParamOverrides?: Record<string, Record<string, unknown>>;
 }
 
+interface SystemSideComparisonState {
+  systemId: string;
+  sides: string[];
+  overall?: EvaluationDagRunOutputLike;
+  bySide: Record<string, EvaluationDagRunOutputLike>;
+  runId?: string;
+  metricGraphId?: string;
+}
+
 interface SystemValidationReport {
   valid: boolean;
   errors: string[];
   warnings: string[];
   hasCycle?: boolean;
   cycleNodeIds?: string[];
+}
+
+interface SystemRecentEvalRecord {
+  evalOutput?: EvaluationDagRunOutputLike;
+  sideComparison?: SystemSideComparisonState;
+}
+
+type SystemViewMode = 'list' | 'overview' | 'canvas';
+type DrawerTab = 'basic' | 'scoring' | 'evidence';
+
+interface OverviewHierarchyRow {
+  rowKey: string;
+  node: SystemDagNode;
+  effect?: EffectDefinition;
+  depth: number;
+  section: 'terminal' | 'standalone';
+  incomingWeight?: number;
+  parentNodeId?: string;
+  hasChildren: boolean;
+  roleTag: '终态效果' | '能力维度' | '下挂效果' | '指标代理' | '硬门控' | '软门控';
 }
 
 const DOMAIN_LABELS: Record<MetricDomainTag, string> = {
@@ -83,30 +122,57 @@ const DOMAIN_LABELS: Record<MetricDomainTag, string> = {
   cost: '战损效费',
 };
 
+const DYNAMIC_SIDE_PALETTES = [
+  {
+    text: 'text-cyan-200',
+    badge: 'border-cyan-500/40 bg-cyan-500/15 text-cyan-200',
+  },
+  {
+    text: 'text-emerald-200',
+    badge: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200',
+  },
+  {
+    text: 'text-amber-200',
+    badge: 'border-amber-500/40 bg-amber-500/15 text-amber-200',
+  },
+  {
+    text: 'text-violet-200',
+    badge: 'border-violet-500/40 bg-violet-500/15 text-violet-200',
+  },
+  {
+    text: 'text-rose-200',
+    badge: 'border-rose-500/40 bg-rose-500/15 text-rose-200',
+  },
+  {
+    text: 'text-sky-200',
+    badge: 'border-sky-500/40 bg-sky-500/15 text-sky-200',
+  },
+] as const;
+
 const STRATEGY_OPTIONS: Array<{ value: AggregationStrategy; label: string }> = [
-  { value: 'weighted_sum', label: 'weighted_sum · 加权和' },
-  { value: 'weighted_product', label: 'weighted_product · 加权积' },
-  { value: 'geometric_mean', label: 'geometric_mean · 几何平均 (短板敏感)' },
-  { value: 'maximin', label: 'maximin · 木桶极小值' },
-  { value: 'max', label: 'max · 极优值' },
-  { value: 'mean', label: 'mean · 算术均值' },
-  { value: 'formula', label: 'formula · 自定义公式' },
+  { value: 'weighted_sum', label: '加权求和 (weighted_sum)' },
+  { value: 'weighted_product', label: '加权求积 (weighted_product)' },
+  { value: 'geometric_mean', label: '几何平均 (geometric_mean)' },
+  { value: 'maximin', label: '极小值短板 (maximin)' },
+  { value: 'max', label: '极大值 (max)' },
+  { value: 'mean', label: '算术均值 (mean)' },
+  { value: 'formula', label: '自定义公式 (formula)' },
 ];
 
 const MISSING_POLICY_OPTIONS: Array<{ value: NodeMissingPolicy; label: string }> = [
-  { value: 'skip_renormalize', label: 'skip_renormalize · 跳过并重归一' },
-  { value: 'fail', label: 'fail · 严格 Fail-Closed 级联失效' },
-  { value: 'worst', label: 'worst · 缺数按 0 分计' },
-  { value: 'neutral', label: 'neutral · 缺数按 50 分中性计' },
+  { value: 'skip_renormalize', label: '跳过并重新归一 (skip_renormalize)' },
+  { value: 'fail', label: '严格级联失效 (fail)' },
+  { value: 'worst', label: '按 0 分计 (worst)' },
+  { value: 'neutral', label: '按 50 分计 (neutral)' },
 ];
 
 const SCORING_TYPE_OPTIONS: Array<{ value: ScoringRule['type']; label: string }> = [
-  { value: 'larger_is_better', label: 'larger_is_better · 越大越好' },
-  { value: 'smaller_is_better', label: 'smaller_is_better · 越小越好' },
-  { value: 'linear', label: 'linear · 区间线性映射' },
-  { value: 'target_range', label: 'target_range · 目标区间最优' },
-  { value: 'step', label: 'step · 阶梯分档' },
-  { value: 'boolean', label: 'boolean · 布尔达标' },
+  { value: 'larger_is_better', label: '极大值最优 (larger_is_better)' },
+  { value: 'smaller_is_better', label: '极小值最优 (smaller_is_better)' },
+  { value: 'linear', label: '区间线性映射 (linear)' },
+  { value: 'target_range', label: '目标区间最优 (target_range)' },
+  { value: 'step', label: '阶梯分档 (step)' },
+  { value: 'boolean', label: '布尔达标 (boolean)' },
 ];
 
 const REDUCE_OPTIONS: IndicatorReduceMethod[] = [
@@ -153,10 +219,7 @@ function createDraftSystemDag(index = 1): ExtendedSystemDag {
     version: '4.0.0',
     description: '支持效果独立复用、无限层级效果叠加、参数向下游透传与双轨安全红线门控',
     terminalEffectNodeId: 'eff_joint_overall',
-    globalParams: {
-      targetSide: '蓝方',
-      enemySide: '红方',
-    },
+    globalParams: {},
     nodes: [
       {
         id: 'mp_strike',
@@ -309,6 +372,145 @@ function normalizeAllIncomingWeightsLocally(dag: ExtendedSystemDag): ExtendedSys
   return { ...dag, edges: nextEdges };
 }
 
+function extractEvaluationFromSlice(slice: unknown): EvaluationDagRunOutputLike | undefined {
+  if (!slice || typeof slice !== 'object') return undefined;
+  const rec = slice as Record<string, unknown>;
+  if (rec.evaluation && typeof rec.evaluation === 'object') {
+    return rec.evaluation as EvaluationDagRunOutputLike;
+  }
+  if ('nodeResults' in rec || 'overallScore' in rec || 'gateVerdict' in rec) {
+    return rec as unknown as EvaluationDagRunOutputLike;
+  }
+  return undefined;
+}
+
+function getVerdictBadgeStyle(verdict?: string): string {
+  if (verdict === 'DISQUALIFIED') {
+    return 'border-rose-500/60 bg-rose-500/20 text-rose-200';
+  }
+  if (verdict === 'WARNING') {
+    return 'border-amber-500/55 bg-amber-500/20 text-amber-200';
+  }
+  if (verdict === 'PASS') {
+    return 'border-emerald-500/45 bg-emerald-500/15 text-emerald-300';
+  }
+  return 'border-slate-700 bg-slate-800/80 text-slate-400';
+}
+
+function resolveNodeGateVerdict(
+  node: SystemDagNode,
+  effect: EffectDefinition | undefined,
+  evalRes: EvaluatedEffectNode | undefined,
+  isTerminal: boolean,
+  overallOutput: EvaluationDagRunOutputLike | null | undefined,
+): { label: 'PASS' | 'WARNING' | 'DISQUALIFIED' | '缺数' | '--'; cls: string } {
+  if (isTerminal && overallOutput) {
+    const v = overallOutput.gateVerdict;
+    return { label: v, cls: getVerdictBadgeStyle(v) };
+  }
+  if (!evalRes) {
+    return { label: '--', cls: 'border-slate-700/70 bg-slate-800/60 text-slate-500' };
+  }
+  const isGate = node.kind === 'gate' || effect?.role === 'gate' || evalRes.role === 'gate';
+  const gateMode = evalRes.gateMode ?? effect?.gateMode ?? 'soft';
+  if (isGate) {
+    if (evalRes.gateStatus === 'violated') {
+      return gateMode === 'hard'
+        ? { label: 'DISQUALIFIED', cls: getVerdictBadgeStyle('DISQUALIFIED') }
+        : { label: 'WARNING', cls: getVerdictBadgeStyle('WARNING') };
+    }
+    if (evalRes.gateStatus === 'pass') {
+      return { label: 'PASS', cls: getVerdictBadgeStyle('PASS') };
+    }
+    if (evalRes.gateStatus === 'unavailable' || evalRes.status === 'unavailable') {
+      return { label: '缺数', cls: 'border-rose-500/40 bg-rose-500/10 text-rose-300' };
+    }
+  }
+  if (evalRes.status === 'unavailable') {
+    return { label: '缺数', cls: 'border-rose-500/40 bg-rose-500/10 text-rose-300' };
+  }
+  if (evalRes.status === 'degraded') {
+    return { label: 'WARNING', cls: getVerdictBadgeStyle('WARNING') };
+  }
+  return { label: 'PASS', cls: getVerdictBadgeStyle('PASS') };
+}
+
+function resolveRoleTag(
+  node: SystemDagNode,
+  effect: EffectDefinition | undefined,
+  depth: number,
+  isTerminal: boolean,
+): OverviewHierarchyRow['roleTag'] {
+  if (isTerminal) return '终态效果';
+  if (node.kind === 'metric_proxy' || node.kind === 'metric') return '指标代理';
+  if (node.kind === 'gate' || effect?.role === 'gate') {
+    return effect?.gateMode === 'hard' ? '硬门控' : '软门控';
+  }
+  if (depth === 1) return '能力维度';
+  return '下挂效果';
+}
+
+function getRoleTagStyle(tag: OverviewHierarchyRow['roleTag']): string {
+  switch (tag) {
+    case '终态效果':
+      return 'border-indigo-400/50 bg-indigo-500/20 text-indigo-200';
+    case '能力维度':
+      return 'border-violet-400/45 bg-violet-500/15 text-violet-200';
+    case '硬门控':
+      return 'border-rose-500/50 bg-rose-500/15 text-rose-200';
+    case '软门控':
+      return 'border-amber-500/50 bg-amber-500/15 text-amber-200';
+    case '指标代理':
+      return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300';
+    default:
+      return 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200';
+  }
+}
+
+function computeSystemScaleStats(
+  sys: ExtendedSystemDag,
+  effectMap: Map<string, EffectDefinition>,
+): { dimensionCount: number; metricProxyCount: number; gateCount: number } {
+  const nodeMap = new Map(sys.nodes.map((n) => [n.id, n as SystemDagNode]));
+  let metricProxyCount = 0;
+  let gateCount = 0;
+
+  for (const rawNode of sys.nodes) {
+    const node = rawNode as SystemDagNode;
+    const isProxy = node.kind === 'metric_proxy' || node.kind === 'metric';
+    if (isProxy) {
+      metricProxyCount += 1;
+      continue;
+    }
+    const eff = node.inlineEffect ?? (node.refId ? effectMap.get(node.refId) : undefined);
+    if (node.kind === 'gate' || eff?.role === 'gate') {
+      gateCount += 1;
+    }
+  }
+
+  let dimensionCount = 0;
+  const termId = sys.terminalEffectNodeId;
+  if (termId && nodeMap.has(termId)) {
+    const seenDimIds = new Set<string>();
+    for (const edge of sys.edges) {
+      if (edge.targetNodeId !== termId) continue;
+      const src = nodeMap.get(edge.sourceNodeId);
+      if (!src) continue;
+      const isProxy = src.kind === 'metric_proxy' || src.kind === 'metric';
+      const eff = isProxy
+        ? undefined
+        : src.inlineEffect ?? (src.refId ? effectMap.get(src.refId) : undefined);
+      const isGate = src.kind === 'gate' || eff?.role === 'gate';
+      if (!isProxy && !isGate) {
+        seenDimIds.add(src.id);
+      }
+    }
+    dimensionCount = seenDimIds.size;
+  }
+
+  return { dimensionCount, metricProxyCount, gateCount };
+}
+
 export function SystemDagStudioPanel({
   activeSourceId,
   selectedRunId,
@@ -321,7 +523,32 @@ export function SystemDagStudioPanel({
     createDraftSystemDag(1),
   );
   const [selectedMetricGraphId, setSelectedMetricGraphId] = useState<string>('');
-  const [targetSide, setTargetSide] = useState<string>('红方');
+  const [targetSide, setTargetSide] = useState<string>('ALL');
+  const [discoveredSides, setDiscoveredSides] = useState<string[]>([]);
+
+  const [viewMode, setViewMode] = useState<SystemViewMode>('list');
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const prevViewModeRef = useRef<SystemViewMode>(viewMode);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const savedListScrollTopRef = useRef<number>(0);
+  const overviewScrollRef = useRef<HTMLDivElement | null>(null);
+  const savedOverviewScrollTopRef = useRef<number>(0);
+
+  useLayoutEffect(() => {
+    if (viewMode === 'list' && listScrollRef.current) {
+      listScrollRef.current.scrollTop = savedListScrollTopRef.current;
+    } else if (viewMode === 'overview' && overviewScrollRef.current) {
+      overviewScrollRef.current.scrollTop = savedOverviewScrollTopRef.current;
+    }
+  }, [viewMode]);
+  const [systemSearch, setSystemSearch] = useState('');
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>('basic');
+  const [collapsedRowKeys, setCollapsedRowKeys] = useState<Set<string>>(() => new Set());
+  const didInitRef = useRef(false);
+
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const [systemConfigOpen, setSystemConfigOpen] = useState(false);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -332,10 +559,16 @@ export function SystemDagStudioPanel({
 
   const [loadingInit, setLoadingInit] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingSystemId, setDeletingSystemId] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
+  const [comparingSides, setComparingSides] = useState(false);
 
   const [evalOutput, setEvalOutput] = useState<EvaluationDagRunOutputLike | null>(null);
+  const [sideComparison, setSideComparison] = useState<SystemSideComparisonState | null>(null);
+  const [recentEvalBySystem, setRecentEvalBySystem] = useState<
+    Record<string, SystemRecentEvalRecord>
+  >({});
   const [validationReport, setValidationReport] = useState<SystemValidationReport | null>(null);
   const [banner, setBanner] = useState<{ kind: 'info' | 'warn' | 'error'; text: string } | null>(
     null,
@@ -353,6 +586,21 @@ export function SystemDagStudioPanel({
   const [sliceFilterText, setSliceFilterText] = useState('{}');
   const [sliceFilterErr, setSliceFilterErr] = useState<string | null>(null);
 
+  const resolveDefaultMetricGraphId = useCallback(
+    (mList: MetricGraphDefinition[], sys?: ExtendedSystemDag) => {
+      if (sys?.metricGraphId && mList.some((m) => m.graphId === sys.metricGraphId)) {
+        return sys.metricGraphId;
+      }
+      if (sys?.metricGraphId) return sys.metricGraphId;
+      return (
+        mList.find((m) => m.graphId === 'mg_v4_metrics_guide_full')?.graphId ??
+        mList[0]?.graphId ??
+        'mg_v4_metrics_guide_full'
+      );
+    },
+    [],
+  );
+
   const loadAllAssets = useCallback(async () => {
     setLoadingInit(true);
     try {
@@ -367,16 +615,11 @@ export function SystemDagStudioPanel({
         setEffects(Array.isArray(ej.effects) ? ej.effects : []);
       }
 
-      let defaultMgId = '';
+      let mList: MetricGraphDefinition[] = [];
       if (mgRes.status === 'fulfilled' && mgRes.value.ok) {
         const mj = (await mgRes.value.json()) as { graphs?: MetricGraphDefinition[] };
-        const mList = Array.isArray(mj.graphs) ? mj.graphs : [];
+        mList = Array.isArray(mj.graphs) ? mj.graphs : [];
         setMetricGraphs(mList);
-        if (mList.length > 0) {
-          defaultMgId =
-            mList.find((m) => m.graphId === 'mg_v4_metrics_guide_full')?.graphId ??
-            mList[0].graphId;
-        }
       }
 
       if (sysRes.status === 'fulfilled' && sysRes.value.ok) {
@@ -390,25 +633,30 @@ export function SystemDagStudioPanel({
             ? sj.dags
             : [];
         setSystems(sList);
-        if (sList.length > 0) {
-          const targetSys =
-            sList.find((s) => s.systemId === 'sys_v4_metrics_guide_full') ?? sList[0];
-          setActiveSystem(structuredClone(targetSys));
-          setSelectedNodeId(targetSys.terminalEffectNodeId || targetSys.nodes[0]?.id || null);
-          const linkedMg = targetSys.metricGraphId || defaultMgId;
-          if (linkedMg) setSelectedMetricGraphId((prev) => prev || linkedMg);
-        } else {
+        if (!didInitRef.current) {
+          didInitRef.current = true;
+          if (sList.length > 0) {
+            const targetSys =
+              sList.find((s) => s.systemId === 'sys_v4_metrics_guide_full') ?? sList[0];
+            setActiveSystem(structuredClone(targetSys));
+            setSelectedNodeId(targetSys.terminalEffectNodeId || targetSys.nodes[0]?.id || null);
+            setSelectedMetricGraphId(resolveDefaultMetricGraphId(mList, targetSys));
+          } else {
+            const draft = createDraftSystemDag(1);
+            setActiveSystem(draft);
+            setSelectedNodeId(draft.terminalEffectNodeId);
+            setSelectedMetricGraphId(resolveDefaultMetricGraphId(mList, draft));
+          }
+        }
+      } else {
+        setSystems([]);
+        if (!didInitRef.current) {
+          didInitRef.current = true;
           const draft = createDraftSystemDag(1);
           setActiveSystem(draft);
           setSelectedNodeId(draft.terminalEffectNodeId);
-          if (defaultMgId) setSelectedMetricGraphId((prev) => prev || defaultMgId);
+          setSelectedMetricGraphId(resolveDefaultMetricGraphId(mList, draft));
         }
-      } else {
-        const draft = createDraftSystemDag(1);
-        setSystems([]);
-        setActiveSystem(draft);
-        setSelectedNodeId(draft.terminalEffectNodeId);
-        if (defaultMgId) setSelectedMetricGraphId((prev) => prev || defaultMgId);
         setBanner({
           kind: 'warn',
           text: '后端体系 DAG 接口暂未返回持久化模型，已加载可编辑草案',
@@ -417,44 +665,113 @@ export function SystemDagStudioPanel({
     } finally {
       setLoadingInit(false);
     }
-  }, []);
+  }, [resolveDefaultMetricGraphId]);
 
   useEffect(() => {
     void loadAllAssets();
   }, [loadAllAssets]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handleOutside = (ev: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(ev.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleOutside);
+    return () => window.removeEventListener('mousedown', handleOutside);
+  }, [moreMenuOpen]);
 
   const effectMap = useMemo(
     () => new Map(effects.map((e) => [e.effectId, e])),
     [effects],
   );
 
-  // 按照领域标签 (firepower, isr, survivability, synergy) 汇总领域综合效能得分
-  const domainCompositeScores = useMemo(() => {
-    if (!evalOutput?.nodeResults) return [];
-    const domains: Array<{ tag: MetricDomainTag; label: string; score: number | null }> = [
-      { tag: 'firepower', label: '火力打击', score: null },
-      { tag: 'isr', label: '侦察预警', score: null },
-      { tag: 'survivability', label: '生存防护', score: null },
-      { tag: 'synergy', label: '体系协同', score: null },
-    ];
-    for (const d of domains) {
-      const scores: number[] = [];
-      for (const n of activeSystem.nodes) {
-        const eff = n.inlineEffect ?? (n.refId ? effectMap.get(n.refId) : undefined);
-        const tag = eff?.domainTag;
-        if (tag === d.tag) {
-          const res = evalOutput.nodeResults[n.id];
-          if (res && res.score !== null && res.score !== undefined && res.status !== 'unavailable') {
-            scores.push(res.score);
-          }
+  const metricGraphMap = useMemo(
+    () => new Map(metricGraphs.map((mg) => [mg.graphId, mg])),
+    [metricGraphs],
+  );
+
+  const filteredSystems = useMemo(() => {
+    const q = systemSearch.trim().toLowerCase();
+    if (!q) return systems;
+    return systems.filter((s) => {
+      const boundMgId = resolveDefaultMetricGraphId(metricGraphs, s);
+      const boundMgName = metricGraphMap.get(boundMgId)?.name ?? '';
+      return (
+        s.name.toLowerCase().includes(q) ||
+        s.systemId.toLowerCase().includes(q) ||
+        (s.description ?? '').toLowerCase().includes(q) ||
+        boundMgId.toLowerCase().includes(q) ||
+        boundMgName.toLowerCase().includes(q)
+      );
+    });
+  }, [systems, systemSearch, metricGraphs, metricGraphMap, resolveDefaultMetricGraphId]);
+
+  const resetEvaluationState = useCallback(() => {
+    setEvalOutput(null);
+    setSideComparison(null);
+    setDiscoveredSides([]);
+    setTargetSide('ALL');
+    setValidationReport(null);
+  }, []);
+
+  const handleEnterSystemDetail = useCallback(
+    (targetSys: ExtendedSystemDag, nextMode: 'overview' | 'canvas' = 'overview') => {
+      const cloned = structuredClone(targetSys);
+      setActiveSystem(cloned);
+      setSelectedNodeId(cloned.terminalEffectNodeId || cloned.nodes[0]?.id || null);
+      setSelectedEdgeId(null);
+      setSelectedMetricGraphId(resolveDefaultMetricGraphId(metricGraphs, cloned));
+      setCollapsedRowKeys(new Set());
+      setValidationReport(null);
+      setBanner(null);
+
+      const cached = recentEvalBySystem[cloned.systemId];
+      if (cached) {
+        setSideComparison(cached.sideComparison ?? null);
+        setDiscoveredSides(cached.sideComparison?.sides ?? []);
+        setTargetSide('ALL');
+        setEvalOutput(cached.evalOutput ?? cached.sideComparison?.overall ?? null);
+      } else {
+        resetEvaluationState();
+      }
+
+      setViewMode(nextMode);
+    },
+    [metricGraphs, recentEvalBySystem, resolveDefaultMetricGraphId, resetEvaluationState],
+  );
+
+  const handleCreateNewSystem = useCallback(() => {
+    const draft = createDraftSystemDag(systems.length + 1);
+    setActiveSystem(draft);
+    setSelectedNodeId(draft.terminalEffectNodeId);
+    setSelectedEdgeId(null);
+    setCollapsedRowKeys(new Set());
+    resetEvaluationState();
+    setSelectedMetricGraphId(resolveDefaultMetricGraphId(metricGraphs, draft));
+    setBanner({
+      kind: 'info',
+      text: '已创建新的评估体系 DAG 草案，编辑后可点击「保存体系」持久化',
+    });
+    setViewMode('canvas');
+  }, [systems.length, metricGraphs, resolveDefaultMetricGraphId, resetEvaluationState]);
+
+  const handleChangeTargetSide = useCallback(
+    (nextSide: string) => {
+      setTargetSide(nextSide);
+      if (sideComparison) {
+        const nextEval =
+          nextSide !== 'ALL' && sideComparison.bySide[nextSide]
+            ? sideComparison.bySide[nextSide]
+            : sideComparison.overall;
+        if (nextEval) {
+          setEvalOutput(nextEval);
         }
       }
-      if (scores.length > 0) {
-        d.score = scores.reduce((a, b) => a + b, 0) / scores.length;
-      }
-    }
-    return domains;
-  }, [evalOutput, activeSystem.nodes, effectMap]);
+    },
+    [sideComparison],
+  );
 
   // 收集二库指标与预设效果中的可用 metricId 选项
   const availableMetricOptions = useMemo(() => {
@@ -484,7 +801,8 @@ export function SystemDagStudioPanel({
   }, [metricGraphs, effects]);
 
   const selectedNode = useMemo(
-    () => (activeSystem.nodes.find((n) => n.id === selectedNodeId) as SystemDagNode | undefined) ?? null,
+    () =>
+      (activeSystem.nodes.find((n) => n.id === selectedNodeId) as SystemDagNode | undefined) ?? null,
     [activeSystem.nodes, selectedNodeId],
   );
 
@@ -588,14 +906,14 @@ export function SystemDagStudioPanel({
     });
   }, [effects, effectSearch, effectDomainFilter]);
 
-  // 从效果库拖入/点击添加到画布
+  // 从效果库点击添加到画布
   const handleAddEffectFromLibrary = useCallback(
     (eff: EffectDefinition) => {
       const idx = activeSystem.nodes.length + 1;
       const nodeId = `sn_${eff.effectId.replace(/[^a-zA-Z0-9_]/g, '_')}_${Date.now().toString(36).slice(-3)}`;
       const pos = {
-        x: 340 + ((idx % 3) * 290),
-        y: 80 + (Math.floor(idx / 3) * 170),
+        x: 340 + (idx % 3) * 290,
+        y: 80 + Math.floor(idx / 3) * 170,
       };
       const newNode: SystemDagNode = {
         id: nodeId,
@@ -611,25 +929,34 @@ export function SystemDagStudioPanel({
       }));
       setSelectedNodeId(nodeId);
       setSelectedEdgeId(null);
+      setDrawerTab('basic');
     },
     [activeSystem.nodes.length],
   );
 
-  // 原地新建效果节点 / 门控节点 (inlineEffect)
+  // 原地新建能力维度 / 效果合成 / 门控节点 (inlineEffect)
   const handleAddInlineEffectNode = useCallback(
-    (role: 'effect' | 'gate', gateMode: 'hard' | 'soft' = 'soft') => {
+    (
+      role: 'effect' | 'gate',
+      options?: { gateMode?: 'hard' | 'soft'; namePrefix?: string; defaultX?: number },
+    ) => {
       const idx = activeSystem.nodes.length + 1;
       const uid = Date.now().toString(36).slice(-4);
+      const gateMode = options?.gateMode ?? 'hard';
       const nodeId = role === 'gate' ? `sn_gate_${uid}` : `sn_eff_${uid}`;
       const defaultMetric = availableMetricOptions[0]?.metricId;
+      const defaultName =
+        options?.namePrefix !== undefined
+          ? `${options.namePrefix} ${idx}`
+          : role === 'gate'
+            ? gateMode === 'hard'
+              ? `红线硬门控 ${idx}`
+              : `预警软门控 ${idx}`
+            : `效果合成 ${idx}`;
+
       const inlineDef: EffectDefinition = {
         effectId: `eff_inline_${uid}`,
-        name:
-          role === 'gate'
-            ? gateMode === 'hard'
-              ? `原地硬门控 ${idx}`
-              : `原地软门控 ${idx}`
-            : `原地效果节点 ${idx}`,
+        name: defaultName,
         domainTag: 'synergy',
         role,
         ...(role === 'gate' ? { gateMode } : {}),
@@ -653,8 +980,8 @@ export function SystemDagStudioPanel({
         kind: role,
         label: inlineDef.name,
         position: {
-          x: 420 + ((idx % 3) * 240),
-          y: 90 + (Math.floor(idx / 3) * 165),
+          x: options?.defaultX ?? 420 + (idx % 3) * 240,
+          y: 90 + Math.floor(idx / 3) * 165,
         },
         inlineEffect: inlineDef,
       };
@@ -666,6 +993,7 @@ export function SystemDagStudioPanel({
       }));
       setSelectedNodeId(nodeId);
       setSelectedEdgeId(null);
+      setDrawerTab('basic');
     },
     [activeSystem.nodes.length, availableMetricOptions],
   );
@@ -683,7 +1011,7 @@ export function SystemDagStudioPanel({
       refId: defaultMetric?.metricId ?? '',
       position: {
         x: 70,
-        y: 80 + ((idx % 4) * 165),
+        y: 80 + (idx % 4) * 165,
       },
     };
     setActiveSystem((prev) => ({
@@ -692,6 +1020,7 @@ export function SystemDagStudioPanel({
     }));
     setSelectedNodeId(nodeId);
     setSelectedEdgeId(null);
+    setDrawerTab('basic');
   }, [activeSystem.nodes.length, availableMetricOptions]);
 
   // 另存为独立复用效果 (POST /api/v4/effects)
@@ -751,7 +1080,6 @@ export function SystemDagStudioPanel({
         return [...prev, savedEff];
       });
 
-      // 将当前节点同步绑定为引用该复用效果
       if (selectedNodeId) {
         setActiveSystem((prev) => ({
           ...prev,
@@ -878,10 +1206,14 @@ export function SystemDagStudioPanel({
     setSaving(true);
     setBanner(null);
     try {
+      const payloadSystem: ExtendedSystemDag = {
+        ...activeSystem,
+        ...(selectedMetricGraphId ? { metricGraphId: selectedMetricGraphId } : {}),
+      };
       const res = await fetch('/api/v4/system-dags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(activeSystem),
+        body: JSON.stringify(payloadSystem),
       });
       const json = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -898,7 +1230,7 @@ export function SystemDagStudioPanel({
         throw new Error(msg);
       }
 
-      const savedSys = json.system ?? json.dag ?? activeSystem;
+      const savedSys = json.system ?? json.dag ?? payloadSystem;
       setActiveSystem(savedSys);
       setSystems((prev) => {
         const idx = prev.findIndex((s) => s.systemId === savedSys.systemId);
@@ -921,54 +1253,84 @@ export function SystemDagStudioPanel({
     } finally {
       setSaving(false);
     }
-  }, [activeSystem]);
+  }, [activeSystem, selectedMetricGraphId]);
 
-  const handleDeleteSystemDag = useCallback(async () => {
-    const sid = activeSystem.systemId;
-    if (!sid) return;
-    setSaving(true);
-    setBanner(null);
-    try {
-      const res = await fetch(`/api/v4/system-dags/${encodeURIComponent(sid)}`, {
-        method: 'DELETE',
-      });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || json.ok === false) {
-        throw new Error(json.error || `HTTP ${res.status}`);
+  const handleDeleteSystemDag = useCallback(
+    async (targetSystemId?: string) => {
+      const sid = targetSystemId ?? activeSystem.systemId;
+      if (!sid) return;
+      setSaving(true);
+      setDeletingSystemId(sid);
+      setBanner(null);
+      try {
+        const res = await fetch(`/api/v4/system-dags/${encodeURIComponent(sid)}`, {
+          method: 'DELETE',
+        });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || json.ok === false) {
+          throw new Error(json.error || `HTTP ${res.status}`);
+        }
+        const remaining = systems.filter((s) => s.systemId !== sid);
+        setSystems(remaining);
+        setRecentEvalBySystem((prev) => {
+          if (!(sid in prev)) return prev;
+          const next = { ...prev };
+          delete next[sid];
+          return next;
+        });
+
+        if (activeSystem.systemId === sid) {
+          if (remaining.length > 0) {
+            const nextSys = structuredClone(remaining[0]);
+            setActiveSystem(nextSys);
+            setSelectedNodeId(nextSys.terminalEffectNodeId || nextSys.nodes[0]?.id || null);
+            setSelectedMetricGraphId(resolveDefaultMetricGraphId(metricGraphs, nextSys));
+          } else {
+            const draft = createDraftSystemDag(1);
+            setActiveSystem(draft);
+            setSelectedNodeId(draft.terminalEffectNodeId);
+            setSelectedMetricGraphId(resolveDefaultMetricGraphId(metricGraphs, draft));
+          }
+          resetEvaluationState();
+          if (viewMode !== 'list') {
+            setViewMode('list');
+          }
+        }
+
+        setBanner({ kind: 'info', text: `已删除体系 DAG: ${sid}` });
+      } catch (err) {
+        setBanner({
+          kind: 'error',
+          text: `删除失败：${err instanceof Error ? err.message : String(err)}`,
+        });
+      } finally {
+        setSaving(false);
+        setDeletingSystemId(null);
       }
-      const remaining = systems.filter((s) => s.systemId !== sid);
-      setSystems(remaining);
-      if (remaining.length > 0) {
-        setActiveSystem(structuredClone(remaining[0]));
-        setSelectedNodeId(remaining[0].terminalEffectNodeId || remaining[0].nodes[0]?.id || null);
-      } else {
-        const draft = createDraftSystemDag(1);
-        setActiveSystem(draft);
-        setSelectedNodeId(draft.terminalEffectNodeId);
-      }
-      setEvalOutput(null);
-      setBanner({ kind: 'info', text: `已删除体系 DAG: ${sid}` });
-    } catch (err) {
-      setBanner({
-        kind: 'error',
-        text: `删除失败：${err instanceof Error ? err.message : String(err)}`,
-      });
-    } finally {
-      setSaving(false);
-    }
-  }, [activeSystem.systemId, systems]);
+    },
+    [
+      activeSystem.systemId,
+      systems,
+      metricGraphs,
+      resolveDefaultMetricGraphId,
+      resetEvaluationState,
+      viewMode,
+    ],
+  );
 
   // 全链路评估
   const handleEvaluateSystemDag = useCallback(async () => {
     setEvaluating(true);
     setBanner(null);
     try {
+      const effectiveMgId =
+        selectedMetricGraphId || activeSystem.metricGraphId || 'mg_v4_metrics_guide_full';
       const res = await fetch('/api/v4/system-dags/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           system: activeSystem,
-          ...(selectedMetricGraphId ? { metricGraphId: selectedMetricGraphId } : {}),
+          metricGraphId: effectiveMgId,
           runId: selectedRunId,
           dataSourceId: activeSourceId,
           ...(targetSide && targetSide !== 'ALL' ? { targetSide } : {}),
@@ -985,11 +1347,21 @@ export function SystemDagStudioPanel({
 
       const evaluation = (json.evaluation ?? json.result ?? json) as EvaluationDagRunOutputLike;
       setEvalOutput(evaluation);
+      if (activeSystem.systemId) {
+        setRecentEvalBySystem((prev) => ({
+          ...prev,
+          [activeSystem.systemId]: {
+            ...prev[activeSystem.systemId],
+            evalOutput: evaluation,
+          },
+        }));
+      }
 
+      const sidePrefix = targetSide && targetSide !== 'ALL' ? `[${targetSide}] ` : '';
       if (evaluation.gateVerdict === 'DISQUALIFIED') {
         setBanner({
           kind: 'error',
-          text: `硬红线门控触发 DISQUALIFIED！生效总分已封顶至 ${
+          text: `${sidePrefix}硬红线门控触发 DISQUALIFIED！生效总分已封顶至 ${
             evaluation.overallScore !== null ? evaluation.overallScore.toFixed(1) : '--'
           }（原始分 ${
             evaluation.rawOverallScore !== null ? evaluation.rawOverallScore.toFixed(1) : '--'
@@ -998,16 +1370,16 @@ export function SystemDagStudioPanel({
       } else if (evaluation.gateVerdict === 'WARNING') {
         setBanner({
           kind: 'warn',
-          text: `全链路评估完成（触发软红线 WARNING 告警）：综合效能 ${
+          text: `${sidePrefix}评估完成（触发门控告警）：综合效能 ${
             evaluation.overallScore !== null ? evaluation.overallScore.toFixed(1) : '--'
           } 分`,
         });
       } else {
         setBanner({
           kind: 'info',
-          text: `全链路评估完成：综合效能 ${
+          text: `${sidePrefix}评估完成：综合效能 ${
             evaluation.overallScore !== null ? evaluation.overallScore.toFixed(1) : '缺数 (N/A)'
-          } 分，安全门控 PASS`,
+          } 分，门控状态正常`,
         });
       }
     } catch (err) {
@@ -1018,7 +1390,239 @@ export function SystemDagStudioPanel({
     } finally {
       setEvaluating(false);
     }
-  }, [activeSystem, selectedMetricGraphId, selectedRunId, activeSourceId]);
+  }, [activeSystem, selectedMetricGraphId, selectedRunId, activeSourceId, targetSide]);
+
+  // 动态全阵营对比评估（分方完全由后端从真实推演数据动态发现）
+  const handleCompareSides = useCallback(async () => {
+    setComparingSides(true);
+    setBanner(null);
+    try {
+      const effectiveMgId =
+        selectedMetricGraphId || activeSystem.metricGraphId || 'mg_v4_metrics_guide_full';
+      const systemId = activeSystem.systemId || 'sys_draft';
+      const res = await fetch(
+        `/api/v4/system-dags/${encodeURIComponent(systemId)}/compare-sides`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            runId: selectedRunId,
+            dataSourceId: activeSourceId,
+            metricGraphId: effectiveMgId,
+            system: activeSystem,
+          }),
+        },
+      );
+
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        systemId?: string;
+        runId?: string;
+        metricGraphId?: string;
+        sides?: unknown;
+        overall?: unknown;
+        bySide?: Record<string, unknown>;
+      };
+
+      if (!res.ok || json.ok === false) {
+        throw new Error(json.error || `全阵营对比评估失败 (HTTP ${res.status})`);
+      }
+
+      const sides = Array.isArray(json.sides)
+        ? json.sides.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+        : [];
+      const overall = extractEvaluationFromSlice(json.overall);
+      const bySide: Record<string, EvaluationDagRunOutputLike> = {};
+      if (json.bySide && typeof json.bySide === 'object') {
+        for (const [sideName, rawSlice] of Object.entries(json.bySide)) {
+          const parsed = extractEvaluationFromSlice(rawSlice);
+          if (parsed) bySide[sideName] = parsed;
+        }
+      }
+
+      const nextComparison: SystemSideComparisonState = {
+        systemId: json.systemId ?? systemId,
+        sides,
+        overall,
+        bySide,
+        runId: json.runId ?? selectedRunId,
+        metricGraphId: json.metricGraphId ?? effectiveMgId,
+      };
+      setSideComparison(nextComparison);
+      setDiscoveredSides(sides);
+      if (activeSystem.systemId) {
+        setRecentEvalBySystem((prev) => ({
+          ...prev,
+          [activeSystem.systemId]: {
+            sideComparison: nextComparison,
+            evalOutput: overall ?? prev[activeSystem.systemId]?.evalOutput,
+          },
+        }));
+      }
+
+      const nextTarget = targetSide !== 'ALL' && !sides.includes(targetSide) ? 'ALL' : targetSide;
+      if (nextTarget !== targetSide) setTargetSide(nextTarget);
+
+      const activeEval =
+        nextTarget !== 'ALL' && bySide[nextTarget] ? bySide[nextTarget] : overall;
+      if (activeEval) {
+        setEvalOutput(activeEval);
+      }
+
+      if (sides.length === 0) {
+        setBanner({
+          kind: 'warn',
+          text: '阵营对比完成：当前推演样本中未发现参演阵营',
+        });
+      } else {
+        setBanner({
+          kind: 'info',
+          text: `阵营对比完成：共 ${sides.length} 个参演阵营（${sides.join(' / ')}）`,
+        });
+      }
+    } catch (err) {
+      setBanner({
+        kind: 'error',
+        text: `全阵营对比失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setComparingSides(false);
+    }
+  }, [activeSystem, selectedMetricGraphId, selectedRunId, activeSourceId, targetSide]);
+
+  // 构建「体系总览」层次行：终态效果 -> 能力维度 -> 下挂指标/门控（以及独立双轨门控分支）
+  const overviewRows = useMemo<OverviewHierarchyRow[]>(() => {
+    const nodeMap = new Map<string, SystemDagNode>();
+    for (const n of activeSystem.nodes) {
+      nodeMap.set(n.id, n as SystemDagNode);
+    }
+    const incomingMap = new Map<string, DagEdge[]>();
+    const outgoingMap = new Map<string, DagEdge[]>();
+    for (const e of activeSystem.edges) {
+      const inList = incomingMap.get(e.targetNodeId) ?? [];
+      inList.push(e);
+      incomingMap.set(e.targetNodeId, inList);
+      const outList = outgoingMap.get(e.sourceNodeId) ?? [];
+      outList.push(e);
+      outgoingMap.set(e.sourceNodeId, outList);
+    }
+
+    const visitedInTree = new Set<string>();
+    const rows: OverviewHierarchyRow[] = [];
+
+    const sortIncoming = (edges: DagEdge[]) =>
+      [...edges].sort((a, b) => {
+        const wa = typeof a.weight === 'number' ? a.weight : -1;
+        const wb = typeof b.weight === 'number' ? b.weight : -1;
+        if (wb !== wa) return wb - wa;
+        return a.sourceNodeId.localeCompare(b.sourceNodeId);
+      });
+
+    const walkUpstream = (
+      nodeId: string,
+      depth: number,
+      section: 'terminal' | 'standalone',
+      pathKey: string,
+      ancestors: Set<string>,
+      incomingWeight?: number,
+      parentNodeId?: string,
+    ) => {
+      const node = nodeMap.get(nodeId);
+      if (!node) return;
+      visitedInTree.add(nodeId);
+
+      const isProxy = node.kind === 'metric_proxy' || node.kind === 'metric';
+      const eff = isProxy
+        ? undefined
+        : node.inlineEffect ?? (node.refId ? effectMap.get(node.refId) : undefined);
+
+      const inEdges = sortIncoming(incomingMap.get(nodeId) ?? []).filter(
+        (e) => nodeMap.has(e.sourceNodeId) && !ancestors.has(e.sourceNodeId),
+      );
+      const hasChildren = inEdges.length > 0;
+      const isTerminal = section === 'terminal' && node.id === activeSystem.terminalEffectNodeId;
+      const rowKey = `${section}:${pathKey}`;
+
+      rows.push({
+        rowKey,
+        node,
+        effect: eff,
+        depth,
+        section,
+        incomingWeight,
+        parentNodeId,
+        hasChildren,
+        roleTag: resolveRoleTag(node, eff, depth, isTerminal),
+      });
+
+      if (!hasChildren || collapsedRowKeys.has(rowKey)) {
+        return;
+      }
+
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(nodeId);
+      for (const edge of inEdges) {
+        walkUpstream(
+          edge.sourceNodeId,
+          depth + 1,
+          section,
+          `${pathKey}>${edge.sourceNodeId}`,
+          nextAncestors,
+          edge.weight,
+          nodeId,
+        );
+      }
+    };
+
+    const termId = activeSystem.terminalEffectNodeId;
+    if (termId && nodeMap.has(termId)) {
+      walkUpstream(termId, 0, 'terminal', termId, new Set<string>());
+    }
+
+    // 收集未挂接到终态树下的节点（例如双轨独立红线门控 gt_attrition_hard / gt_interception_soft 及其输入）
+    const remainingNodes = (activeSystem.nodes as SystemDagNode[]).filter(
+      (n) => !visitedInTree.has(n.id),
+    );
+    if (remainingNodes.length > 0) {
+      const remainingSet = new Set(remainingNodes.map((n) => n.id));
+      const standaloneRoots = remainingNodes
+        .filter((n) => {
+          const outs = (outgoingMap.get(n.id) ?? []).filter((e) => remainingSet.has(e.targetNodeId));
+          return outs.length === 0;
+        })
+        .sort((a, b) => {
+          const aGate = a.kind === 'gate' ? 0 : 1;
+          const bGate = b.kind === 'gate' ? 0 : 1;
+          return aGate - bGate;
+        });
+
+      for (const root of standaloneRoots) {
+        if (visitedInTree.has(root.id)) continue;
+        walkUpstream(root.id, 0, 'standalone', root.id, new Set<string>());
+      }
+
+      for (const leftover of remainingNodes) {
+        if (!visitedInTree.has(leftover.id)) {
+          walkUpstream(leftover.id, 0, 'standalone', leftover.id, new Set<string>());
+        }
+      }
+    }
+
+    return rows;
+  }, [activeSystem.nodes, activeSystem.edges, activeSystem.terminalEffectNodeId, effectMap, collapsedRowKeys]);
+
+  const toggleOverviewRow = useCallback((rowKey: string) => {
+    setCollapsedRowKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowKey)) {
+        next.delete(rowKey);
+      } else {
+        next.add(rowKey);
+      }
+      return next;
+    });
+  }, []);
 
   // 转换为通用画布节点/边契约
   const canvasNodes = useMemo<DagCanvasNode[]>(() => {
@@ -1031,7 +1635,7 @@ export function SystemDagStudioPanel({
       const evalRes: EvaluatedEffectNode | undefined = evalOutput?.nodeResults?.[sysNode.id];
 
       let status: DagNodeStatus = 'idle';
-      if (evaluating) {
+      if (evaluating || comparingSides) {
         status = 'running';
       } else if (evalRes) {
         if (evalRes.role === 'gate' && evalRes.gateStatus === 'violated') {
@@ -1104,7 +1708,14 @@ export function SystemDagStudioPanel({
         },
       };
     });
-  }, [activeSystem.nodes, activeSystem.terminalEffectNodeId, effectMap, evalOutput, evaluating]);
+  }, [
+    activeSystem.nodes,
+    activeSystem.terminalEffectNodeId,
+    effectMap,
+    evalOutput,
+    evaluating,
+    comparingSides,
+  ]);
 
   const canvasEdges = useMemo<DagCanvasEdge[]>(() => {
     return activeSystem.edges.map((e) => {
@@ -1249,306 +1860,357 @@ export function SystemDagStudioPanel({
     return selectedNodeEffect?.metricBinding?.metricId;
   }, [selectedNode, selectedIsProxy, selectedNodeEffect]);
 
+  const activeSystemIsPersistedCustom = useMemo(
+    () => systems.some((s) => s.systemId === activeSystem.systemId && !s.builtin),
+    [systems, activeSystem.systemId],
+  );
+
+  const activeSystemIsBuiltin = useMemo(
+    () => systems.some((s) => s.systemId === activeSystem.systemId && Boolean(s.builtin)),
+    [systems, activeSystem.systemId],
+  );
+
+  const activeSystemIsSaved = useMemo(
+    () => systems.some((s) => s.systemId === activeSystem.systemId),
+    [systems, activeSystem.systemId],
+  );
+
+  const systemSelectorOptions = useMemo<UnifiedAssetOption[]>(() => {
+    return systems.map((sys) => ({
+      id: sys.systemId,
+      label: sys.name || sys.systemId,
+      subLabel: `${sys.systemId} · v${sys.version}`,
+      group: sys.builtin ? '内置预设体系' : '自定义体系',
+      badge: sys.builtin ? '内置' : '自定义',
+      badgeTone: sys.builtin ? 'indigo' : 'emerald',
+    }));
+  }, [systems]);
+
+  useEffect(() => {
+    if (prevViewModeRef.current === viewMode) return;
+    prevViewModeRef.current = viewMode;
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+    let parent = rootRef.current?.parentElement ?? null;
+    while (parent) {
+      if (parent.scrollTop > 0) {
+        parent.scrollTop = 0;
+      }
+      parent = parent.parentElement;
+    }
+  }, [viewMode]);
+
   return (
-    <div className="flex h-full min-h-[820px] flex-col gap-3 rounded-xl border border-[#30363d] bg-[#0d1117] p-3 text-slate-100">
-      {/* 顶部控制栏 */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#30363d] bg-[#161b22] px-3.5 py-2.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1 text-xs font-semibold text-indigo-300">
-            <Scale className="h-3.5 w-3.5" />
-            <span>三库 · 效果合成与体系 DAG 工坊</span>
+    <div
+      ref={rootRef}
+      className="flex flex-col gap-3 rounded-xl border border-[#30363d] bg-[#0d1117] p-3 text-slate-100"
+    >
+      {/* 顶部控制栏：列表态精简栏 vs 详情态返回/编辑栏 */}
+      {viewMode === 'list' ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#30363d] bg-[#161b22] px-3.5 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1 text-xs font-semibold text-indigo-300">
+              <Scale className="h-3.5 w-3.5" />
+              <span>评估体系</span>
+            </div>
+            <span className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono text-[11px] text-slate-300 tabular-nums">
+              {systemSearch.trim()
+                ? `${filteredSystems.length} / ${systems.length} 套体系`
+                : `共 ${systems.length} 套体系`}
+            </span>
+
+            <UnifiedAssetSelector
+              value={activeSystem.systemId}
+              options={systemSelectorOptions}
+              placeholder="定位体系..."
+              searchPlaceholder="搜索体系..."
+              accent="indigo"
+              onChange={(sysId) => {
+                const target = systems.find((s) => s.systemId === sysId);
+                if (target) handleEnterSystemDetail(target, 'overview');
+              }}
+            />
           </div>
 
-          <select
-            value={
-              systems.some((s) => s.systemId === activeSystem.systemId)
-                ? activeSystem.systemId
-                : '__draft__'
-            }
-            onChange={(e) => {
-              const target = systems.find((s) => s.systemId === e.target.value);
-              if (target) {
-                setActiveSystem(structuredClone(target));
-                setSelectedNodeId(target.terminalEffectNodeId || target.nodes[0]?.id || null);
-                setSelectedEdgeId(null);
-                setEvalOutput(null);
-                setValidationReport(null);
-                if (target.metricGraphId) {
-                  setSelectedMetricGraphId(target.metricGraphId);
-                }
-              }
-            }}
-            className="max-w-[240px] rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-          >
-            {!systems.some((s) => s.systemId === activeSystem.systemId) && (
-              <option value="__draft__">{activeSystem.name} (未保存草案)</option>
-            )}
-            {systems.map((s) => (
-              <option key={s.systemId} value={s.systemId}>
-                {s.name} ({s.systemId}){s.builtin ? ' [内置]' : ''}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-64 sm:w-72">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={systemSearch}
+                onChange={(e) => setSystemSearch(e.target.value)}
+                placeholder="搜索体系名称、systemId 或指标库..."
+                className="w-full rounded-md border border-[#30363d] bg-[#0d1117] py-1.5 pl-8 pr-7 text-xs text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+              {systemSearch && (
+                <button
+                  type="button"
+                  onClick={() => setSystemSearch('')}
+                  title="清空搜索"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              const draft = createDraftSystemDag(systems.length + 1);
-              setActiveSystem(draft);
-              setSelectedNodeId(draft.terminalEffectNodeId);
-              setSelectedEdgeId(null);
-              setEvalOutput(null);
-              setValidationReport(null);
-            }}
-            className="inline-flex items-center gap-1 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1 text-xs text-slate-200 hover:border-slate-500 transition cursor-pointer"
-          >
-            <FilePlus2 className="h-3.5 w-3.5 text-indigo-400" />
-            <span>新建</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void handleSaveSystemDag()}
-            disabled={saving}
-            className="inline-flex items-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1 text-xs font-medium text-indigo-200 hover:bg-indigo-500/25 disabled:opacity-50 transition cursor-pointer"
-          >
-            <Save className="h-3.5 w-3.5" />
-            <span>{saving ? '保存中...' : '保存体系'}</span>
-          </button>
-
-          {systems.some((s) => s.systemId === activeSystem.systemId && !s.builtin) && (
             <button
               type="button"
-              onClick={() => void handleDeleteSystemDag()}
-              disabled={saving}
-              title="删除自定义体系 DAG"
-              className="rounded-md border border-[#30363d] bg-[#0d1117] p-1.5 text-slate-400 hover:border-rose-500/50 hover:text-rose-300 transition cursor-pointer"
+              onClick={handleCreateNewSystem}
+              className="inline-flex items-center gap-1.5 rounded-md border border-indigo-400/60 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-indigo-950/60 hover:bg-indigo-500 transition cursor-pointer"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5" />
+              <span>新建体系</span>
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={() => void loadAllAssets()}
-            disabled={loadingInit}
-            title="刷新效果库、指标图与体系库"
-            className="rounded-md border border-[#30363d] bg-[#0d1117] p-1.5 text-slate-400 hover:text-slate-100 transition cursor-pointer"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loadingInit ? 'animate-spin' : ''}`} />
-          </button>
+            <button
+              type="button"
+              onClick={() => void loadAllAssets()}
+              disabled={loadingInit}
+              className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-slate-200 hover:border-slate-500 hover:text-white disabled:opacity-50 transition cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 text-slate-400 ${loadingInit ? 'animate-spin' : ''}`}
+              />
+              <span>刷新</span>
+            </button>
+          </div>
         </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#30363d] bg-[#161b22] px-3.5 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                setViewMode('list');
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1 text-xs font-medium text-slate-200 hover:border-indigo-400/60 hover:text-indigo-200 transition cursor-pointer"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 text-indigo-400" />
+              <span>返回体系列表</span>
+            </button>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {metricGraphs.length > 0 && (
-            <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
-              <span>上游指标图:</span>
-              <select
-                value={selectedMetricGraphId}
-                onChange={(e) => {
-                  const mgId = e.target.value;
-                  setSelectedMetricGraphId(mgId);
-                  setActiveSystem((prev) => ({ ...prev, metricGraphId: mgId || undefined }));
+            <div className="h-4 w-px bg-[#30363d]" />
+
+            <div className="flex items-center gap-2 min-w-0">
+              <UnifiedAssetSelector
+                value={activeSystem.systemId}
+                options={systemSelectorOptions}
+                placeholder={activeSystem.name || '选择评估体系...'}
+                searchPlaceholder="搜索体系名称、systemId..."
+                accent="indigo"
+                onChange={(sysId) => {
+                  const target = systems.find((s) => s.systemId === sysId);
+                  if (target) {
+                    handleEnterSystemDetail(
+                      target,
+                      viewMode === 'canvas' ? 'canvas' : 'overview',
+                    );
+                  }
                 }}
-                className="max-w-[170px] rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-emerald-300 focus:border-indigo-500 focus:outline-none"
+              />
+              <span
+                className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
+                  !activeSystemIsSaved
+                    ? 'border-amber-500/45 bg-amber-500/15 text-amber-200'
+                    : activeSystemIsBuiltin
+                      ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-200'
+                      : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
+                }`}
               >
-                {metricGraphs.map((mg) => (
-                  <option key={mg.graphId} value={mg.graphId}>
-                    {mg.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+                {!activeSystemIsSaved ? '草案' : activeSystemIsBuiltin ? '内置' : '自定义'}
+              </span>
+            </div>
 
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
-            <span>评估阵营:</span>
-            <select
-              value={targetSide}
-              onChange={(e) => setTargetSide(e.target.value)}
-              className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-indigo-300 focus:border-indigo-500 focus:outline-none"
-            >
-              <option value="红方">红方 (Red)</option>
-              <option value="绿方">绿方 (Green)</option>
-              <option value="蓝方">蓝方 (Blue)</option>
-              <option value="ALL">全部阵营 (ALL)</option>
-            </select>
-          </label>
-
-          <button
-            type="button"
-            onClick={() => void handleValidateAndNormalize()}
-            disabled={validating}
-            className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/45 bg-cyan-500/15 px-2.5 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50 transition cursor-pointer"
-          >
-            <Scale className="h-3.5 w-3.5" />
-            <span>{validating ? '校验中...' : '校验 & 权重自动归一'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void handleEvaluateSystemDag()}
-            disabled={evaluating || activeSystem.nodes.length === 0}
-            className="inline-flex items-center gap-1.5 rounded-md border border-indigo-400/60 bg-indigo-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-indigo-950/60 hover:bg-indigo-500 disabled:opacity-50 transition cursor-pointer"
-          >
-            <Play className="h-3.5 w-3.5" />
-            <span>{evaluating ? '评估中...' : '▶ 全链路评估'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 终态总分 & 双轨门控裁决横幅 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#30363d] bg-[#161b22]/90 px-4 py-2.5">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1 text-xs font-semibold text-indigo-300">
-            <span>{activeSystem.name}</span>
-            <span className="font-mono text-[10px] text-indigo-400">({activeSystem.systemId})</span>
+            <div className="flex items-center rounded-lg border border-[#30363d] bg-[#0d1117] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setViewMode('overview')}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition cursor-pointer ${
+                  viewMode === 'overview'
+                    ? 'border border-indigo-500/50 bg-indigo-500/20 font-semibold text-indigo-200'
+                    : 'border border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Table2 className="h-3.5 w-3.5" />
+                <span>体系总览</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('canvas')}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition cursor-pointer ${
+                  viewMode === 'canvas'
+                    ? 'border border-indigo-500/50 bg-indigo-500/20 font-semibold text-indigo-200'
+                    : 'border border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                <span>画布编排</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-baseline gap-2">
-            <span className="text-[11px] uppercase tracking-wider text-slate-400">
-              生效综合效能 (overallScore):
-            </span>
-            <span
-              className={`font-mono text-2xl font-bold tabular-nums ${
-                !evalOutput || evalOutput.overallScore === null
-                  ? 'text-slate-400'
-                  : evalOutput.gateVerdict === 'DISQUALIFIED'
-                    ? 'text-rose-400'
-                    : evalOutput.overallScore >= 80
-                      ? 'text-emerald-300'
-                      : evalOutput.overallScore >= 60
-                        ? 'text-indigo-200'
-                        : 'text-amber-300'
-              }`}
-            >
-              {evalOutput && evalOutput.overallScore !== null
-                ? evalOutput.overallScore.toFixed(1)
-                : '--'}
-            </span>
-            <span className="font-mono text-xs text-slate-500">/ 100</span>
-          </div>
-
-          <div className="h-6 w-px bg-[#30363d]" />
-
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-400">原始战术分 (rawOverallScore):</span>
-            <span className="font-mono font-semibold text-slate-200 tabular-nums">
-              {evalOutput && evalOutput.rawOverallScore !== null
-                ? evalOutput.rawOverallScore.toFixed(1)
-                : '--'}
-            </span>
-
-            <span
-              className={`ml-1 inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] font-bold ${
-                !evalOutput
-                  ? 'border-slate-700 bg-slate-800/80 text-slate-400'
-                  : evalOutput.gateVerdict === 'DISQUALIFIED'
-                    ? 'border-rose-500/60 bg-rose-500/20 text-rose-200'
-                    : evalOutput.gateVerdict === 'WARNING'
-                      ? 'border-amber-500/55 bg-amber-500/20 text-amber-200'
-                      : 'border-emerald-500/45 bg-emerald-500/15 text-emerald-300'
-              }`}
-            >
-              {evalOutput?.gateVerdict === 'DISQUALIFIED' ? (
-                <ShieldAlert className="h-3.5 w-3.5" />
-              ) : (
-                <ShieldCheck className="h-3.5 w-3.5" />
-              )}
-              <span>GATE: {evalOutput?.gateVerdict ?? 'PENDING'}</span>
-            </span>
-
-            <span className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono text-[11px] text-slate-300 tabular-nums">
-              可用权重覆盖 (availableWeightRatio):{' '}
-              {evalOutput ? `${(evalOutput.availableWeightRatio * 100).toFixed(1)}%` : '--'}
-            </span>
-
-            {domainCompositeScores.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 ml-1 border-l border-[#30363d] pl-2">
-                <span className="text-slate-400 text-[11px]">领域效能:</span>
-                {domainCompositeScores.map((d) => (
-                  <span
-                    key={d.tag}
-                    className="inline-flex items-center gap-1 rounded bg-[#0d1117] px-2 py-0.5 text-[11px] font-mono border border-[#30363d]"
-                  >
-                    <span className="text-slate-400">{d.label}:</span>
-                    <strong
-                      className={
-                        d.score === null
-                          ? 'text-slate-500'
-                          : d.score >= 80
-                            ? 'text-emerald-300'
-                            : d.score >= 60
-                              ? 'text-indigo-300'
-                              : 'text-amber-300'
-                      }
-                    >
-                      {d.score !== null ? `${d.score.toFixed(1)}分` : '--'}
-                    </strong>
-                  </span>
-                ))}
-              </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {discoveredSides.length > 0 && (
+              <label className="flex items-center gap-1.5 text-xs text-slate-300">
+                <span className="text-[11px] text-slate-400">阵营切片:</span>
+                <select
+                  value={targetSide}
+                  onChange={(e) => handleChangeTargetSide(e.target.value)}
+                  title="按参演阵营筛选评估结果"
+                  className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-indigo-200 focus:border-indigo-500 focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">全部阵营 ({discoveredSides.length} 方)</option>
+                  {discoveredSides.map((side) => (
+                    <option key={side} value={side}>
+                      {side}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
 
-            {evalOutput?.resolvedParamOverrides &&
-              Object.keys(evalOutput.resolvedParamOverrides).length > 0 && (
-                <span
-                  title={JSON.stringify(evalOutput.resolvedParamOverrides, null, 2)}
-                  className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] text-amber-200"
-                >
-                  透传阈值覆盖: {Object.keys(evalOutput.resolvedParamOverrides).length} 项
-                </span>
+            <button
+              type="button"
+              onClick={() => void handleCompareSides()}
+              disabled={comparingSides || evaluating || activeSystem.nodes.length === 0}
+              title="对比各阵营评估结果"
+              className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/50 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50 transition cursor-pointer"
+            >
+              <Scale className="h-3.5 w-3.5 text-cyan-300" />
+              <span>{comparingSides ? '对比中...' : '阵营对比'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleEvaluateSystemDag()}
+              disabled={evaluating || comparingSides || activeSystem.nodes.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-md border border-indigo-400/60 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-indigo-950/60 hover:bg-indigo-500 disabled:opacity-50 transition cursor-pointer"
+            >
+              <Play className="h-3.5 w-3.5" />
+              <span>{evaluating ? '评估中...' : '运行评估'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleSaveSystemDag()}
+              disabled={saving}
+              className="inline-flex items-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/25 disabled:opacity-50 transition cursor-pointer"
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span>{saving ? '保存中...' : '保存'}</span>
+            </button>
+
+            {/* 更多 ▾ 紧凑下拉菜单 */}
+            <div className="relative" ref={moreMenuRef}>
+              <button
+                type="button"
+                onClick={() => setMoreMenuOpen((prev) => !prev)}
+                className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs transition cursor-pointer ${
+                  moreMenuOpen
+                    ? 'border-slate-500 bg-slate-700 text-white'
+                    : 'border-[#30363d] bg-[#0d1117] text-slate-300 hover:border-slate-500 hover:text-white'
+                }`}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+                <span>更多</span>
+                <ChevronDown className="h-3 w-3 opacity-75" />
+              </button>
+
+              {moreMenuOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-xl border border-[#30363d] bg-[#0d1117] p-1.5 shadow-2xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      const draft = createDraftSystemDag(systems.length + 1);
+                      setActiveSystem(draft);
+                      setSelectedNodeId(draft.terminalEffectNodeId);
+                      setSelectedEdgeId(null);
+                      resetEvaluationState();
+                      setSelectedMetricGraphId(resolveDefaultMetricGraphId(metricGraphs, draft));
+                      setBanner({ kind: 'info', text: '已创建新的评估体系 DAG 草案' });
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-slate-200 hover:bg-[#161b22] transition cursor-pointer"
+                  >
+                    <FilePlus2 className="h-3.5 w-3.5 text-indigo-400" />
+                    <span>新建草案</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      void handleValidateAndNormalize();
+                    }}
+                    disabled={validating}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-cyan-200 hover:bg-[#161b22] disabled:opacity-50 transition cursor-pointer"
+                  >
+                    <Scale className="h-3.5 w-3.5 text-cyan-400" />
+                    <span>{validating ? '校验中...' : '校验 & 权重自动归一'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      setSystemConfigOpen(true);
+                    }}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-emerald-200 hover:bg-[#161b22] transition cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>上游指标图与体系配置</span>
+                    </span>
+                    <span className="max-w-[78px] truncate font-mono text-[10px] text-slate-400">
+                      {selectedMetricGraphId || '默认'}
+                    </span>
+                  </button>
+
+                  {activeSystemIsPersistedCustom && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        void handleDeleteSystemDag();
+                      }}
+                      disabled={saving}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-rose-300 hover:bg-rose-950/30 disabled:opacity-50 transition cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                      <span>删除当前体系</span>
+                    </button>
+                  )}
+
+                  <div className="my-1 border-t border-[#30363d]" />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      void loadAllAssets();
+                    }}
+                    disabled={loadingInit}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-slate-300 hover:bg-[#161b22] disabled:opacity-50 transition cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 text-slate-400 ${loadingInit ? 'animate-spin' : ''}`}
+                    />
+                    <span>刷新资产</span>
+                  </button>
+                </div>
               )}
+            </div>
           </div>
         </div>
+      )}
 
-        {/* 右侧：门控审计摘要 & 终态节点选择器 */}
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          {evalOutput?.gateAudit && evalOutput.gateAudit.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1">
-              {evalOutput.gateAudit.map((ga) => (
-                <span
-                  key={ga.atomId}
-                  title={`${ga.name} (${ga.gateMode}): ${ga.displayValue}`}
-                  className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
-                    ga.gateStatus === 'violated'
-                      ? ga.gateMode === 'hard'
-                        ? 'border-rose-500/60 bg-rose-500/20 text-rose-200'
-                        : 'border-amber-500/55 bg-amber-500/15 text-amber-200'
-                      : ga.gateStatus === 'unavailable'
-                        ? 'border-slate-600 bg-slate-800 text-slate-300'
-                        : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
-                  }`}
-                >
-                  {ga.name}: {ga.gateStatus.toUpperCase()}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <label className="flex items-center gap-1.5 text-slate-400">
-            <Target className="h-3.5 w-3.5 text-indigo-400" />
-            <span>终态节点:</span>
-            <select
-              value={activeSystem.terminalEffectNodeId}
-              onChange={(e) =>
-                setActiveSystem((prev) => ({ ...prev, terminalEffectNodeId: e.target.value }))
-              }
-              className="max-w-[170px] rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5 text-[11px] text-indigo-200 focus:border-indigo-400 focus:outline-none"
-            >
-              {activeSystem.nodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.label} ({n.id})
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
-
+      {/* 横幅提示与校验报告 */}
       {banner && (
         <div
-          className={`flex items-center justify-between gap-2 rounded-lg border px-3.5 py-2 text-xs ${
+          className={`flex items-center justify-between gap-2 rounded-lg border px-3.5 py-1.5 text-xs ${
             banner.kind === 'error'
               ? 'border-rose-500/60 bg-rose-950/60 text-rose-200'
               : banner.kind === 'warn'
@@ -1576,1311 +2238,1596 @@ export function SystemDagStudioPanel({
         </div>
       )}
 
-      {validationReport && (!validationReport.valid || validationReport.warnings.length > 0) && (
-        <div className="rounded-lg border border-[#30363d] bg-[#161b22] px-3.5 py-2 text-[11px] space-y-1">
-          {validationReport.errors.map((err, i) => (
-            <div key={`verr-${i}`} className="flex items-center gap-1.5 text-rose-300">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              <span>{err}</span>
-            </div>
-          ))}
-          {validationReport.warnings.map((w, i) => (
-            <div key={`vwarn-${i}`} className="flex items-center gap-1.5 text-amber-300">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              <span>{w}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 主体区：左侧独立效果库面板 + 中央交互 DAG 画布（含右侧同步权重矩阵大纲） */}
-      <div className="flex min-h-[500px] flex-1 gap-3 overflow-hidden">
-        {/* 左侧：独立效果库面板 (Effect Library Palette) */}
-        <aside
-          className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22] transition-all ${
-            paletteCollapsed ? 'w-11' : 'w-68'
-          }`}
-        >
-          <div className="flex items-center justify-between border-b border-[#30363d] bg-[#0d1117]/80 px-2.5 py-2">
-            {!paletteCollapsed && (
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Sparkles className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
-                <span className="truncate text-xs font-semibold text-slate-100">
-                  独立效果库 ({effects.length})
-                </span>
+      {viewMode !== 'list' &&
+        validationReport &&
+        (!validationReport.valid || validationReport.warnings.length > 0) && (
+          <div className="rounded-lg border border-[#30363d] bg-[#161b22] px-3.5 py-2 text-[11px] space-y-1">
+            {validationReport.errors.map((err, i) => (
+              <div key={`verr-${i}`} className="flex items-center gap-1.5 text-rose-300">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>{err}</span>
               </div>
-            )}
-            <button
-              type="button"
-              onClick={() => setPaletteCollapsed((prev) => !prev)}
-              title={paletteCollapsed ? '展开效果库面板' : '收起效果库面板'}
-              className="rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.5 text-[10px] text-slate-300 hover:text-white cursor-pointer"
-            >
-              {paletteCollapsed ? '»' : '«'}
-            </button>
+            ))}
+            {validationReport.warnings.map((w, i) => (
+              <div key={`vwarn-${i}`} className="flex items-center gap-1.5 text-amber-300">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span>{w}</span>
+              </div>
+            ))}
           </div>
+        )}
 
-          {!paletteCollapsed && (
-            <>
-              {/* 原地新建效果 / 门控 / 指标代理快捷栏 */}
-              <div className="space-y-1.5 border-b border-[#30363d] bg-[#0d1117]/50 p-2.5">
-                <button
-                  type="button"
-                  onClick={() => handleAddInlineEffectNode('effect')}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-500/45 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/25 transition cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>原地新建效果节点 (inlineEffect)</span>
-                </button>
-
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleAddInlineEffectNode('gate', 'hard')}
-                    className="inline-flex items-center justify-center gap-1 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/20 transition cursor-pointer"
-                  >
-                    <ShieldAlert className="h-3 w-3" />
-                    <span>+ 硬门控</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddInlineEffectNode('gate', 'soft')}
-                    className="inline-flex items-center justify-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200 hover:bg-amber-500/20 transition cursor-pointer"
-                  >
-                    <AlertTriangle className="h-3 w-3" />
-                    <span>+ 软门控</span>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleAddMetricProxyNode}
-                  className="flex w-full items-center justify-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 transition cursor-pointer"
-                >
-                  <Layers className="h-3 w-3" />
-                  <span>+ 指标代理节点 (metric_proxy)</span>
-                </button>
-              </div>
-
-              {/* 搜索与能力域筛选 */}
-              <div className="space-y-1.5 border-b border-[#30363d] p-2.5">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="text"
-                    value={effectSearch}
-                    onChange={(e) => setEffectSearch(e.target.value)}
-                    placeholder="检索复用效果..."
-                    className="w-full rounded border border-[#30363d] bg-[#0d1117] py-1 pl-7 pr-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-                <select
-                  value={effectDomainFilter}
-                  onChange={(e) => setEffectDomainFilter(e.target.value)}
-                  className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-[11px] text-slate-300 focus:border-indigo-500 focus:outline-none"
-                >
-                  <option value="all">全部效果与门控</option>
-                  <option value="gate">仅安全红线门控 (GATE)</option>
-                  <option value="custom">仅自定义复用效果</option>
-                  {(Object.keys(DOMAIN_LABELS) as MetricDomainTag[]).map((d) => (
-                    <option key={d} value={d}>
-                      域 · {DOMAIN_LABELS[d]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 效果库卡片列表（点击添加到画布） */}
-              <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                {filteredEffects.length === 0 ? (
-                  <div className="py-8 text-center text-[11px] text-slate-500">
-                    暂无匹配的效果组件
-                  </div>
-                ) : (
-                  filteredEffects.map((eff) => (
-                    <div
-                      key={eff.effectId}
-                      onClick={() => handleAddEffectFromLibrary(eff)}
-                      title="点击将该复用效果投入体系画布"
-                      className="group rounded-lg border border-[#30363d] bg-[#0d1117] p-2 text-left transition hover:border-indigo-400/60 hover:bg-[#1b2230] cursor-pointer"
-                    >
-                      <div className="flex items-start justify-between gap-1.5">
-                        <span className="text-xs font-semibold text-slate-100 group-hover:text-indigo-200">
-                          {eff.name}
+      {viewMode === 'list' ? (
+        /* ── 视图 0：评估体系列表（第一层默认入口，响应式限高内滚动） ── */
+        <div className="flex flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22]">
+          <div
+            ref={listScrollRef}
+            onScroll={(e) => {
+              savedListScrollTopRef.current = e.currentTarget.scrollTop;
+            }}
+            className="max-h-[calc(100dvh-200px)] min-h-[380px] overflow-auto"
+          >
+            <table className="w-full border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#0d1117] text-[11px] text-slate-400">
+                <tr>
+                  <th className="px-4 py-2.5 font-medium">体系名称与标识</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">类型</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">构成规模</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">关联指标图</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">评估结论</th>
+                  <th className="px-4 py-2.5 font-medium whitespace-nowrap text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#30363d]/70">
+                {loadingInit && systems.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-14 text-center text-xs text-slate-400">
+                      加载评估体系...
+                    </td>
+                  </tr>
+                ) : filteredSystems.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-14 text-center text-xs text-slate-500">
+                      <div className="flex flex-col items-center gap-2.5">
+                        <span>
+                          {systemSearch.trim()
+                            ? `未找到匹配「${systemSearch.trim()}」的评估体系`
+                            : '暂无已持久化的评估体系'}
                         </span>
-                        <div className="flex shrink-0 items-center gap-1">
+                        <div className="flex items-center gap-2">
+                          {systemSearch.trim() && (
+                            <button
+                              type="button"
+                              onClick={() => setSystemSearch('')}
+                              className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-1 text-xs text-slate-300 hover:text-white cursor-pointer"
+                            >
+                              清空搜索
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleCreateNewSystem}
+                            className="inline-flex items-center gap-1 rounded-md border border-indigo-400/50 bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-500 cursor-pointer"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>新建体系</span>
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredSystems.map((sys) => {
+                    const stats = computeSystemScaleStats(sys, effectMap);
+                    const boundMgId = resolveDefaultMetricGraphId(metricGraphs, sys);
+                    const boundMg = metricGraphMap.get(boundMgId);
+                    const recent = recentEvalBySystem[sys.systemId];
+                    const hasSideComp = Boolean(
+                      recent?.sideComparison && recent.sideComparison.sides.length > 0,
+                    );
+                    const singleEval = recent?.evalOutput;
+
+                    const isLastVisited = activeSystem.systemId === sys.systemId;
+
+                    return (
+                      <tr
+                        key={sys.systemId}
+                        onClick={() => handleEnterSystemDetail(sys, 'overview')}
+                        title="点击进入该评估体系详情页"
+                        className={`group cursor-pointer transition ${
+                          isLastVisited ? 'bg-indigo-500/10 hover:bg-indigo-500/15' : 'hover:bg-[#1b2230]'
+                        }`}
+                      >
+                        {/* 1. 体系名称 & systemId */}
+                        <td className="px-4 py-3 align-middle">
+                          <div className="min-w-0 max-w-md space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate font-semibold text-slate-100 group-hover:text-indigo-200 transition">
+                                {sys.name}
+                              </span>
+                              <span className="shrink-0 rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0 font-mono text-[10px] text-slate-400">
+                                v{sys.version}
+                              </span>
+                            </div>
+                            <div className="font-mono text-[11px] text-slate-400">
+                              {sys.systemId}
+                            </div>
+                            {sys.description && (
+                              <div className="truncate text-[11px] text-slate-500">
+                                {sys.description}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 2. 内置/自定义标签 */}
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
                           <span
-                            className={`rounded border px-1 py-0 font-mono text-[9px] ${
-                              eff.role === 'gate'
-                                ? eff.gateMode === 'hard'
-                                  ? 'border-rose-500/45 bg-rose-500/15 text-rose-300'
-                                  : 'border-amber-500/45 bg-amber-500/15 text-amber-300'
-                                : eff.isBuiltin
-                                  ? 'border-indigo-500/35 bg-indigo-500/10 text-indigo-300'
-                                  : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                            className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${
+                              sys.builtin
+                                ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-200'
+                                : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
                             }`}
                           >
-                            {eff.role === 'gate'
-                              ? `GATE·${eff.gateMode === 'hard' ? 'H' : 'S'}`
-                              : eff.isBuiltin
-                                ? '内置'
-                                : '自定义'}
+                            {sys.builtin ? '内置' : '自定义'}
                           </span>
-                          {!eff.isBuiltin && (
+                        </td>
+
+                        {/* 3. 包含规模：能力维度数 / 指标代理数 / 门控数 */}
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
+                          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+                            <span className="rounded border border-violet-500/35 bg-violet-500/10 px-1.5 py-0.5 text-violet-200 tabular-nums">
+                              维度 {stats.dimensionCount}
+                            </span>
+                            <span className="rounded border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-200 tabular-nums">
+                              指标 {stats.metricProxyCount}
+                            </span>
+                            <span className="rounded border border-rose-500/35 bg-rose-500/10 px-1.5 py-0.5 text-rose-200 tabular-nums">
+                              门控 {stats.gateCount}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 4. 绑定上游指标库 */}
+                        <td className="px-3 py-3 align-middle">
+                          <div className="min-w-0 max-w-[220px]">
+                            <div className="truncate text-xs text-emerald-200/90">
+                              {boundMg?.name ?? boundMgId}
+                              {!sys.metricGraphId && (
+                                <span className="ml-1 text-[10px] text-slate-500">(默认)</span>
+                              )}
+                            </div>
+                            <div className="truncate font-mono text-[10px] text-slate-500">
+                              {boundMgId}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 5. 最近评估结论 */}
+                        <td className="px-3 py-3 align-middle">
+                          {hasSideComp && recent?.sideComparison ? (
+                            <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+                              {recent.sideComparison.sides.map((side, sIdx) => {
+                                const pal =
+                                  DYNAMIC_SIDE_PALETTES[sIdx % DYNAMIC_SIDE_PALETTES.length];
+                                const sOut = recent.sideComparison?.bySide[side];
+                                return (
+                                  <span
+                                    key={`list-side-${sys.systemId}-${side}`}
+                                    className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 tabular-nums ${pal.badge}`}
+                                  >
+                                    <span>{side}</span>
+                                    <span className="font-bold">
+                                      {sOut && sOut.overallScore !== null
+                                        ? `${sOut.overallScore.toFixed(1)}分`
+                                        : '--'}
+                                    </span>
+                                    {sOut?.gateVerdict === 'DISQUALIFIED' && (
+                                      <span className="rounded bg-rose-500/30 px-1 text-[9px] font-bold text-rose-200">
+                                        否决
+                                      </span>
+                                    )}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : singleEval ? (
+                            <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                              <span
+                                className={`font-bold tabular-nums ${
+                                  singleEval.overallScore === null
+                                    ? 'text-slate-400'
+                                    : singleEval.gateVerdict === 'DISQUALIFIED'
+                                      ? 'text-rose-300'
+                                      : singleEval.overallScore >= 80
+                                        ? 'text-emerald-300'
+                                        : singleEval.overallScore >= 60
+                                          ? 'text-indigo-200'
+                                          : 'text-amber-300'
+                                }`}
+                              >
+                                {singleEval.overallScore !== null
+                                  ? `${singleEval.overallScore.toFixed(1)} 分`
+                                  : 'N/A'}
+                              </span>
+                              <span
+                                className={`rounded border px-1.5 py-0 text-[10px] font-bold ${getVerdictBadgeStyle(
+                                  singleEval.gateVerdict,
+                                )}`}
+                              >
+                                {singleEval.gateVerdict}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center rounded border border-slate-700/80 bg-slate-800/60 px-2 py-0.5 text-[11px] text-slate-400">
+                              待评估
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 6. 操作按钮 */}
+                        <td className="px-4 py-3 align-middle whitespace-nowrap text-right">
+                          <div className="inline-flex items-center justify-end gap-1.5">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                void handleDeleteCustomEffect(eff.effectId);
+                                handleEnterSystemDetail(sys, 'overview');
                               }}
-                              title="从效果库删除"
-                              className="rounded p-0.5 text-slate-500 hover:text-rose-400 cursor-pointer"
+                              className="inline-flex items-center gap-1 rounded-md border border-indigo-500/45 bg-indigo-500/15 px-2.5 py-1 text-xs font-medium text-indigo-200 hover:bg-indigo-500/30 transition cursor-pointer"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <span>查看详情</span>
+                              <ArrowRight className="h-3 w-3" />
                             </button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-1 flex items-center justify-between gap-1 font-mono text-[9px] text-slate-500">
-                        <span className="truncate">{eff.effectId}</span>
-                        {eff.domainTag && <span>{DOMAIN_LABELS[eff.domainTag] ?? eff.domainTag}</span>}
-                      </div>
-                      {eff.metricBinding?.metricId && (
-                        <div className="mt-1 truncate font-mono text-[10px] text-emerald-300/80">
-                          指标: {eff.metricBinding.metricId}
-                        </div>
-                      )}
-                    </div>
-                  ))
+
+                            {!sys.builtin && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleDeleteSystemDag(sys.systemId);
+                                }}
+                                disabled={deletingSystemId === sys.systemId || saving}
+                                title="删除该自定义评估体系"
+                                className="inline-flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/25 disabled:opacity-50 transition cursor-pointer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span>删除</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
-              </div>
-            </>
-          )}
-        </aside>
-
-        {/* 中央：V4 通用体系画布（自带 DagOutlineSidebar 同步局部权重矩阵 Σw = 1.00） */}
-        <div className="flex-1 min-w-0 flex flex-col min-h-[500px]">
-          <DagCanvasBoard
-            graphKind="system"
-            title={`${activeSystem.name} (v${activeSystem.version})`}
-            nodes={canvasNodes}
-            edges={canvasEdges}
-            selectedNodeId={selectedNodeId}
-            selectedEdgeId={selectedEdgeId}
-            showOutline={true}
-            outlineSide="right"
-            emptyStateText="从左侧效果库点击投入效果节点，或创建原地效果 / 指标代理节点"
-            onSelectNode={(nid) => {
-              setSelectedNodeId(nid);
-              if (nid) setSelectedEdgeId(null);
-            }}
-            onSelectEdge={(eid) => {
-              setSelectedEdgeId(eid);
-              if (eid) setSelectedNodeId(null);
-            }}
-            onNodesChange={handleCanvasNodesChange}
-            onEdgesChange={handleCanvasEdgesChange}
-            onUpdateEdgeWeight={handleUpdateEdgeWeight}
-            onDeleteNode={handleDeleteNode}
-            onDeleteEdge={handleDeleteEdge}
-            onDrillDown={handleDrillDown}
-          />
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      ) : viewMode === 'overview' ? (
+        /* ── 视图 1：体系总览表（体系详情页） ── */
+        <div className="flex flex-1 flex-col gap-3 overflow-hidden">
+          {/* 顶部紧凑总体裁决结论卡 */}
+          <div className="rounded-xl border border-[#30363d] bg-[#161b22] px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-6">
+                <div className="flex flex-col">
+                  <span className="text-[11px] text-slate-400">
+                    生效综合分
+                    {targetSide !== 'ALL' ? ` (${targetSide})` : ''}
+                  </span>
+                  <div className="flex items-baseline gap-1.5">
+                    <span
+                      className={`font-mono text-2xl font-bold tabular-nums ${
+                        !evalOutput || evalOutput.overallScore === null
+                          ? 'text-slate-400'
+                          : evalOutput.gateVerdict === 'DISQUALIFIED'
+                            ? 'text-rose-400'
+                            : evalOutput.overallScore >= 80
+                              ? 'text-emerald-300'
+                              : evalOutput.overallScore >= 60
+                                ? 'text-indigo-200'
+                                : 'text-amber-300'
+                      }`}
+                    >
+                      {evalOutput && evalOutput.overallScore !== null
+                        ? evalOutput.overallScore.toFixed(1)
+                        : '--'}
+                    </span>
+                    <span className="font-mono text-xs text-slate-500">/ 100</span>
+                  </div>
+                </div>
 
-      {/* 底部：选中节点属性与人工考核/效用规则/权重编辑器 */}
-      <section className="rounded-xl border border-[#30363d] bg-[#161b22] overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#30363d] bg-[#0d1117]/85 px-3.5 py-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <Sliders className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
-            <span className="truncate text-xs font-semibold text-slate-100">
-              {selectedNode
-                ? `节点检查器 · ${selectedNode.label} (${selectedNode.id})`
-                : '体系全局属性与检查器'}
-            </span>
-            {selectedNode && !selectedIsProxy && (
+                <div className="h-8 w-px bg-[#30363d]" />
+
+                <div className="flex flex-col">
+                  <span className="text-[11px] text-slate-400">原始战术分</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-lg font-semibold text-slate-200 tabular-nums">
+                      {evalOutput && evalOutput.rawOverallScore !== null
+                        ? evalOutput.rawOverallScore.toFixed(1)
+                        : '--'}
+                    </span>
+                    <span className="font-mono text-[11px] text-slate-500">
+                      权重覆盖{' '}
+                      {evalOutput ? `${(evalOutput.availableWeightRatio * 100).toFixed(0)}%` : '--'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="h-8 w-px bg-[#30363d]" />
+
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] text-slate-400">门控裁决</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] font-bold ${getVerdictBadgeStyle(
+                        evalOutput?.gateVerdict,
+                      )}`}
+                    >
+                      {evalOutput?.gateVerdict === 'DISQUALIFIED' ? (
+                        <ShieldAlert className="h-3.5 w-3.5" />
+                      ) : (
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                      )}
+                      <span>{evalOutput?.gateVerdict ?? 'PENDING'}</span>
+                    </span>
+
+                    {evalOutput?.gateAudit?.map((ga) => (
+                      <span
+                        key={ga.atomId}
+                        title={`${ga.name} (${ga.gateMode}): ${ga.displayValue}`}
+                        className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
+                          ga.gateStatus === 'violated'
+                            ? ga.gateMode === 'hard'
+                              ? 'border-rose-500/60 bg-rose-500/20 text-rose-200'
+                              : 'border-amber-500/55 bg-amber-500/15 text-amber-200'
+                            : ga.gateStatus === 'unavailable'
+                              ? 'border-slate-600 bg-slate-800 text-slate-300'
+                              : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+                        }`}
+                      >
+                        {ga.name}: {ga.gateStatus === 'violated' ? (ga.gateMode === 'hard' ? 'DISQUALIFIED' : 'WARNING') : ga.gateStatus.toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                <span className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono">
+                  节点 {activeSystem.nodes.length} · 边 {activeSystem.edges.length}
+                </span>
+                <span className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono text-emerald-300/90">
+                  指标图: {selectedMetricGraphId || activeSystem.metricGraphId || '默认'}
+                </span>
+              </div>
+            </div>
+
+            {/* 若已执行全阵营对比，顶部展示动态阵营总评对比条 */}
+            {sideComparison && sideComparison.sides.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-[#30363d]/80 pt-2.5 text-xs">
+                <span className="text-[11px] font-medium text-cyan-300">阵营评估对比:</span>
+                {sideComparison.sides.map((side, idx) => {
+                  const pal = DYNAMIC_SIDE_PALETTES[idx % DYNAMIC_SIDE_PALETTES.length];
+                  const sideEval = sideComparison.bySide[side];
+                  const isActiveSide = targetSide === side;
+                  return (
+                    <button
+                      key={`summary-side-${side}`}
+                      type="button"
+                      onClick={() => handleChangeTargetSide(isActiveSide ? 'ALL' : side)}
+                      title="点击切换当前切片阵营视图"
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[11px] transition cursor-pointer ${
+                        isActiveSide
+                          ? 'border-indigo-400 bg-indigo-500/20 text-white shadow-sm'
+                          : pal.badge
+                      }`}
+                    >
+                      <span className="font-semibold">{side}</span>
+                      <span className="font-bold tabular-nums">
+                        {sideEval && sideEval.overallScore !== null
+                          ? `${sideEval.overallScore.toFixed(1)}分`
+                          : '--'}
+                      </span>
+                      {sideEval && (
+                        <span
+                          className={`rounded px-1 py-0 text-[9px] font-bold ${
+                            sideEval.gateVerdict === 'DISQUALIFIED'
+                              ? 'bg-rose-500/30 text-rose-200'
+                              : sideEval.gateVerdict === 'WARNING'
+                                ? 'bg-amber-500/30 text-amber-200'
+                                : 'bg-emerald-500/20 text-emerald-200'
+                          }`}
+                        >
+                          {sideEval.gateVerdict}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 层次化体系总览表：终态效果 ➔ 能力维度 ➔ 下挂指标/门控（响应式限高内滚动） */}
+          <div
+            ref={overviewScrollRef}
+            onScroll={(e) => {
+              savedOverviewScrollTopRef.current = e.currentTarget.scrollTop;
+            }}
+            className="max-h-[calc(100dvh-240px)] min-h-[380px] overflow-auto rounded-xl border border-[#30363d] bg-[#161b22]"
+          >
+            <table className="w-full border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#0d1117] text-[11px] text-slate-400">
+                <tr>
+                  <th className="px-3.5 py-2.5 font-medium">节点名称与标识</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">节点类型</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">入边权重</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">聚合策略</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">门控判定</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap text-right">得分</th>
+                  {sideComparison?.sides.map((side, idx) => {
+                    const pal = DYNAMIC_SIDE_PALETTES[idx % DYNAMIC_SIDE_PALETTES.length];
+                    return (
+                      <th
+                        key={`th-side-${side}`}
+                        className={`px-3 py-2.5 font-medium whitespace-nowrap text-right ${pal.text}`}
+                      >
+                        {side}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#30363d]/60">
+                {overviewRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6 + (sideComparison?.sides.length ?? 0)}
+                      className="px-4 py-10 text-center text-xs text-slate-500"
+                    >
+                      当前体系暂无节点，请切换至「画布编排」添加节点
+                    </td>
+                  </tr>
+                ) : (
+                  overviewRows.map((row, idx) => {
+                    const prevRow = idx > 0 ? overviewRows[idx - 1] : null;
+                    const showStandaloneDivider =
+                      row.section === 'standalone' && (!prevRow || prevRow.section !== 'standalone');
+                    const isProxy =
+                      row.node.kind === 'metric_proxy' || row.node.kind === 'metric';
+                    const isTerminal =
+                      row.section === 'terminal' &&
+                      row.node.id === activeSystem.terminalEffectNodeId;
+                    const isCollapsed = collapsedRowKeys.has(row.rowKey);
+                    const evalRes = evalOutput?.nodeResults?.[row.node.id];
+                    const verdict = resolveNodeGateVerdict(
+                      row.node,
+                      row.effect,
+                      evalRes,
+                      isTerminal,
+                      evalOutput,
+                    );
+                    const strategyText = isProxy
+                      ? `归约: ${String(row.node.params?.reduce ?? 'mean')}`
+                      : row.effect?.aggregation?.strategy ?? evalRes?.strategyUsed ?? 'weighted_sum';
+                    const weightPct =
+                      typeof row.incomingWeight === 'number'
+                        ? Math.max(0, Math.min(100, row.incomingWeight * 100))
+                        : null;
+                    const isSelected = selectedNodeId === row.node.id;
+
+                    return (
+                      <React.Fragment key={row.rowKey}>
+                        {showStandaloneDivider && (
+                          <tr className="bg-[#0d1117]/80">
+                            <td
+                              colSpan={6 + (sideComparison?.sides.length ?? 0)}
+                              className="px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300/90"
+                            >
+                              独立双轨门控与未挂接终态分支
+                            </td>
+                          </tr>
+                        )}
+                        <tr
+                          onClick={() => {
+                            setSelectedNodeId(row.node.id);
+                            setSelectedEdgeId(null);
+                            setDrawerTab('basic');
+                            setViewMode('canvas');
+                          }}
+                          title="点击切换至画布编排并高亮选中该节点"
+                          className={`cursor-pointer transition hover:bg-[#1b2230] ${
+                            isSelected ? 'bg-indigo-950/35' : ''
+                          } ${isTerminal ? 'bg-indigo-950/20' : ''}`}
+                        >
+                          {/* 1. 节点名称 & ID */}
+                          <td className="px-3.5 py-2.5 align-middle">
+                            <div
+                              className="flex items-center gap-1.5"
+                              style={{ paddingLeft: `${row.depth * 20}px` }}
+                            >
+                              {row.hasChildren ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleOverviewRow(row.rowKey);
+                                  }}
+                                  title={isCollapsed ? '展开子节点' : '折叠子节点'}
+                                  className="rounded p-0.5 text-slate-400 hover:bg-[#0d1117] hover:text-white cursor-pointer"
+                                >
+                                  {isCollapsed ? (
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="inline-block w-4 text-center text-slate-600">
+                                  {row.depth > 0 ? '└' : '•'}
+                                </span>
+                              )}
+
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  {isTerminal && (
+                                    <Target className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                                  )}
+                                  <span
+                                    className={`truncate font-medium ${
+                                      isTerminal
+                                        ? 'text-indigo-200 font-semibold'
+                                        : row.depth === 1
+                                          ? 'text-slate-100'
+                                          : 'text-slate-200'
+                                    }`}
+                                  >
+                                    {row.node.label || row.effect?.name || row.node.id}
+                                  </span>
+                                </div>
+                                <div className="mt-0.5 flex items-center gap-2 font-mono text-[10px] text-slate-500">
+                                  <span>{row.node.id}</span>
+                                  {row.node.refId && (
+                                    <span className="truncate text-slate-400/80">
+                                      ➔ {row.node.refId}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 2. 节点类型 */}
+                          <td className="px-3 py-2.5 align-middle whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${getRoleTagStyle(
+                                row.roleTag,
+                              )}`}
+                            >
+                              {row.roleTag}
+                            </span>
+                          </td>
+
+                          {/* 3. 传入权重进度条 (%) */}
+                          <td className="px-3 py-2.5 align-middle whitespace-nowrap">
+                            {weightPct !== null ? (
+                              <div className="flex items-center gap-2">
+                                <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[#0d1117]">
+                                  <div
+                                    className="h-full rounded-full bg-indigo-400"
+                                    style={{ width: `${weightPct}%` }}
+                                  />
+                                </div>
+                                <span className="font-mono text-[11px] text-indigo-200 tabular-nums">
+                                  {weightPct.toFixed(1)}%
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-mono text-[11px] text-slate-500">
+                                {isTerminal ? '终态根' : row.section === 'standalone' ? '双轨独立' : '--'}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* 4. 聚合策略 */}
+                          <td className="px-3 py-2.5 align-middle whitespace-nowrap font-mono text-[11px] text-slate-300">
+                            {strategyText}
+                          </td>
+
+                          {/* 5. Gate 状态 / 裁决 */}
+                          <td className="px-3 py-2.5 align-middle whitespace-nowrap">
+                            <span
+                              title={evalRes?.missingDataReason}
+                              className={`inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${verdict.cls}`}
+                            >
+                              {verdict.label}
+                            </span>
+                          </td>
+
+                          {/* 6. 单次得分 */}
+                          <td className="px-3 py-2.5 align-middle whitespace-nowrap text-right font-mono tabular-nums">
+                            {evalRes ? (
+                              evalRes.score !== null && evalRes.score !== undefined ? (
+                                <span
+                                  className={`font-semibold ${
+                                    evalRes.status === 'unavailable'
+                                      ? 'text-rose-300'
+                                      : evalRes.score >= 80
+                                        ? 'text-emerald-300'
+                                        : evalRes.score >= 60
+                                          ? 'text-indigo-200'
+                                          : 'text-amber-300'
+                                  }`}
+                                >
+                                  {evalRes.score.toFixed(1)}
+                                </span>
+                              ) : evalRes.rawValue !== undefined && evalRes.rawValue !== null ? (
+                                <span className="text-cyan-200">{String(evalRes.rawValue)}</span>
+                              ) : (
+                                <span className="text-slate-500">--</span>
+                              )
+                            ) : (
+                              <span className="text-slate-500">--</span>
+                            )}
+                          </td>
+
+                          {/* 7. 动态全阵营对比列 */}
+                          {sideComparison?.sides.map((side, sIdx) => {
+                            const pal = DYNAMIC_SIDE_PALETTES[sIdx % DYNAMIC_SIDE_PALETTES.length];
+                            const sOutput = sideComparison.bySide[side];
+                            const sNodeEval = sOutput?.nodeResults?.[row.node.id];
+                            const sVerdict = resolveNodeGateVerdict(
+                              row.node,
+                              row.effect,
+                              sNodeEval,
+                              isTerminal,
+                              sOutput,
+                            );
+                            return (
+                              <td
+                                key={`cell-${row.rowKey}-${side}`}
+                                title={sNodeEval?.missingDataReason}
+                                className="px-3 py-2.5 align-middle whitespace-nowrap text-right font-mono tabular-nums"
+                              >
+                                <div className="inline-flex items-center justify-end gap-1">
+                                  {sNodeEval && sNodeEval.score !== null && sNodeEval.score !== undefined ? (
+                                    <span className={`font-semibold ${pal.text}`}>
+                                      {sNodeEval.score.toFixed(1)}
+                                    </span>
+                                  ) : sNodeEval?.rawValue !== undefined && sNodeEval?.rawValue !== null ? (
+                                    <span className="text-slate-300">
+                                      {String(sNodeEval.rawValue)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-500">--</span>
+                                  )}
+                                  {(sVerdict.label === 'DISQUALIFIED' ||
+                                    sVerdict.label === 'WARNING') && (
+                                    <span
+                                      className={`rounded border px-1 py-0 text-[9px] font-bold ${sVerdict.cls}`}
+                                    >
+                                      {sVerdict.label === 'DISQUALIFIED' ? '否决' : '告警'}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* ── 视图 2：画布编排模式 ── */
+        <div className="flex flex-1 flex-col gap-2.5 overflow-hidden">
+          {/* 精简后的画布顶部结论条（移除重复显示的 activeSystem.name 胶囊） */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#30363d] bg-[#161b22]/90 px-3.5 py-1.5 text-xs">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] text-slate-400">生效综合分:</span>
+                <span
+                  className={`font-mono text-base font-bold tabular-nums ${
+                    !evalOutput || evalOutput.overallScore === null
+                      ? 'text-slate-400'
+                      : evalOutput.gateVerdict === 'DISQUALIFIED'
+                        ? 'text-rose-400'
+                        : evalOutput.overallScore >= 80
+                          ? 'text-emerald-300'
+                          : evalOutput.overallScore >= 60
+                            ? 'text-indigo-200'
+                            : 'text-amber-300'
+                  }`}
+                >
+                  {evalOutput && evalOutput.overallScore !== null
+                    ? evalOutput.overallScore.toFixed(1)
+                    : '--'}
+                </span>
+                <span className="font-mono text-[10px] text-slate-500">/ 100</span>
+              </div>
+
+              <div className="h-4 w-px bg-[#30363d]" />
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400">原始分:</span>
+                <span className="font-mono font-semibold text-slate-200 tabular-nums">
+                  {evalOutput && evalOutput.rawOverallScore !== null
+                    ? evalOutput.rawOverallScore.toFixed(1)
+                    : '--'}
+                </span>
+              </div>
+
               <span
-                className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
-                  selectedNode.inlineEffect
-                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
-                    : 'border-indigo-500/40 bg-indigo-500/15 text-indigo-200'
+                className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold ${getVerdictBadgeStyle(
+                  evalOutput?.gateVerdict,
+                )}`}
+              >
+                {evalOutput?.gateVerdict === 'DISQUALIFIED' ? (
+                  <ShieldAlert className="h-3 w-3" />
+                ) : (
+                  <ShieldCheck className="h-3 w-3" />
+                )}
+                <span>GATE: {evalOutput?.gateVerdict ?? 'PENDING'}</span>
+              </span>
+
+              <span className="font-mono text-[10px] text-slate-400 tabular-nums">
+                覆盖: {evalOutput ? `${(evalOutput.availableWeightRatio * 100).toFixed(0)}%` : '--'}
+              </span>
+            </div>
+
+            {evalOutput?.gateAudit && evalOutput.gateAudit.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1">
+                {evalOutput.gateAudit.map((ga) => (
+                  <span
+                    key={ga.atomId}
+                    title={`${ga.name} (${ga.gateMode}): ${ga.displayValue}`}
+                    className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
+                      ga.gateStatus === 'violated'
+                        ? ga.gateMode === 'hard'
+                          ? 'border-rose-500/60 bg-rose-500/20 text-rose-200'
+                          : 'border-amber-500/55 bg-amber-500/15 text-amber-200'
+                        : ga.gateStatus === 'unavailable'
+                          ? 'border-slate-600 bg-slate-800 text-slate-300'
+                          : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+                    }`}
+                  >
+                    {ga.name}: {ga.gateStatus.toUpperCase()}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 主体三段布局：左侧可折叠节点栏 + 中央 DAG 画布 + 右侧 3-Tab 抽屉 */}
+          <div className="flex min-h-[580px] flex-1 flex-col gap-3 overflow-hidden lg:flex-row">
+            {/* 左侧可折叠窄组件栏 */}
+            <aside
+              className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22] transition-all duration-200 ${
+                paletteCollapsed ? 'w-full lg:w-12 p-1.5 items-center gap-2' : 'w-full lg:w-56'
+              }`}
+            >
+              <div
+                className={`flex items-center ${
+                  paletteCollapsed
+                    ? 'justify-center w-full'
+                    : 'justify-between border-b border-[#30363d] bg-[#0d1117]/80 px-2.5 py-2'
                 }`}
               >
-                {selectedNode.inlineEffect
-                  ? '画布私有 (inlineEffect)'
-                  : `库引用 (${selectedNode.refId})`}
-              </span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {selectedBoundMetricId && onDrillDownToMetric && (
-              <button
-                type="button"
-                onClick={() => onDrillDownToMetric(selectedBoundMetricId)}
-                className="inline-flex items-center gap-1 rounded border border-emerald-500/45 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/25 transition cursor-pointer"
-              >
-                <ArrowDownRight className="h-3.5 w-3.5" />
-                <span>下钻指标 ({selectedBoundMetricId})</span>
-              </button>
-            )}
-
-            {selectedNode && !selectedIsProxy && selectedNode.inlineEffect && selectedNode.refId && (
-              <button
-                type="button"
-                onClick={() =>
-                  setActiveSystem((prev) => ({
-                    ...prev,
-                    nodes: prev.nodes.map((n) =>
-                      n.id === selectedNode.id ? { ...n, inlineEffect: undefined } : n,
-                    ),
-                  }))
-                }
-                className="inline-flex items-center gap-1 rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-[11px] text-slate-300 hover:text-white transition cursor-pointer"
-              >
-                <RotateCcw className="h-3 w-3" />
-                <span>还原为库模板</span>
-              </button>
-            )}
-
-            {selectedNode && !selectedIsProxy && selectedNodeEffect && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSaveEffectIdDraft(
-                    selectedNodeEffect.isBuiltin
-                      ? `${selectedNodeEffect.effectId}_custom`
-                      : selectedNodeEffect.effectId || `eff_custom_${Date.now().toString(36)}`,
-                  );
-                  setSaveEffectNameDraft(selectedNodeEffect.name || selectedNode.label);
-                  setSaveEffectOpen((prev) => !prev);
-                }}
-                className="inline-flex items-center gap-1 rounded border border-indigo-400/50 bg-indigo-500/20 px-2.5 py-1 text-[11px] font-medium text-indigo-200 hover:bg-indigo-500/30 transition cursor-pointer"
-              >
-                <BookmarkPlus className="h-3.5 w-3.5" />
-                <span>另存为独立复用效果</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* 另存为独立复用效果确认条 */}
-        {saveEffectOpen && selectedNodeEffect && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-indigo-500/35 bg-indigo-950/35 px-3.5 py-2 text-xs">
-            <span className="font-semibold text-indigo-200">沉淀至独立效果库 (POST /api/v4/effects):</span>
-            <input
-              type="text"
-              value={saveEffectIdDraft}
-              onChange={(e) => setSaveEffectIdDraft(e.target.value)}
-              placeholder="唯一 effectId (如 eff_my_strike)"
-              className="w-52 rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-xs text-slate-100 focus:border-indigo-400 focus:outline-none"
-            />
-            <input
-              type="text"
-              value={saveEffectNameDraft}
-              onChange={(e) => setSaveEffectNameDraft(e.target.value)}
-              placeholder="效果显示名称"
-              className="w-52 rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-slate-100 focus:border-indigo-400 focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => void handleSaveAsReusableEffect()}
-              disabled={savingEffect}
-              className="rounded border border-indigo-400 bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 cursor-pointer"
-            >
-              {savingEffect ? '提交中...' : '确认保存到效果库'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setSaveEffectOpen(false)}
-              className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
-            >
-              取消
-            </button>
-          </div>
-        )}
-
-        <div className="p-3.5 text-xs">
-          {!selectedNode && selectedEdgeId ? (
-            (() => {
-              const selEdge = activeSystem.edges.find((e) => e.id === selectedEdgeId);
-              if (!selEdge) return null;
-              const srcN = activeSystem.nodes.find((n) => n.id === selEdge.sourceNodeId);
-              const tgtN = activeSystem.nodes.find((n) => n.id === selEdge.targetNodeId);
-              return (
-                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-                  <span className="font-mono text-indigo-300">
-                    连线: {srcN?.label || selEdge.sourceNodeId} ➔ {tgtN?.label || selEdge.targetNodeId}
-                  </span>
-                  <label className="flex items-center gap-1.5">
-                    <span className="text-slate-400">局部权重 (weight):</span>
-                    <input
-                      type="number"
-                      step="0.05"
-                      min="0"
-                      max="10"
-                      value={selEdge.weight ?? ''}
-                      placeholder="1.0"
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        if (raw === '') {
-                          setActiveSystem((prev) => ({
-                            ...prev,
-                            edges: prev.edges.map((ed) =>
-                              ed.id === selEdge.id ? { ...ed, weight: undefined } : ed,
-                            ),
-                          }));
-                          return;
-                        }
-                        const v = Number.parseFloat(raw);
-                        if (Number.isFinite(v) && v >= 0) {
-                          handleUpdateEdgeWeight(selEdge.id, Math.round(v * 10000) / 10000);
-                        }
-                      }}
-                      className="w-24 rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-xs text-indigo-200"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteEdge(selEdge.id)}
-                    className="inline-flex items-center gap-1 rounded border border-rose-500/45 bg-rose-500/15 px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>删除连线</span>
-                  </button>
-                </div>
-              );
-            })()
-          ) : !selectedNode ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <label className="space-y-1">
-                <span className="text-[11px] text-slate-400">体系 ID (systemId)</span>
-                <input
-                  type="text"
-                  value={activeSystem.systemId}
-                  onChange={(e) =>
-                    setActiveSystem((prev) => ({ ...prev, systemId: e.target.value }))
-                  }
-                  className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 font-mono text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[11px] text-slate-400">体系名称 (name)</span>
-                <input
-                  type="text"
-                  value={activeSystem.name}
-                  onChange={(e) => setActiveSystem((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[11px] text-slate-400">版本 (version)</span>
-                <input
-                  type="text"
-                  value={activeSystem.version}
-                  onChange={(e) =>
-                    setActiveSystem((prev) => ({ ...prev, version: e.target.value }))
-                  }
-                  className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 font-mono text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                />
-              </label>
-            </div>
-          ) : selectedIsProxy ? (
-            /* ── 指标代理节点 (metric_proxy) 编辑面板 ── */
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              <div className="space-y-2 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-                <div className="font-semibold text-emerald-300">指标代理绑定</div>
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-slate-400">节点标题 (label)</span>
-                  <input
-                    type="text"
-                    value={selectedNode.label}
-                    onChange={(e) =>
-                      setActiveSystem((prev) => ({
-                        ...prev,
-                        nodes: prev.nodes.map((n) =>
-                          n.id === selectedNode.id ? { ...n, label: e.target.value } : n,
-                        ),
-                      }))
-                    }
-                    className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-slate-400">关联二库 metricId (refId)</span>
-                  <select
-                    value={selectedNode.refId ?? ''}
-                    onChange={(e) =>
-                      setActiveSystem((prev) => ({
-                        ...prev,
-                        nodes: prev.nodes.map((n) =>
-                          n.id === selectedNode.id ? { ...n, refId: e.target.value } : n,
-                        ),
-                      }))
-                    }
-                    className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  >
-                    <option value="">-- 选择二库指标 --</option>
-                    {availableMetricOptions.map((m) => (
-                      <option key={m.metricId} value={m.metricId}>
-                        {m.metricId} · {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <input
-                  type="text"
-                  value={selectedNode.refId ?? ''}
-                  onChange={(e) =>
-                    setActiveSystem((prev) => ({
-                      ...prev,
-                      nodes: prev.nodes.map((n) =>
-                        n.id === selectedNode.id ? { ...n, refId: e.target.value } : n,
-                      ),
-                    }))
-                  }
-                  placeholder="或手动输入 metricId"
-                  className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-slate-200 focus:border-emerald-500 focus:outline-none"
-                />
+                {!paletteCollapsed && (
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Sparkles className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                    <span className="truncate text-xs font-semibold text-slate-100">
+                      体系组件栏
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPaletteCollapsed((prev) => !prev)}
+                  title={paletteCollapsed ? '展开节点栏' : '收起节点栏以扩大画布视野'}
+                  className="rounded-lg border border-[#30363d] bg-[#0d1117] p-1 text-slate-400 hover:border-slate-500 hover:text-white transition cursor-pointer"
+                >
+                  {paletteCollapsed ? (
+                    <PanelLeftOpen className="h-3.5 w-3.5" />
+                  ) : (
+                    <PanelLeftClose className="h-3.5 w-3.5" />
+                  )}
+                </button>
               </div>
 
-              <div className="space-y-2 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-                <div className="font-semibold text-cyan-300">切片与向上游透传参数</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="space-y-1">
-                    <span className="text-[11px] text-slate-400">targetField</span>
-                    <input
-                      type="text"
-                      value={String(selectedNode.params?.targetField ?? '')}
-                      onChange={(e) =>
-                        setActiveSystem((prev) => ({
-                          ...prev,
-                          nodes: prev.nodes.map((n) =>
-                            n.id === selectedNode.id
-                              ? {
-                                  ...n,
-                                  params: {
-                                    ...(n.params ?? {}),
-                                    targetField: e.target.value || undefined,
-                                  },
-                                }
-                              : n,
-                          ),
-                        }))
+              {/* 四类快速添加节点：能力维度 / 指标代理 / 门控节点 / 效果合成 */}
+              <div
+                className={
+                  paletteCollapsed
+                    ? 'flex flex-row lg:flex-col items-center gap-1.5 w-full justify-center'
+                    : 'grid grid-cols-2 lg:grid-cols-1 gap-1.5 border-b border-[#30363d] bg-[#0d1117]/40 p-2'
+                }
+              >
+                {(
+                  [
+                    {
+                      key: 'dimension',
+                      title: '能力维度',
+                      desc: '多子效果加权聚合维度',
+                      icon: Target,
+                      cls: 'border-violet-500/35 bg-violet-500/10 text-violet-200 hover:border-violet-400/70',
+                      iconCls: 'text-violet-400',
+                      onClick: () =>
+                        handleAddInlineEffectNode('effect', {
+                          namePrefix: '能力维度',
+                          defaultX: 720,
+                        }),
+                    },
+                    {
+                      key: 'metric_proxy',
+                      title: '指标代理',
+                      desc: '引入指标计算节点',
+                      icon: Layers,
+                      cls: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200 hover:border-emerald-400/70',
+                      iconCls: 'text-emerald-400',
+                      onClick: handleAddMetricProxyNode,
+                    },
+                    {
+                      key: 'gate',
+                      title: '门控节点',
+                      desc: '安全红线与状态告警',
+                      icon: ShieldAlert,
+                      cls: 'border-rose-500/35 bg-rose-500/10 text-rose-200 hover:border-rose-400/70',
+                      iconCls: 'text-rose-400',
+                      onClick: () =>
+                        handleAddInlineEffectNode('gate', {
+                          gateMode: 'hard',
+                          defaultX: 380,
+                        }),
+                    },
+                    {
+                      key: 'effect',
+                      title: '效果合成',
+                      desc: '独立或复合效果合成节点',
+                      icon: Sparkles,
+                      cls: 'border-indigo-500/35 bg-indigo-500/10 text-indigo-200 hover:border-indigo-400/70',
+                      iconCls: 'text-indigo-400',
+                      onClick: () =>
+                        handleAddInlineEffectNode('effect', {
+                          namePrefix: '效果合成',
+                          defaultX: 400,
+                        }),
+                    },
+                  ] as const
+                ).map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={item.onClick}
+                      title={`${item.title}：${item.desc}（点击添加至画布）`}
+                      className={
+                        paletteCollapsed
+                          ? `flex items-center justify-center rounded-lg border p-2 transition cursor-pointer ${item.cls}`
+                          : `flex items-start gap-2 rounded-lg border px-2 py-1.5 text-left transition cursor-pointer ${item.cls}`
                       }
-                      className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-slate-100"
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-[11px] text-slate-400">reduce</span>
-                    <select
-                      value={String(selectedNode.params?.reduce ?? 'mean')}
-                      onChange={(e) =>
-                        setActiveSystem((prev) => ({
-                          ...prev,
-                          nodes: prev.nodes.map((n) =>
-                            n.id === selectedNode.id
-                              ? {
-                                  ...n,
-                                  params: { ...(n.params ?? {}), reduce: e.target.value },
-                                }
-                              : n,
-                          ),
-                        }))
-                      }
-                      className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-[11px] text-slate-100"
                     >
-                      {REDUCE_OPTIONS.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
+                      <Icon
+                        className={`h-3.5 w-3.5 shrink-0 ${
+                          paletteCollapsed ? '' : 'mt-0.5'
+                        } ${item.iconCls}`}
+                      />
+                      {!paletteCollapsed && (
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-100">
+                            <Plus className="h-3 w-3 opacity-80" />
+                            <span>{item.title}</span>
+                          </div>
+                          <div className="truncate text-[10px] text-slate-400">{item.desc}</div>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 展开态下保留可搜索独立效果库 */}
+              {!paletteCollapsed && (
+                <>
+                  <div className="space-y-1.5 border-b border-[#30363d] p-2">
+                    <div className="flex items-center justify-between text-[10px] font-semibold text-slate-400">
+                      <span>独立效果库 ({effects.length})</span>
+                    </div>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        value={effectSearch}
+                        onChange={(e) => setEffectSearch(e.target.value)}
+                        placeholder="检索复用效果..."
+                        className="w-full rounded border border-[#30363d] bg-[#0d1117] py-1 pl-6 pr-2 text-[11px] text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                    <select
+                      value={effectDomainFilter}
+                      onChange={(e) => setEffectDomainFilter(e.target.value)}
+                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-[11px] text-slate-300 focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="all">全部效果与门控</option>
+                      <option value="gate">仅安全红线门控 (GATE)</option>
+                      <option value="custom">仅自定义复用效果</option>
+                      {(Object.keys(DOMAIN_LABELS) as MetricDomainTag[]).map((d) => (
+                        <option key={d} value={d}>
+                          域 · {DOMAIN_LABELS[d]}
                         </option>
                       ))}
                     </select>
-                  </label>
-                </div>
+                  </div>
 
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-slate-400">paramOverrides (JSON)</span>
-                  <textarea
-                    rows={2}
-                    value={paramOverridesText}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setParamOverridesText(raw);
-                      try {
-                        const parsed = raw.trim() ? JSON.parse(raw) : {};
-                        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                          setParamOverridesErr('必须为 JSON 对象');
-                        } else {
-                          setParamOverridesErr(null);
-                          setActiveSystem((prev) => ({
-                            ...prev,
-                            nodes: prev.nodes.map((n) =>
-                              n.id === selectedNode.id
-                                ? {
-                                    ...n,
-                                    params: { ...(n.params ?? {}), paramOverrides: parsed },
-                                  }
-                                : n,
-                            ),
-                          }));
-                        }
-                      } catch (err) {
-                        setParamOverridesErr(err instanceof Error ? err.message : 'JSON 格式错误');
-                      }
-                    }}
-                    className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-amber-200"
-                  />
-                  {paramOverridesErr && (
-                    <span className="text-[10px] text-rose-400">{paramOverridesErr}</span>
-                  )}
-                </label>
-              </div>
-
-              <div className="space-y-2 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-                <div className="font-semibold text-slate-300">评估读数与状态</div>
-                {selectedEval ? (
-                  <div className="space-y-1.5 font-mono text-[11px]">
-                    <div>状态: {selectedEval.status}</div>
-                    <div>原始客观值: {String(selectedEval.rawValue ?? '--')}</div>
-                    {selectedEval.missingDataReason && (
-                      <div className="text-rose-300">{selectedEval.missingDataReason}</div>
+                  <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                    {filteredEffects.length === 0 ? (
+                      <div className="py-6 text-center text-[11px] text-slate-500">
+                        暂无匹配的效果组件
+                      </div>
+                    ) : (
+                      filteredEffects.map((eff) => (
+                        <div
+                          key={eff.effectId}
+                          onClick={() => handleAddEffectFromLibrary(eff)}
+                          title="点击将该复用效果投入体系画布"
+                          className="group rounded-lg border border-[#30363d] bg-[#0d1117] p-2 text-left transition hover:border-indigo-400/60 hover:bg-[#1b2230] cursor-pointer"
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="text-[11px] font-semibold text-slate-100 group-hover:text-indigo-200">
+                              {eff.name}
+                            </span>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <span
+                                className={`rounded border px-1 py-0 font-mono text-[9px] ${
+                                  eff.role === 'gate'
+                                    ? eff.gateMode === 'hard'
+                                      ? 'border-rose-500/45 bg-rose-500/15 text-rose-300'
+                                      : 'border-amber-500/45 bg-amber-500/15 text-amber-300'
+                                    : eff.isBuiltin
+                                      ? 'border-indigo-500/35 bg-indigo-500/10 text-indigo-300'
+                                      : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                                }`}
+                              >
+                                {eff.role === 'gate'
+                                  ? `GATE·${eff.gateMode === 'hard' ? 'H' : 'S'}`
+                                  : eff.isBuiltin
+                                    ? '内置'
+                                    : '自定义'}
+                              </span>
+                              {!eff.isBuiltin && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleDeleteCustomEffect(eff.effectId);
+                                  }}
+                                  title="从效果库删除"
+                                  className="rounded p-0.5 text-slate-500 hover:text-rose-400 cursor-pointer"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-1 font-mono text-[9px] text-slate-500">
+                            <span className="truncate">{eff.effectId}</span>
+                            {eff.domainTag && (
+                              <span>{DOMAIN_LABELS[eff.domainTag] ?? eff.domainTag}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))
                     )}
                   </div>
-                ) : (
-                  <div className="text-[11px] text-slate-500">
-                    点击右上角 [▶ 全链路评估] 获取该指标代理的实时读数。
-                  </div>
-                )}
-              </div>
+                </>
+              )}
+            </aside>
+
+            {/* 中央：V4 通用体系画布 */}
+            <div className="flex min-h-[540px] min-w-0 flex-1 flex-col">
+              <DagCanvasBoard
+                graphKind="system"
+                title={`v${activeSystem.version} · ${activeSystem.nodes.length} 节点`}
+                nodes={canvasNodes}
+                edges={canvasEdges}
+                selectedNodeId={selectedNodeId}
+                selectedEdgeId={selectedEdgeId}
+                showOutline={false}
+                outlineSide="right"
+                emptyStateText="从左侧组件栏添加能力维度 / 指标代理 / 门控 / 效果节点"
+                onSelectNode={(nid) => {
+                  setSelectedNodeId(nid);
+                  if (nid) setSelectedEdgeId(null);
+                }}
+                onSelectEdge={(eid) => {
+                  setSelectedEdgeId(eid);
+                  if (eid) setSelectedNodeId(null);
+                }}
+                onNodesChange={handleCanvasNodesChange}
+                onEdgesChange={handleCanvasEdgesChange}
+                onUpdateEdgeWeight={handleUpdateEdgeWeight}
+                onDeleteNode={handleDeleteNode}
+                onDeleteEdge={handleDeleteEdge}
+                onDrillDown={handleDrillDown}
+              />
             </div>
-          ) : (
-            /* ── 效果 / 门控节点三栏深度编辑器 ── */
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              {/* 第 1 栏：角色、门控模式、入边局部权重编辑 */}
-              <div className="space-y-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-indigo-300">1. 效果角色与入边权重</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setActiveSystem((prev) => ({
-                        ...prev,
-                        terminalEffectNodeId: selectedNode.id,
-                      }))
-                    }
-                    className={`rounded border px-2 py-0.5 text-[10px] cursor-pointer ${
-                      activeSystem.terminalEffectNodeId === selectedNode.id
-                        ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200 font-semibold'
-                        : 'border-[#30363d] bg-[#161b22] text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {activeSystem.terminalEffectNodeId === selectedNode.id
-                      ? '★ 当前终态节点'
-                      : '设为终态输出'}
-                  </button>
+
+            {/* 右侧抽屉：3-Tab 分栏（基础与权重 | 评分与门控 | 评估证据） */}
+            <aside className="flex max-h-[680px] w-full shrink-0 flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22] lg:w-[400px] xl:w-[430px]">
+              <div className="flex items-center justify-between gap-2 border-b border-[#30363d] bg-[#0d1117]/85 px-3.5 py-2.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Sliders className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                  <span className="truncate text-xs font-semibold text-slate-100">
+                    {selectedNode
+                      ? `${selectedNode.label || selectedNode.id}`
+                      : selectedEdgeId
+                        ? '连线权重属性'
+                        : '体系属性检查器'}
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="col-span-2 space-y-1">
-                    <span className="text-[11px] text-slate-400">效果名称 (name)</span>
-                    <input
-                      type="text"
-                      value={selectedNodeEffect?.name ?? selectedNode.label}
-                      onChange={(e) =>
-                        updateSelectedEffect((cur) => ({ ...cur, name: e.target.value }))
-                      }
-                      className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                    />
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-[11px] text-slate-400">节点角色 (role)</span>
-                    <select
-                      value={selectedNodeEffect?.role ?? 'effect'}
-                      onChange={(e) => {
-                        const nextRole = e.target.value as 'effect' | 'gate';
-                        updateSelectedEffect((cur) => ({
-                          ...cur,
-                          role: nextRole,
-                          gateMode: nextRole === 'gate' ? (cur.gateMode ?? 'soft') : undefined,
-                        }));
-                      }}
-                      className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {selectedNode && !selectedIsProxy && (
+                    <span
+                      className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
+                        selectedNode.inlineEffect
+                          ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+                          : 'border-indigo-500/40 bg-indigo-500/15 text-indigo-200'
+                      }`}
                     >
-                      <option value="effect">effect · 效果合成节点</option>
-                      <option value="gate">gate · 安全红线门控</option>
-                    </select>
-                  </label>
+                      {selectedNode.inlineEffect ? '私有' : '库引用'}
+                    </span>
+                  )}
 
-                  {selectedNodeEffect?.role === 'gate' ? (
-                    <label className="space-y-1">
-                      <span className="text-[11px] text-slate-400">门控模式 (gateMode)</span>
-                      <select
-                        value={selectedNodeEffect.gateMode ?? 'soft'}
+                  {selectedBoundMetricId && onDrillDownToMetric && (
+                    <button
+                      type="button"
+                      onClick={() => onDrillDownToMetric(selectedBoundMetricId)}
+                      title={`查看指标：${selectedBoundMetricId}`}
+                      className="inline-flex items-center gap-1 rounded border border-emerald-500/45 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-200 hover:bg-emerald-500/25 transition cursor-pointer"
+                    >
+                      <ArrowDownRight className="h-3 w-3" />
+                      <span>下钻指标</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 3-Tab 切换栏 */}
+              {selectedNode && (
+                <div className="flex border-b border-[#30363d] bg-[#0d1117]/50 px-3 pt-2 gap-1">
+                  {(
+                    [
+                      { id: 'basic' as const, label: '基础与权重' },
+                      { id: 'scoring' as const, label: '评分与门控' },
+                      { id: 'evidence' as const, label: '评估证据' },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setDrawerTab(tab.id)}
+                      className={`border-b-2 px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
+                        drawerTab === tab.id
+                          ? 'border-indigo-400 text-indigo-200'
+                          : 'border-transparent text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto p-3.5 text-xs space-y-3">
+                {!selectedNode && selectedEdgeId ? (
+                  (() => {
+                    const selEdge = activeSystem.edges.find((e) => e.id === selectedEdgeId);
+                    if (!selEdge) return null;
+                    const srcN = activeSystem.nodes.find((n) => n.id === selEdge.sourceNodeId);
+                    const tgtN = activeSystem.nodes.find((n) => n.id === selEdge.targetNodeId);
+                    return (
+                      <div className="space-y-3 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                        <div className="font-mono text-[11px] text-indigo-300">
+                          {srcN?.label || selEdge.sourceNodeId} ➔ {tgtN?.label || selEdge.targetNodeId}
+                        </div>
+                        <label className="block space-y-1">
+                          <span className="text-[11px] text-slate-400">局部权重 (weight)</span>
+                          <input
+                            type="number"
+                            step="0.05"
+                            min="0"
+                            max="10"
+                            value={selEdge.weight ?? ''}
+                            placeholder="1.0"
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              if (raw === '') {
+                                setActiveSystem((prev) => ({
+                                  ...prev,
+                                  edges: prev.edges.map((ed) =>
+                                    ed.id === selEdge.id ? { ...ed, weight: undefined } : ed,
+                                  ),
+                                }));
+                                return;
+                              }
+                              const v = Number.parseFloat(raw);
+                              if (Number.isFinite(v) && v >= 0) {
+                                handleUpdateEdgeWeight(selEdge.id, Math.round(v * 10000) / 10000);
+                              }
+                            }}
+                            className="w-full rounded border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 font-mono text-xs text-indigo-200"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteEdge(selEdge.id)}
+                          className="inline-flex w-full items-center justify-center gap-1 rounded border border-rose-500/45 bg-rose-500/15 px-2.5 py-1.5 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>删除连线</span>
+                        </button>
+                      </div>
+                    );
+                  })()
+                ) : !selectedNode ? (
+                  <div className="space-y-3 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                    <div className="text-[11px] font-semibold text-indigo-300">
+                      体系全局属性（未选中节点）
+                    </div>
+                    <label className="block space-y-1">
+                      <span className="text-[11px] text-slate-400">体系 ID (systemId)</span>
+                      <input
+                        type="text"
+                        value={activeSystem.systemId}
                         onChange={(e) =>
-                          updateSelectedEffect((cur) => ({
-                            ...cur,
-                            gateMode: e.target.value as 'hard' | 'soft',
-                          }))
+                          setActiveSystem((prev) => ({ ...prev, systemId: e.target.value }))
                         }
-                        className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-xs text-rose-200 focus:border-rose-500 focus:outline-none"
-                      >
-                        <option value="hard">hard · 一票否决封顶 ≤39</option>
-                        <option value="soft">soft · 告警不封顶</option>
-                      </select>
+                        className="w-full rounded border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 font-mono text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      />
                     </label>
-                  ) : (
-                    <label className="space-y-1">
-                      <span className="text-[11px] text-slate-400">能力域 (domainTag)</span>
-                      <select
-                        value={selectedNodeEffect?.domainTag ?? 'synergy'}
+                    <label className="block space-y-1">
+                      <span className="text-[11px] text-slate-400">体系名称 (name)</span>
+                      <input
+                        type="text"
+                        value={activeSystem.name}
                         onChange={(e) =>
-                          updateSelectedEffect((cur) => ({
-                            ...cur,
-                            domainTag: e.target.value as MetricDomainTag,
+                          setActiveSystem((prev) => ({ ...prev, name: e.target.value }))
+                        }
+                        className="w-full rounded border border-[#30363d] bg-[#161b22] px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-[11px] text-slate-400">终态效果节点</span>
+                      <select
+                        value={activeSystem.terminalEffectNodeId}
+                        onChange={(e) =>
+                          setActiveSystem((prev) => ({
+                            ...prev,
+                            terminalEffectNodeId: e.target.value,
                           }))
                         }
-                        className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                        className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-indigo-200 focus:border-indigo-500 focus:outline-none"
                       >
-                        {(Object.keys(DOMAIN_LABELS) as MetricDomainTag[]).map((d) => (
-                          <option key={d} value={d}>
-                            {DOMAIN_LABELS[d]} ({d})
+                        {activeSystem.nodes.map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.label} ({n.id})
                           </option>
                         ))}
                       </select>
                     </label>
-                  )}
-                </div>
-
-                {/* 直接入边权重编辑 & 局部归一化状态 */}
-                <div className="space-y-1.5 rounded border border-[#30363d] bg-[#161b22] p-2">
-                  <div className="flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-300">
-                      <GitBranch className="h-3 w-3" />
-                      <span>入边局部权重 ({selectedIncomingEdges.length})</span>
-                    </span>
-                    {selectedWeightSummary && selectedIncomingEdges.length > 0 && (
-                      <div className="flex items-center gap-1">
-                        <span
-                          className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums ${
-                            selectedWeightSummary.isBalanced
-                              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                              : 'border-amber-500/55 bg-amber-500/15 text-amber-300'
-                          }`}
-                        >
-                          Σw={selectedWeightSummary.sum.toFixed(4)}
-                        </span>
-                        {!selectedWeightSummary.isBalanced && (
+                  </div>
+                ) : drawerTab === 'basic' ? (
+                  /* ── Tab 1: 基础与权重 ── */
+                  selectedIsProxy ? (
+                    <div className="space-y-3">
+                      <div className="space-y-2 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                        <div className="font-semibold text-emerald-300">指标代理绑定</div>
+                        <div className="font-mono text-[10px] text-slate-500">
+                          节点 ID: {selectedNode.id}
+                        </div>
+                        <label className="block space-y-1">
+                          <span className="text-[11px] text-slate-400">节点标题 (label)</span>
+                          <input
+                            type="text"
+                            value={selectedNode.label}
+                            onChange={(e) =>
+                              setActiveSystem((prev) => ({
+                                ...prev,
+                                nodes: prev.nodes.map((n) =>
+                                  n.id === selectedNode.id ? { ...n, label: e.target.value } : n,
+                                ),
+                              }))
+                            }
+                            className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
+                          />
+                        </label>
+                        <label className="block space-y-1">
+                          <span className="text-[11px] text-slate-400">
+                            关联指标标识 (refId)
+                          </span>
+                          <select
+                            value={selectedNode.refId ?? ''}
+                            onChange={(e) =>
+                              setActiveSystem((prev) => ({
+                                ...prev,
+                                nodes: prev.nodes.map((n) =>
+                                  n.id === selectedNode.id ? { ...n, refId: e.target.value } : n,
+                                ),
+                              }))
+                            }
+                            className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
+                          >
+                            <option value="">-- 选择指标 --</option>
+                            {availableMetricOptions.map((m) => (
+                              <option key={m.metricId} value={m.metricId}>
+                                {m.metricId} · {m.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.refId ?? ''}
+                          onChange={(e) =>
+                            setActiveSystem((prev) => ({
+                              ...prev,
+                              nodes: prev.nodes.map((n) =>
+                                n.id === selectedNode.id ? { ...n, refId: e.target.value } : n,
+                              ),
+                            }))
+                          }
+                          placeholder="或手动输入 metricId"
+                          className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 font-mono text-[11px] text-slate-200 focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* 节点基础角色与终态设定 */}
+                      <div className="space-y-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[10px] text-slate-500">
+                            ID: {selectedNode.id}
+                          </span>
                           <button
                             type="button"
                             onClick={() =>
                               setActiveSystem((prev) => ({
                                 ...prev,
-                                edges: normalizeTargetIncomingWeights(prev.edges, selectedNode.id),
+                                terminalEffectNodeId: selectedNode.id,
                               }))
                             }
-                            className="rounded border border-indigo-500/45 bg-indigo-500/15 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-500/30 cursor-pointer"
+                            className={`rounded border px-2 py-0.5 text-[10px] cursor-pointer ${
+                              activeSystem.terminalEffectNodeId === selectedNode.id
+                                ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200 font-semibold'
+                                : 'border-[#30363d] bg-[#161b22] text-slate-400 hover:text-white'
+                            }`}
                           >
-                            归一
+                            {activeSystem.terminalEffectNodeId === selectedNode.id
+                              ? '★ 当前终态节点'
+                              : '设为终态输出'}
+                          </button>
+                        </div>
+
+                        <label className="block space-y-1">
+                          <span className="text-[11px] text-slate-400">效果名称 (name)</span>
+                          <input
+                            type="text"
+                            value={selectedNodeEffect?.name ?? selectedNode.label}
+                            onChange={(e) =>
+                              updateSelectedEffect((cur) => ({ ...cur, name: e.target.value }))
+                            }
+                            className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                          />
+                        </label>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="space-y-1">
+                            <span className="text-[11px] text-slate-400">节点角色 (role)</span>
+                            <select
+                              value={selectedNodeEffect?.role ?? 'effect'}
+                              onChange={(e) => {
+                                const nextRole = e.target.value as 'effect' | 'gate';
+                                updateSelectedEffect((cur) => ({
+                                  ...cur,
+                                  role: nextRole,
+                                  gateMode:
+                                    nextRole === 'gate' ? (cur.gateMode ?? 'soft') : undefined,
+                                }));
+                              }}
+                              className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                            >
+                              <option value="effect">effect · 效果合成</option>
+                              <option value="gate">gate · 红线门控</option>
+                            </select>
+                          </label>
+
+                          {selectedNodeEffect?.role === 'gate' ? (
+                            <label className="space-y-1">
+                              <span className="text-[11px] text-slate-400">门控模式</span>
+                              <select
+                                value={selectedNodeEffect.gateMode ?? 'soft'}
+                                onChange={(e) =>
+                                  updateSelectedEffect((cur) => ({
+                                    ...cur,
+                                    gateMode: e.target.value as 'hard' | 'soft',
+                                  }))
+                                }
+                                className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-rose-200 focus:border-rose-500 focus:outline-none"
+                              >
+                                <option value="hard">hard · 红线否决 (上限39分)</option>
+                                <option value="soft">soft · 告警提醒 (不封顶)</option>
+                              </select>
+                            </label>
+                          ) : (
+                            <label className="space-y-1">
+                              <span className="text-[11px] text-slate-400">能力域</span>
+                              <select
+                                value={selectedNodeEffect?.domainTag ?? 'synergy'}
+                                onChange={(e) =>
+                                  updateSelectedEffect((cur) => ({
+                                    ...cur,
+                                    domainTag: e.target.value as MetricDomainTag,
+                                  }))
+                                }
+                                className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                              >
+                                {(Object.keys(DOMAIN_LABELS) as MetricDomainTag[]).map((d) => (
+                                  <option key={d} value={d}>
+                                    {DOMAIN_LABELS[d]} ({d})
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 入边局部权重编辑 */}
+                      <div className="space-y-2 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-300">
+                            <GitBranch className="h-3.5 w-3.5" />
+                            <span>入边局部权重 ({selectedIncomingEdges.length})</span>
+                          </span>
+                          {selectedWeightSummary && selectedIncomingEdges.length > 0 && (
+                            <div className="flex items-center gap-1">
+                              <span
+                                className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums ${
+                                  selectedWeightSummary.isBalanced
+                                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                                    : 'border-amber-500/55 bg-amber-500/15 text-amber-300'
+                                }`}
+                              >
+                                Σw={selectedWeightSummary.sum.toFixed(4)}
+                              </span>
+                              {!selectedWeightSummary.isBalanced && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setActiveSystem((prev) => ({
+                                      ...prev,
+                                      edges: normalizeTargetIncomingWeights(
+                                        prev.edges,
+                                        selectedNode.id,
+                                      ),
+                                    }))
+                                  }
+                                  className="rounded border border-indigo-500/45 bg-indigo-500/15 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-500/30 cursor-pointer"
+                                >
+                                  归一
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {selectedIncomingEdges.length === 0 ? (
+                          <div className="text-[11px] text-slate-500">
+                            当前为叶级输入节点，无入边；可在「评分与门控」中绑定上游指标。
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {selectedIncomingEdges.map((edge) => {
+                              const srcNode = activeSystem.nodes.find(
+                                (n) => n.id === edge.sourceNodeId,
+                              );
+                              const effWeight = selectedEval?.effectiveWeights?.[edge.id];
+                              return (
+                                <div
+                                  key={edge.id}
+                                  className="flex items-center justify-between gap-2 rounded border border-[#30363d]/80 bg-[#161b22] px-2.5 py-1.5"
+                                >
+                                  <span className="truncate text-[11px] text-slate-200">
+                                    {srcNode?.label || edge.sourceNodeId}
+                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    {typeof effWeight === 'number' && (
+                                      <span className="font-mono text-[10px] text-slate-500 tabular-nums">
+                                        实效:{effWeight.toFixed(2)}
+                                      </span>
+                                    )}
+                                    <input
+                                      type="number"
+                                      step="0.05"
+                                      min="0"
+                                      max="10"
+                                      value={edge.weight ?? 0}
+                                      onChange={(e) => {
+                                        const v = Number.parseFloat(e.target.value);
+                                        if (Number.isFinite(v) && v >= 0) {
+                                          handleUpdateEdgeWeight(
+                                            edge.id,
+                                            Math.round(v * 10000) / 10000,
+                                          );
+                                        }
+                                      }}
+                                      className="w-18 rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5 text-right font-mono text-[11px] text-indigo-200 tabular-nums"
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 模板还原 / 另存为独立复用效果 */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {selectedNode.inlineEffect && selectedNode.refId && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveSystem((prev) => ({
+                                ...prev,
+                                nodes: prev.nodes.map((n) =>
+                                  n.id === selectedNode.id
+                                    ? { ...n, inlineEffect: undefined }
+                                    : n,
+                                ),
+                              }))
+                            }
+                            className="inline-flex items-center gap-1 rounded border border-[#30363d] bg-[#0d1117] px-2.5 py-1 text-[11px] text-slate-300 hover:text-white transition cursor-pointer"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            <span>还原为库模板</span>
+                          </button>
+                        )}
+
+                        {selectedNodeEffect && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSaveEffectIdDraft(
+                                selectedNodeEffect.isBuiltin
+                                  ? `${selectedNodeEffect.effectId}_custom`
+                                  : selectedNodeEffect.effectId ||
+                                      `eff_custom_${Date.now().toString(36)}`,
+                              );
+                              setSaveEffectNameDraft(
+                                selectedNodeEffect.name || selectedNode.label,
+                              );
+                              setSaveEffectOpen((prev) => !prev);
+                            }}
+                            className="inline-flex items-center gap-1 rounded border border-indigo-400/50 bg-indigo-500/15 px-2.5 py-1 text-[11px] font-medium text-indigo-200 hover:bg-indigo-500/25 transition cursor-pointer"
+                          >
+                            <BookmarkPlus className="h-3.5 w-3.5" />
+                            <span>另存为独立复用效果</span>
                           </button>
                         )}
                       </div>
-                    )}
-                  </div>
 
-                  {selectedIncomingEdges.length === 0 ? (
-                    <div className="text-[10px] text-slate-500">
-                      当前为叶级输入节点，无入边；可通过右侧 metricBinding 直接绑定指标。
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {selectedIncomingEdges.map((edge) => {
-                        const srcNode = activeSystem.nodes.find((n) => n.id === edge.sourceNodeId);
-                        const effWeight = selectedEval?.effectiveWeights?.[edge.id];
-                        return (
-                          <div
-                            key={edge.id}
-                            className="flex items-center justify-between gap-2 rounded border border-[#30363d]/80 bg-[#0d1117] px-2 py-1"
-                          >
-                            <span className="truncate text-[11px] text-slate-300">
-                              {srcNode?.label || edge.sourceNodeId}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              {typeof effWeight === 'number' && (
-                                <span className="font-mono text-[9px] text-slate-500 tabular-nums">
-                                  实效:{effWeight.toFixed(2)}
-                                </span>
-                              )}
-                              <input
-                                type="number"
-                                step="0.05"
-                                min="0"
-                                max="10"
-                                value={edge.weight ?? 0}
-                                onChange={(e) => {
-                                  const v = Number.parseFloat(e.target.value);
-                                  if (Number.isFinite(v) && v >= 0) {
-                                    handleUpdateEdgeWeight(
-                                      edge.id,
-                                      Math.round(v * 10000) / 10000,
-                                    );
-                                  }
-                                }}
-                                className="w-16 rounded border border-[#30363d] bg-[#161b22] px-1.5 py-0.5 text-right font-mono text-[11px] text-indigo-200 tabular-nums"
-                              />
-                            </div>
+                      {saveEffectOpen && selectedNodeEffect && (
+                        <div className="space-y-2 rounded-lg border border-indigo-500/40 bg-indigo-950/30 p-2.5">
+                          <div className="text-[11px] font-semibold text-indigo-200">
+                            沉淀至独立效果库 (POST /api/v4/effects)
                           </div>
-                        );
-                      })}
+                          <input
+                            type="text"
+                            value={saveEffectIdDraft}
+                            onChange={(e) => setSaveEffectIdDraft(e.target.value)}
+                            placeholder="唯一 effectId (如 eff_my_strike)"
+                            className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-xs text-slate-100 focus:border-indigo-400 focus:outline-none"
+                          />
+                          <input
+                            type="text"
+                            value={saveEffectNameDraft}
+                            onChange={(e) => setSaveEffectNameDraft(e.target.value)}
+                            placeholder="效果显示名称"
+                            className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-slate-100 focus:border-indigo-400 focus:outline-none"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveAsReusableEffect()}
+                              disabled={savingEffect}
+                              className="rounded border border-indigo-400 bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 cursor-pointer"
+                            >
+                              {savingEffect ? '提交中...' : '确认保存'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSaveEffectOpen(false)}
+                              className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 第 2 栏：多效果合成策略 & 缺数门控策略 */}
-              <div className="space-y-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-                <div className="font-semibold text-indigo-300">2. 合成与缺数重归一策略</div>
-
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-slate-400">聚合策略 (aggregation.strategy)</span>
-                  <select
-                    value={selectedNodeEffect?.aggregation.strategy ?? 'weighted_sum'}
-                    onChange={(e) =>
-                      updateSelectedEffect((cur) => ({
-                        ...cur,
-                        aggregation: {
-                          ...cur.aggregation,
-                          strategy: e.target.value as AggregationStrategy,
-                        },
-                      }))
-                    }
-                    className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                  >
-                    {STRATEGY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block space-y-1">
-                  <span className="text-[11px] text-slate-400">
-                    缺数策略 (aggregation.missingPolicy)
-                  </span>
-                  <select
-                    value={selectedNodeEffect?.aggregation.missingPolicy ?? 'skip_renormalize'}
-                    onChange={(e) =>
-                      updateSelectedEffect((cur) => ({
-                        ...cur,
-                        aggregation: {
-                          ...cur.aggregation,
-                          missingPolicy: e.target.value as NodeMissingPolicy,
-                        },
-                      }))
-                    }
-                    className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                  >
-                    {MISSING_POLICY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                {selectedNodeEffect?.aggregation.strategy === 'formula' && (
-                  <label className="block space-y-1">
-                    <span className="text-[11px] text-slate-400">
-                      自定义合成公式 (customFormula)
-                    </span>
-                    <textarea
-                      rows={2}
-                      value={selectedNodeEffect.aggregation.customFormula ?? ''}
-                      onChange={(e) =>
-                        updateSelectedEffect((cur) => ({
-                          ...cur,
-                          aggregation: { ...cur.aggregation, customFormula: e.target.value },
-                        }))
-                      }
-                      placeholder="使用上游节点 ID 或 targetAlias 进行计算"
-                      className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-indigo-200 focus:border-indigo-500 focus:outline-none"
-                    />
-                  </label>
-                )}
-
-                {selectedEval && (
-                  <div className="space-y-1 rounded border border-[#30363d] bg-[#161b22] p-2 font-mono text-[11px]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">评估分值:</span>
-                      <span className="font-bold text-indigo-200">
-                        {selectedEval.score !== null ? `${selectedEval.score.toFixed(1)} / 100` : '--'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">可用权重覆盖:</span>
-                      <span>{(selectedEval.availableWeightRatio * 100).toFixed(1)}%</span>
-                    </div>
-                    {selectedEval.rawValue !== undefined && selectedEval.rawValue !== null && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400">原始物理值:</span>
-                        <span className="text-emerald-300">{String(selectedEval.rawValue)}</span>
-                      </div>
-                    )}
-                    {selectedEval.missingDataReason && (
-                      <div className="text-[10px] text-amber-300 leading-relaxed">
-                        {selectedEval.missingDataReason}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* 第 3 栏：metricBinding（指标切片 + paramOverrides 透传 + ScoringRule 人工判定标准） */}
-              <div className="space-y-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-emerald-300">
-                    3. 指标绑定与效用规则 (metricBinding)
-                  </span>
-                  <label className="inline-flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedNodeEffect?.metricBinding)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          const defaultId =
-                            availableMetricOptions[0]?.metricId ?? 'strike.composite_mission_metrics';
-                          updateSelectedEffect((cur) => ({
-                            ...cur,
-                            metricBinding: {
-                              metricId: defaultId,
-                              reduce: 'mean',
-                              scoringRule: createDefaultScoringRule('larger_is_better'),
-                            },
-                          }));
-                        } else {
-                          updateSelectedEffect((cur) => ({
-                            ...cur,
-                            metricBinding: undefined,
-                          }));
-                        }
-                      }}
-                    />
-                    <span>启用直连绑定</span>
-                  </label>
-                </div>
-
-                {!selectedNodeEffect?.metricBinding ? (
-                  <div className="rounded border border-dashed border-[#30363d] p-4 text-center text-[11px] text-slate-500">
-                    当前效果节点采用“纯上游子效果叠加模式”（无直连 metricBinding）。勾选右上角即可绑定二库指标、透传参数与效用映射函数。
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <label className="col-span-2 space-y-0.5">
-                        <span className="text-[10px] text-slate-400">二库指标 ID (metricId)</span>
-                        <div className="flex gap-1">
-                          <select
-                            value={
-                              availableMetricOptions.some(
-                                (m) => m.metricId === selectedNodeEffect.metricBinding?.metricId,
-                              )
-                                ? selectedNodeEffect.metricBinding.metricId
-                                : '__custom__'
+                  )
+                ) : drawerTab === 'scoring' ? (
+                  /* ── Tab 2: 评分与门控 ── */
+                  selectedIsProxy ? (
+                    <div className="space-y-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                      <div className="font-semibold text-cyan-300">切片与向上游透传参数</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="space-y-1">
+                          <span className="text-[11px] text-slate-400">targetField</span>
+                          <input
+                            type="text"
+                            value={String(selectedNode.params?.targetField ?? '')}
+                            onChange={(e) =>
+                              setActiveSystem((prev) => ({
+                                ...prev,
+                                nodes: prev.nodes.map((n) =>
+                                  n.id === selectedNode.id
+                                    ? {
+                                        ...n,
+                                        params: {
+                                          ...(n.params ?? {}),
+                                          targetField: e.target.value || undefined,
+                                        },
+                                      }
+                                    : n,
+                                ),
+                              }))
                             }
-                            onChange={(e) => {
-                              if (e.target.value === '__custom__') return;
-                              updateSelectedEffect((cur) => ({
-                                ...cur,
-                                metricBinding: {
-                                  ...cur.metricBinding!,
-                                  metricId: e.target.value,
-                                },
-                              }));
-                            }}
-                            className="w-1/2 rounded border border-[#30363d] bg-[#161b22] px-1.5 py-1 text-[11px] text-slate-100"
+                            className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-slate-100"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[11px] text-slate-400">reduce</span>
+                          <select
+                            value={String(selectedNode.params?.reduce ?? 'mean')}
+                            onChange={(e) =>
+                              setActiveSystem((prev) => ({
+                                ...prev,
+                                nodes: prev.nodes.map((n) =>
+                                  n.id === selectedNode.id
+                                    ? {
+                                        ...n,
+                                        params: { ...(n.params ?? {}), reduce: e.target.value },
+                                      }
+                                    : n,
+                                ),
+                              }))
+                            }
+                            className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-[11px] text-slate-100"
                           >
-                            <option value="__custom__">-- 自定义 --</option>
-                            {availableMetricOptions.map((m) => (
-                              <option key={m.metricId} value={m.metricId}>
-                                {m.metricId}
+                            {REDUCE_OPTIONS.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
                               </option>
                             ))}
                           </select>
-                          <input
-                            type="text"
-                            value={selectedNodeEffect.metricBinding.metricId}
-                            onChange={(e) =>
-                              updateSelectedEffect((cur) => ({
-                                ...cur,
-                                metricBinding: {
-                                  ...cur.metricBinding!,
-                                  metricId: e.target.value,
-                                },
-                              }))
-                            }
-                            className="w-1/2 rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-emerald-200"
-                          />
-                        </div>
-                      </label>
+                        </label>
+                      </div>
 
-                      <label className="space-y-0.5">
-                        <span className="text-[10px] text-slate-400">目标列 (targetField)</span>
-                        <input
-                          type="text"
-                          value={selectedNodeEffect.metricBinding.targetField ?? ''}
-                          onChange={(e) =>
-                            updateSelectedEffect((cur) => ({
-                              ...cur,
-                              metricBinding: {
-                                ...cur.metricBinding!,
-                                targetField: e.target.value || undefined,
-                              },
-                            }))
-                          }
-                          placeholder="自动推断或指定列名"
-                          className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-slate-100"
-                        />
-                      </label>
-
-                      <label className="space-y-0.5">
-                        <span className="text-[10px] text-slate-400">归约 (reduce)</span>
-                        <select
-                          value={selectedNodeEffect.metricBinding.reduce ?? 'mean'}
-                          onChange={(e) =>
-                            updateSelectedEffect((cur) => ({
-                              ...cur,
-                              metricBinding: {
-                                ...cur.metricBinding!,
-                                reduce: e.target.value as IndicatorReduceMethod,
-                              },
-                            }))
-                          }
-                          className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-[11px] text-slate-100"
-                        >
-                          {REDUCE_OPTIONS.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
-                    {/* 效用映射规则 ScoringRule */}
-                    <div className="space-y-1.5 rounded border border-[#30363d] bg-[#161b22] p-2">
-                      <label className="block space-y-0.5">
-                        <span className="text-[10px] text-slate-400">
-                          效用映射函数 (scoringRule.type)
-                        </span>
-                        <select
-                          value={selectedNodeEffect.metricBinding.scoringRule.type}
-                          onChange={(e) => {
-                            const nextType = e.target.value as ScoringRule['type'];
-                            updateSelectedEffect((cur) => ({
-                              ...cur,
-                              metricBinding: {
-                                ...cur.metricBinding!,
-                                scoringRule: createDefaultScoringRule(nextType),
-                              },
-                            }));
-                          }}
-                          className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-[11px] text-slate-100"
-                        >
-                          {SCORING_TYPE_OPTIONS.map((st) => (
-                            <option key={st.value} value={st.value}>
-                              {st.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      {(selectedNodeEffect.metricBinding.scoringRule.type === 'larger_is_better' ||
-                        selectedNodeEffect.metricBinding.scoringRule.type ===
-                          'smaller_is_better') && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="space-y-0.5">
-                            <span className="text-[10px] text-slate-400">最优阈值 (optimal)</span>
-                            <input
-                              type="number"
-                              step="any"
-                              value={selectedNodeEffect.metricBinding.scoringRule.optimal ?? 1}
-                              onChange={(e) => {
-                                const val = Number.parseFloat(e.target.value);
-                                if (!Number.isFinite(val)) return;
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    scoringRule: {
-                                      ...cur.metricBinding!.scoringRule,
-                                      optimal: val,
-                                    },
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-emerald-300"
-                            />
-                          </label>
-                          <label className="space-y-0.5">
-                            <span className="text-[10px] text-slate-400">最差阈值 (worst)</span>
-                            <input
-                              type="number"
-                              step="any"
-                              value={selectedNodeEffect.metricBinding.scoringRule.worst ?? 0}
-                              onChange={(e) => {
-                                const val = Number.parseFloat(e.target.value);
-                                if (!Number.isFinite(val)) return;
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    scoringRule: {
-                                      ...cur.metricBinding!.scoringRule,
-                                      worst: val,
-                                    },
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-rose-300"
-                            />
-                          </label>
-                        </div>
-                      )}
-
-                      {selectedNodeEffect.metricBinding.scoringRule.type === 'linear' && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="space-y-0.5">
-                            <span className="text-[10px] text-slate-400">下界 bounds[0]</span>
-                            <input
-                              type="number"
-                              step="any"
-                              value={selectedNodeEffect.metricBinding.scoringRule.bounds?.[0] ?? 0}
-                              onChange={(e) => {
-                                const val = Number.parseFloat(e.target.value);
-                                if (!Number.isFinite(val)) return;
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    scoringRule: {
-                                      ...cur.metricBinding!.scoringRule,
-                                      bounds: [
-                                        val,
-                                        cur.metricBinding!.scoringRule.bounds?.[1] ?? 1,
-                                      ],
-                                    },
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px]"
-                            />
-                          </label>
-                          <label className="space-y-0.5">
-                            <span className="text-[10px] text-slate-400">上界 bounds[1]</span>
-                            <input
-                              type="number"
-                              step="any"
-                              value={selectedNodeEffect.metricBinding.scoringRule.bounds?.[1] ?? 1}
-                              onChange={(e) => {
-                                const val = Number.parseFloat(e.target.value);
-                                if (!Number.isFinite(val)) return;
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    scoringRule: {
-                                      ...cur.metricBinding!.scoringRule,
-                                      bounds: [
-                                        cur.metricBinding!.scoringRule.bounds?.[0] ?? 0,
-                                        val,
-                                      ],
-                                    },
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px]"
-                            />
-                          </label>
-                        </div>
-                      )}
-
-                      {selectedNodeEffect.metricBinding.scoringRule.type === 'boolean' && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="space-y-0.5">
-                            <span className="text-[10px] text-slate-400">trueScore</span>
-                            <input
-                              type="number"
-                              value={selectedNodeEffect.metricBinding.scoringRule.trueScore ?? 100}
-                              onChange={(e) => {
-                                const val = Number.parseFloat(e.target.value);
-                                if (!Number.isFinite(val)) return;
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    scoringRule: {
-                                      ...cur.metricBinding!.scoringRule,
-                                      trueScore: val,
-                                    },
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-emerald-300"
-                            />
-                          </label>
-                          <label className="space-y-0.5">
-                            <span className="text-[10px] text-slate-400">falseScore</span>
-                            <input
-                              type="number"
-                              value={selectedNodeEffect.metricBinding.scoringRule.falseScore ?? 0}
-                              onChange={(e) => {
-                                const val = Number.parseFloat(e.target.value);
-                                if (!Number.isFinite(val)) return;
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    scoringRule: {
-                                      ...cur.metricBinding!.scoringRule,
-                                      falseScore: val,
-                                    },
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-rose-300"
-                            />
-                          </label>
-                        </div>
-                      )}
-
-                      {selectedNodeEffect.metricBinding.scoringRule.type === 'target_range' && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="space-y-0.5">
-                            <span className="text-[10px] text-slate-400">最优下限 opt[0]</span>
-                            <input
-                              type="number"
-                              step="any"
-                              value={
-                                selectedNodeEffect.metricBinding.scoringRule.optimalRange?.[0] ?? 0.6
-                              }
-                              onChange={(e) => {
-                                const val = Number.parseFloat(e.target.value);
-                                if (!Number.isFinite(val)) return;
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    scoringRule: {
-                                      ...cur.metricBinding!.scoringRule,
-                                      optimalRange: [
-                                        val,
-                                        cur.metricBinding!.scoringRule.optimalRange?.[1] ?? 0.9,
-                                      ],
-                                    },
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px]"
-                            />
-                          </label>
-                          <label className="space-y-0.5">
-                            <span className="text-[10px] text-slate-400">最优上限 opt[1]</span>
-                            <input
-                              type="number"
-                              step="any"
-                              value={
-                                selectedNodeEffect.metricBinding.scoringRule.optimalRange?.[1] ?? 0.9
-                              }
-                              onChange={(e) => {
-                                const val = Number.parseFloat(e.target.value);
-                                if (!Number.isFinite(val)) return;
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    scoringRule: {
-                                      ...cur.metricBinding!.scoringRule,
-                                      optimalRange: [
-                                        cur.metricBinding!.scoringRule.optimalRange?.[0] ?? 0.6,
-                                        val,
-                                      ],
-                                    },
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px]"
-                            />
-                          </label>
-                        </div>
-                      )}
-
-                      {selectedNodeEffect.metricBinding.scoringRule.type === 'step' && (
-                        <div className="space-y-1">
-                          {(selectedNodeEffect.metricBinding.scoringRule.steps ?? []).map(
-                            (st, idx) => (
-                              <div key={idx} className="flex items-center gap-1.5 font-mono text-[11px]">
-                                <input
-                                  type="number"
-                                  step="any"
-                                  value={st.val}
-                                  onChange={(e) => {
-                                    const v = Number.parseFloat(e.target.value);
-                                    if (!Number.isFinite(v)) return;
-                                    updateSelectedEffect((cur) => {
-                                      const steps = [...(cur.metricBinding!.scoringRule.steps ?? [])];
-                                      steps[idx] = { ...steps[idx], val: v };
-                                      return {
-                                        ...cur,
-                                        metricBinding: {
-                                          ...cur.metricBinding!,
-                                          scoringRule: { ...cur.metricBinding!.scoringRule, steps },
-                                        },
-                                      };
-                                    });
-                                  }}
-                                  className="w-20 rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5"
-                                />
-                                <span className="text-slate-500">➔</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  value={st.score}
-                                  onChange={(e) => {
-                                    const sc = Number.parseFloat(e.target.value);
-                                    if (!Number.isFinite(sc)) return;
-                                    updateSelectedEffect((cur) => {
-                                      const steps = [...(cur.metricBinding!.scoringRule.steps ?? [])];
-                                      steps[idx] = { ...steps[idx], score: sc };
-                                      return {
-                                        ...cur,
-                                        metricBinding: {
-                                          ...cur.metricBinding!,
-                                          scoringRule: { ...cur.metricBinding!.scoringRule, steps },
-                                        },
-                                      };
-                                    });
-                                  }}
-                                  className="w-20 rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5 text-emerald-300"
-                                />
-                                <span className="text-[10px] text-slate-500">分</span>
-                              </div>
-                            ),
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 透传行级物理阈值 paramOverrides & 维度切片 sliceFilter */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="space-y-0.5">
-                        <span className="text-[10px] text-amber-300">
-                          paramOverrides (透传上游阈值 JSON)
-                        </span>
+                      <label className="block space-y-1">
+                        <span className="text-[11px] text-slate-400">paramOverrides (JSON)</span>
                         <textarea
-                          rows={2}
+                          rows={3}
                           value={paramOverridesText}
                           onChange={(e) => {
                             const raw = e.target.value;
@@ -2891,13 +3838,16 @@ export function SystemDagStudioPanel({
                                 setParamOverridesErr('必须为 JSON 对象');
                               } else {
                                 setParamOverridesErr(null);
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    paramOverrides:
-                                      Object.keys(parsed).length > 0 ? parsed : undefined,
-                                  },
+                                setActiveSystem((prev) => ({
+                                  ...prev,
+                                  nodes: prev.nodes.map((n) =>
+                                    n.id === selectedNode.id
+                                      ? {
+                                          ...n,
+                                          params: { ...(n.params ?? {}), paramOverrides: parsed },
+                                        }
+                                      : n,
+                                  ),
                                 }));
                               }
                             } catch (err) {
@@ -2906,112 +3856,1030 @@ export function SystemDagStudioPanel({
                               );
                             }
                           }}
-                          placeholder='{"damageThreshold": 0.5}'
-                          className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[10px] text-amber-200"
+                          className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-amber-200"
                         />
                         {paramOverridesErr && (
-                          <span className="text-[9px] text-rose-400">{paramOverridesErr}</span>
-                        )}
-                      </label>
-
-                      <label className="space-y-0.5">
-                        <span className="text-[10px] text-slate-400">sliceFilter (切片 JSON)</span>
-                        <textarea
-                          rows={2}
-                          value={sliceFilterText}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            setSliceFilterText(raw);
-                            try {
-                              const parsed = raw.trim() ? JSON.parse(raw) : {};
-                              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                                setSliceFilterErr('必须为 JSON 对象');
-                              } else {
-                                setSliceFilterErr(null);
-                                updateSelectedEffect((cur) => ({
-                                  ...cur,
-                                  metricBinding: {
-                                    ...cur.metricBinding!,
-                                    sliceFilter:
-                                      Object.keys(parsed).length > 0 ? parsed : undefined,
-                                  },
-                                }));
-                              }
-                            } catch (err) {
-                              setSliceFilterErr(
-                                err instanceof Error ? err.message : 'JSON 格式错误',
-                              );
-                            }
-                          }}
-                          placeholder='{"Side": "蓝方"}'
-                          className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[10px] text-slate-200"
-                        />
-                        {sliceFilterErr && (
-                          <span className="text-[9px] text-rose-400">{sliceFilterErr}</span>
+                          <span className="text-[10px] text-rose-400">{paramOverridesErr}</span>
                         )}
                       </label>
                     </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* 合成与缺数重归一策略 */}
+                      <div className="space-y-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                        <div className="font-semibold text-indigo-300">合成与缺数重归一策略</div>
 
-                    {/* 可选门控告警阈值 */}
-                    {selectedNodeEffect.role === 'gate' && (
-                      <div className="flex flex-wrap items-center gap-1.5 rounded border border-rose-500/30 bg-rose-950/20 px-2 py-1.5 text-[10px]">
-                        <span className="text-rose-300 font-semibold">Gate 告警条件:</span>
-                        <select
-                          value={selectedNodeEffect.metricBinding.alarmThreshold?.operator ?? '>'}
-                          onChange={(e) =>
-                            updateSelectedEffect((cur) => ({
-                              ...cur,
-                              metricBinding: {
-                                ...cur.metricBinding!,
-                                alarmThreshold: {
-                                  operator: e.target.value as AlarmThreshold['operator'],
-                                  value: cur.metricBinding!.alarmThreshold?.value ?? 0,
-                                  severity: cur.metricBinding!.alarmThreshold?.severity ?? 'major',
-                                  messageTemplate: cur.metricBinding!.alarmThreshold?.messageTemplate,
+                        <label className="block space-y-1">
+                          <span className="text-[11px] text-slate-400">
+                            聚合策略 (aggregation.strategy)
+                          </span>
+                          <select
+                            value={selectedNodeEffect?.aggregation.strategy ?? 'weighted_sum'}
+                            onChange={(e) =>
+                              updateSelectedEffect((cur) => ({
+                                ...cur,
+                                aggregation: {
+                                  ...cur.aggregation,
+                                  strategy: e.target.value as AggregationStrategy,
                                 },
-                              },
-                            }))
-                          }
-                          className="rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5 font-mono text-rose-200"
-                        >
-                          {(['>', '<', '==', '>=', '<='] as const).map((op) => (
-                            <option key={op} value={op}>
-                              {op}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          step="any"
-                          value={selectedNodeEffect.metricBinding.alarmThreshold?.value ?? 0}
-                          onChange={(e) => {
-                            const v = Number.parseFloat(e.target.value);
-                            if (!Number.isFinite(v)) return;
-                            updateSelectedEffect((cur) => ({
-                              ...cur,
-                              metricBinding: {
-                                ...cur.metricBinding!,
-                                alarmThreshold: {
-                                  operator: cur.metricBinding!.alarmThreshold?.operator ?? '>',
-                                  value: v,
-                                  severity: cur.metricBinding!.alarmThreshold?.severity ?? 'major',
-                                  messageTemplate: cur.metricBinding!.alarmThreshold?.messageTemplate,
+                              }))
+                            }
+                            className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                          >
+                            {STRATEGY_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block space-y-1">
+                          <span className="text-[11px] text-slate-400">
+                            缺数策略 (aggregation.missingPolicy)
+                          </span>
+                          <select
+                            value={
+                              selectedNodeEffect?.aggregation.missingPolicy ?? 'skip_renormalize'
+                            }
+                            onChange={(e) =>
+                              updateSelectedEffect((cur) => ({
+                                ...cur,
+                                aggregation: {
+                                  ...cur.aggregation,
+                                  missingPolicy: e.target.value as NodeMissingPolicy,
                                 },
-                              },
-                            }));
-                          }}
-                          className="w-20 rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5 font-mono text-rose-200"
-                        />
-                        <span className="text-slate-400">触发红线违例</span>
+                              }))
+                            }
+                            className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                          >
+                            {MISSING_POLICY_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        {selectedNodeEffect?.aggregation.strategy === 'formula' && (
+                          <label className="block space-y-1">
+                            <span className="text-[11px] text-slate-400">
+                              自定义合成公式 (customFormula)
+                            </span>
+                            <textarea
+                              rows={2}
+                              value={selectedNodeEffect.aggregation.customFormula ?? ''}
+                              onChange={(e) =>
+                                updateSelectedEffect((cur) => ({
+                                  ...cur,
+                                  aggregation: {
+                                    ...cur.aggregation,
+                                    customFormula: e.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="使用上游节点 ID 或 targetAlias 进行计算"
+                              className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-indigo-200 focus:border-indigo-500 focus:outline-none"
+                            />
+                          </label>
+                        )}
+                      </div>
+
+                      {/* 指标绑定与效用评分规则 / 门控阈值 */}
+                      <div className="space-y-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-emerald-300">
+                            指标绑定与效用规则 (metricBinding)
+                          </span>
+                          <label className="inline-flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selectedNodeEffect?.metricBinding)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  const defaultId =
+                                    availableMetricOptions[0]?.metricId ??
+                                    'strike.composite_mission_metrics';
+                                  updateSelectedEffect((cur) => ({
+                                    ...cur,
+                                    metricBinding: {
+                                      metricId: defaultId,
+                                      reduce: 'mean',
+                                      scoringRule: createDefaultScoringRule('larger_is_better'),
+                                    },
+                                  }));
+                                } else {
+                                  updateSelectedEffect((cur) => ({
+                                    ...cur,
+                                    metricBinding: undefined,
+                                  }));
+                                }
+                              }}
+                            />
+                            <span>启用直连绑定</span>
+                          </label>
+                        </div>
+
+                        {!selectedNodeEffect?.metricBinding ? (
+                          <div className="rounded border border-dashed border-[#30363d] p-3 text-center text-[11px] text-slate-500">
+                            当前由上游节点叠加聚合。启用开关可绑定指标、效用评分规则与安全门控。
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <label className="col-span-2 space-y-0.5">
+                                <span className="text-[10px] text-slate-400">
+                                  指标标识 (metricId)
+                                </span>
+                                <div className="flex gap-1">
+                                  <select
+                                    value={
+                                      availableMetricOptions.some(
+                                        (m) =>
+                                          m.metricId ===
+                                          selectedNodeEffect.metricBinding?.metricId,
+                                      )
+                                        ? selectedNodeEffect.metricBinding.metricId
+                                        : '__custom__'
+                                    }
+                                    onChange={(e) => {
+                                      if (e.target.value === '__custom__') return;
+                                      updateSelectedEffect((cur) => ({
+                                        ...cur,
+                                        metricBinding: {
+                                          ...cur.metricBinding!,
+                                          metricId: e.target.value,
+                                        },
+                                      }));
+                                    }}
+                                    className="w-1/2 rounded border border-[#30363d] bg-[#161b22] px-1.5 py-1 text-[11px] text-slate-100"
+                                  >
+                                    <option value="__custom__">-- 自定义 --</option>
+                                    {availableMetricOptions.map((m) => (
+                                      <option key={m.metricId} value={m.metricId}>
+                                        {m.metricId}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="text"
+                                    value={selectedNodeEffect.metricBinding.metricId}
+                                    onChange={(e) =>
+                                      updateSelectedEffect((cur) => ({
+                                        ...cur,
+                                        metricBinding: {
+                                          ...cur.metricBinding!,
+                                          metricId: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-1/2 rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-emerald-200"
+                                  />
+                                </div>
+                              </label>
+
+                              <label className="space-y-0.5">
+                                <span className="text-[10px] text-slate-400">
+                                  目标列 (targetField)
+                                </span>
+                                <input
+                                  type="text"
+                                  value={selectedNodeEffect.metricBinding.targetField ?? ''}
+                                  onChange={(e) =>
+                                    updateSelectedEffect((cur) => ({
+                                      ...cur,
+                                      metricBinding: {
+                                        ...cur.metricBinding!,
+                                        targetField: e.target.value || undefined,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="自动推断或指定列名"
+                                  className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[11px] text-slate-100"
+                                />
+                              </label>
+
+                              <label className="space-y-0.5">
+                                <span className="text-[10px] text-slate-400">归约 (reduce)</span>
+                                <select
+                                  value={selectedNodeEffect.metricBinding.reduce ?? 'mean'}
+                                  onChange={(e) =>
+                                    updateSelectedEffect((cur) => ({
+                                      ...cur,
+                                      metricBinding: {
+                                        ...cur.metricBinding!,
+                                        reduce: e.target.value as IndicatorReduceMethod,
+                                      },
+                                    }))
+                                  }
+                                  className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 text-[11px] text-slate-100"
+                                >
+                                  {REDUCE_OPTIONS.map((r) => (
+                                    <option key={r} value={r}>
+                                      {r}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+
+                            {/* 效用映射规则 ScoringRule */}
+                            <div className="space-y-1.5 rounded border border-[#30363d] bg-[#161b22] p-2">
+                              <label className="block space-y-0.5">
+                                <span className="text-[10px] text-slate-400">
+                                  效用映射函数 (scoringRule.type)
+                                </span>
+                                <select
+                                  value={selectedNodeEffect.metricBinding.scoringRule.type}
+                                  onChange={(e) => {
+                                    const nextType = e.target.value as ScoringRule['type'];
+                                    updateSelectedEffect((cur) => ({
+                                      ...cur,
+                                      metricBinding: {
+                                        ...cur.metricBinding!,
+                                        scoringRule: createDefaultScoringRule(nextType),
+                                      },
+                                    }));
+                                  }}
+                                  className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-[11px] text-slate-100"
+                                >
+                                  {SCORING_TYPE_OPTIONS.map((st) => (
+                                    <option key={st.value} value={st.value}>
+                                      {st.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              {(selectedNodeEffect.metricBinding.scoringRule.type ===
+                                'larger_is_better' ||
+                                selectedNodeEffect.metricBinding.scoringRule.type ===
+                                  'smaller_is_better') && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <label className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-400">
+                                      最优阈值 (optimal)
+                                    </span>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={
+                                        selectedNodeEffect.metricBinding.scoringRule.optimal ?? 1
+                                      }
+                                      onChange={(e) => {
+                                        const val = Number.parseFloat(e.target.value);
+                                        if (!Number.isFinite(val)) return;
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            scoringRule: {
+                                              ...cur.metricBinding!.scoringRule,
+                                              optimal: val,
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-emerald-300"
+                                    />
+                                  </label>
+                                  <label className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-400">
+                                      最差阈值 (worst)
+                                    </span>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={
+                                        selectedNodeEffect.metricBinding.scoringRule.worst ?? 0
+                                      }
+                                      onChange={(e) => {
+                                        const val = Number.parseFloat(e.target.value);
+                                        if (!Number.isFinite(val)) return;
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            scoringRule: {
+                                              ...cur.metricBinding!.scoringRule,
+                                              worst: val,
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-rose-300"
+                                    />
+                                  </label>
+                                </div>
+                              )}
+
+                              {selectedNodeEffect.metricBinding.scoringRule.type === 'linear' && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <label className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-400">
+                                      下界 bounds[0]
+                                    </span>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={
+                                        selectedNodeEffect.metricBinding.scoringRule.bounds?.[0] ??
+                                        0
+                                      }
+                                      onChange={(e) => {
+                                        const val = Number.parseFloat(e.target.value);
+                                        if (!Number.isFinite(val)) return;
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            scoringRule: {
+                                              ...cur.metricBinding!.scoringRule,
+                                              bounds: [
+                                                val,
+                                                cur.metricBinding!.scoringRule.bounds?.[1] ?? 1,
+                                              ],
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px]"
+                                    />
+                                  </label>
+                                  <label className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-400">
+                                      上界 bounds[1]
+                                    </span>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={
+                                        selectedNodeEffect.metricBinding.scoringRule.bounds?.[1] ??
+                                        1
+                                      }
+                                      onChange={(e) => {
+                                        const val = Number.parseFloat(e.target.value);
+                                        if (!Number.isFinite(val)) return;
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            scoringRule: {
+                                              ...cur.metricBinding!.scoringRule,
+                                              bounds: [
+                                                cur.metricBinding!.scoringRule.bounds?.[0] ?? 0,
+                                                val,
+                                              ],
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px]"
+                                    />
+                                  </label>
+                                </div>
+                              )}
+
+                              {selectedNodeEffect.metricBinding.scoringRule.type === 'boolean' && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <label className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-400">trueScore</span>
+                                    <input
+                                      type="number"
+                                      value={
+                                        selectedNodeEffect.metricBinding.scoringRule.trueScore ??
+                                        100
+                                      }
+                                      onChange={(e) => {
+                                        const val = Number.parseFloat(e.target.value);
+                                        if (!Number.isFinite(val)) return;
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            scoringRule: {
+                                              ...cur.metricBinding!.scoringRule,
+                                              trueScore: val,
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-emerald-300"
+                                    />
+                                  </label>
+                                  <label className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-400">falseScore</span>
+                                    <input
+                                      type="number"
+                                      value={
+                                        selectedNodeEffect.metricBinding.scoringRule.falseScore ?? 0
+                                      }
+                                      onChange={(e) => {
+                                        const val = Number.parseFloat(e.target.value);
+                                        if (!Number.isFinite(val)) return;
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            scoringRule: {
+                                              ...cur.metricBinding!.scoringRule,
+                                              falseScore: val,
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-rose-300"
+                                    />
+                                  </label>
+                                </div>
+                              )}
+
+                              {selectedNodeEffect.metricBinding.scoringRule.type ===
+                                'target_range' && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <label className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-400">
+                                      最优下限 opt[0]
+                                    </span>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={
+                                        selectedNodeEffect.metricBinding.scoringRule
+                                          .optimalRange?.[0] ?? 0.6
+                                      }
+                                      onChange={(e) => {
+                                        const val = Number.parseFloat(e.target.value);
+                                        if (!Number.isFinite(val)) return;
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            scoringRule: {
+                                              ...cur.metricBinding!.scoringRule,
+                                              optimalRange: [
+                                                val,
+                                                cur.metricBinding!.scoringRule.optimalRange?.[1] ??
+                                                  0.9,
+                                              ],
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px]"
+                                    />
+                                  </label>
+                                  <label className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-400">
+                                      最优上限 opt[1]
+                                    </span>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={
+                                        selectedNodeEffect.metricBinding.scoringRule
+                                          .optimalRange?.[1] ?? 0.9
+                                      }
+                                      onChange={(e) => {
+                                        const val = Number.parseFloat(e.target.value);
+                                        if (!Number.isFinite(val)) return;
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            scoringRule: {
+                                              ...cur.metricBinding!.scoringRule,
+                                              optimalRange: [
+                                                cur.metricBinding!.scoringRule.optimalRange?.[0] ??
+                                                  0.6,
+                                                val,
+                                              ],
+                                            },
+                                          },
+                                        }));
+                                      }}
+                                      className="w-full rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px]"
+                                    />
+                                  </label>
+                                </div>
+                              )}
+
+                              {selectedNodeEffect.metricBinding.scoringRule.type === 'step' && (
+                                <div className="space-y-1">
+                                  {(selectedNodeEffect.metricBinding.scoringRule.steps ?? []).map(
+                                    (st, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="flex items-center gap-1.5 font-mono text-[11px]"
+                                      >
+                                        <input
+                                          type="number"
+                                          step="any"
+                                          value={st.val}
+                                          onChange={(e) => {
+                                            const v = Number.parseFloat(e.target.value);
+                                            if (!Number.isFinite(v)) return;
+                                            updateSelectedEffect((cur) => {
+                                              const steps = [
+                                                ...(cur.metricBinding!.scoringRule.steps ?? []),
+                                              ];
+                                              steps[idx] = { ...steps[idx], val: v };
+                                              return {
+                                                ...cur,
+                                                metricBinding: {
+                                                  ...cur.metricBinding!,
+                                                  scoringRule: {
+                                                    ...cur.metricBinding!.scoringRule,
+                                                    steps,
+                                                  },
+                                                },
+                                              };
+                                            });
+                                          }}
+                                          className="w-20 rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5"
+                                        />
+                                        <span className="text-slate-500">➔</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          value={st.score}
+                                          onChange={(e) => {
+                                            const sc = Number.parseFloat(e.target.value);
+                                            if (!Number.isFinite(sc)) return;
+                                            updateSelectedEffect((cur) => {
+                                              const steps = [
+                                                ...(cur.metricBinding!.scoringRule.steps ?? []),
+                                              ];
+                                              steps[idx] = { ...steps[idx], score: sc };
+                                              return {
+                                                ...cur,
+                                                metricBinding: {
+                                                  ...cur.metricBinding!,
+                                                  scoringRule: {
+                                                    ...cur.metricBinding!.scoringRule,
+                                                    steps,
+                                                  },
+                                                },
+                                              };
+                                            });
+                                          }}
+                                          className="w-20 rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5 text-emerald-300"
+                                        />
+                                        <span className="text-[10px] text-slate-500">分</span>
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 门控告警阈值 */}
+                            {selectedNodeEffect.role === 'gate' && (
+                              <div className="flex flex-wrap items-center gap-1.5 rounded border border-rose-500/30 bg-rose-950/20 px-2.5 py-1.5 text-[10px]">
+                                <span className="font-semibold text-rose-300">Gate 红线条件:</span>
+                                <select
+                                  value={
+                                    selectedNodeEffect.metricBinding.alarmThreshold?.operator ?? '>'
+                                  }
+                                  onChange={(e) =>
+                                    updateSelectedEffect((cur) => ({
+                                      ...cur,
+                                      metricBinding: {
+                                        ...cur.metricBinding!,
+                                        alarmThreshold: {
+                                          operator: e.target.value as AlarmThreshold['operator'],
+                                          value: cur.metricBinding!.alarmThreshold?.value ?? 0,
+                                          severity:
+                                            cur.metricBinding!.alarmThreshold?.severity ?? 'major',
+                                          messageTemplate:
+                                            cur.metricBinding!.alarmThreshold?.messageTemplate,
+                                        },
+                                      },
+                                    }))
+                                  }
+                                  className="rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5 font-mono text-rose-200"
+                                >
+                                  {(['>', '<', '==', '>=', '<='] as const).map((op) => (
+                                    <option key={op} value={op}>
+                                      {op}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={selectedNodeEffect.metricBinding.alarmThreshold?.value ?? 0}
+                                  onChange={(e) => {
+                                    const v = Number.parseFloat(e.target.value);
+                                    if (!Number.isFinite(v)) return;
+                                    updateSelectedEffect((cur) => ({
+                                      ...cur,
+                                      metricBinding: {
+                                        ...cur.metricBinding!,
+                                        alarmThreshold: {
+                                          operator:
+                                            cur.metricBinding!.alarmThreshold?.operator ?? '>',
+                                          value: v,
+                                          severity:
+                                            cur.metricBinding!.alarmThreshold?.severity ?? 'major',
+                                          messageTemplate:
+                                            cur.metricBinding!.alarmThreshold?.messageTemplate,
+                                        },
+                                      },
+                                    }));
+                                  }}
+                                  className="w-20 rounded border border-[#30363d] bg-[#0d1117] px-1.5 py-0.5 font-mono text-rose-200"
+                                />
+                                <span className="text-slate-400">触发违例</span>
+                              </div>
+                            )}
+
+                            {/* paramOverrides & sliceFilter */}
+                            <div className="space-y-2">
+                              <label className="block space-y-0.5">
+                                <span className="text-[10px] text-amber-300">
+                                  paramOverrides (透传上游阈值 JSON)
+                                </span>
+                                <textarea
+                                  rows={2}
+                                  value={paramOverridesText}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    setParamOverridesText(raw);
+                                    try {
+                                      const parsed = raw.trim() ? JSON.parse(raw) : {};
+                                      if (
+                                        !parsed ||
+                                        typeof parsed !== 'object' ||
+                                        Array.isArray(parsed)
+                                      ) {
+                                        setParamOverridesErr('必须为 JSON 对象');
+                                      } else {
+                                        setParamOverridesErr(null);
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            paramOverrides:
+                                              Object.keys(parsed).length > 0 ? parsed : undefined,
+                                          },
+                                        }));
+                                      }
+                                    } catch (err) {
+                                      setParamOverridesErr(
+                                        err instanceof Error ? err.message : 'JSON 格式错误',
+                                      );
+                                    }
+                                  }}
+                                  placeholder='{"damageThreshold": 0.5}'
+                                  className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[10px] text-amber-200"
+                                />
+                                {paramOverridesErr && (
+                                  <span className="text-[9px] text-rose-400">
+                                    {paramOverridesErr}
+                                  </span>
+                                )}
+                              </label>
+
+                              <label className="block space-y-0.5">
+                                <span className="text-[10px] text-slate-400">
+                                  sliceFilter (切片 JSON)
+                                </span>
+                                <textarea
+                                  rows={2}
+                                  value={sliceFilterText}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    setSliceFilterText(raw);
+                                    try {
+                                      const parsed = raw.trim() ? JSON.parse(raw) : {};
+                                      if (
+                                        !parsed ||
+                                        typeof parsed !== 'object' ||
+                                        Array.isArray(parsed)
+                                      ) {
+                                        setSliceFilterErr('必须为 JSON 对象');
+                                      } else {
+                                        setSliceFilterErr(null);
+                                        updateSelectedEffect((cur) => ({
+                                          ...cur,
+                                          metricBinding: {
+                                            ...cur.metricBinding!,
+                                            sliceFilter:
+                                              Object.keys(parsed).length > 0 ? parsed : undefined,
+                                          },
+                                        }));
+                                      }
+                                    } catch (err) {
+                                      setSliceFilterErr(
+                                        err instanceof Error ? err.message : 'JSON 格式错误',
+                                      );
+                                    }
+                                  }}
+                                  placeholder='{"MissionName": "..."}'
+                                  className="w-full rounded border border-[#30363d] bg-[#161b22] px-2 py-1 font-mono text-[10px] text-slate-200"
+                                />
+                                {sliceFilterErr && (
+                                  <span className="text-[9px] text-rose-400">{sliceFilterErr}</span>
+                                )}
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  /* ── Tab 3: 评估证据 ── */
+                  <div className="space-y-3">
+                    {selectedEval ? (
+                      <>
+                        <div className="space-y-2 rounded-lg border border-[#30363d] bg-[#0d1117] p-3 font-mono text-[11px]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">评估状态:</span>
+                            <span
+                              className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${getVerdictBadgeStyle(
+                                selectedEval.gateStatus === 'violated'
+                                  ? selectedEval.gateMode === 'hard'
+                                    ? 'DISQUALIFIED'
+                                    : 'WARNING'
+                                  : selectedEval.status === 'unavailable'
+                                    ? undefined
+                                    : 'PASS',
+                              )}`}
+                            >
+                              {selectedEval.gateStatus
+                                ? `${selectedEval.status.toUpperCase()} · GATE ${selectedEval.gateStatus.toUpperCase()}`
+                                : selectedEval.status.toUpperCase()}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">效用评分:</span>
+                            <span className="text-sm font-bold text-indigo-200">
+                              {selectedEval.score !== null && selectedEval.score !== undefined
+                                ? `${selectedEval.score.toFixed(2)} / 100`
+                                : '--'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">可用权重覆盖:</span>
+                            <span className="text-slate-200">
+                              {(selectedEval.availableWeightRatio * 100).toFixed(1)}%
+                            </span>
+                          </div>
+
+                          {selectedEval.rawValue !== undefined &&
+                            selectedEval.rawValue !== null && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-400">原始物理读数:</span>
+                                <span className="text-emerald-300">
+                                  {String(selectedEval.rawValue)}
+                                </span>
+                              </div>
+                            )}
+
+                          {selectedEval.strategyUsed && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">合成策略:</span>
+                              <span className="text-cyan-200">{selectedEval.strategyUsed}</span>
+                            </div>
+                          )}
+
+                          {selectedEval.missingDataReason && (
+                            <div className="rounded border border-amber-500/40 bg-amber-950/30 p-2 text-[10px] text-amber-200 leading-relaxed">
+                              {selectedEval.missingDataReason}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 全阵营对比节点分值明细 */}
+                        {sideComparison && sideComparison.sides.length > 0 && (
+                          <div className="space-y-1.5 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                            <div className="text-[11px] font-semibold text-cyan-300">
+                              阵营对比得分 ({sideComparison.sides.length} 方)
+                            </div>
+                            <div className="space-y-1">
+                              {sideComparison.sides.map((side, idx) => {
+                                const pal =
+                                  DYNAMIC_SIDE_PALETTES[idx % DYNAMIC_SIDE_PALETTES.length];
+                                const sNode = sideComparison.bySide[side]?.nodeResults?.[selectedNode.id];
+                                return (
+                                  <div
+                                    key={`ev-side-${side}`}
+                                    className="flex items-center justify-between rounded border border-[#30363d]/80 bg-[#161b22] px-2.5 py-1 font-mono text-[11px]"
+                                  >
+                                    <span className={pal.text}>{side}</span>
+                                    <span className="font-semibold text-slate-100">
+                                      {sNode && sNode.score !== null && sNode.score !== undefined
+                                        ? `${sNode.score.toFixed(1)} 分`
+                                        : sNode?.rawValue !== undefined && sNode?.rawValue !== null
+                                          ? String(sNode.rawValue)
+                                          : '--'}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 证据溯源链 (evidenceRefs) */}
+                        <div className="space-y-2 rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-emerald-300">
+                              证据溯源链 ({selectedEval.evidenceRefs?.length ?? 0})
+                            </span>
+                            {selectedBoundMetricId && onDrillDownToMetric && (
+                              <button
+                                type="button"
+                                onClick={() => onDrillDownToMetric(selectedBoundMetricId)}
+                                className="inline-flex items-center gap-1 text-[10px] text-emerald-300 hover:underline cursor-pointer"
+                              >
+                                <span>查看指标 ({selectedBoundMetricId})</span>
+                                <ArrowDownRight className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+
+                          {!selectedEval.evidenceRefs || selectedEval.evidenceRefs.length === 0 ? (
+                            <div className="text-[11px] text-slate-500">
+                              该节点暂无直接底层证据记录（可能为中间合成节点或处于缺数态）。
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {selectedEval.evidenceRefs.map((ev, idx) => (
+                                <div
+                                  key={`ev-ref-${idx}`}
+                                  className="rounded border border-[#30363d]/80 bg-[#161b22] p-2 text-[11px]"
+                                >
+                                  <div className="flex items-center justify-between gap-1 font-mono text-[10px] text-slate-400">
+                                    <span>
+                                      {ev.source} · {String(ev.ref)}
+                                    </span>
+                                    {ev.scenarioClock && <span>{ev.scenarioClock}</span>}
+                                  </div>
+                                  <div className="mt-1 text-slate-200">{ev.description}</div>
+                                  {ev.snippet && (
+                                    <pre className="mt-1 overflow-x-auto rounded bg-[#0d1117] p-1.5 font-mono text-[10px] text-slate-400">
+                                      {JSON.stringify(ev.snippet, null, 2)}
+                                    </pre>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-[#30363d] p-6 text-center text-[11px] text-slate-500">
+                        尚未运行评估。点击顶部「运行评估」或「阵营对比」后查看计算结果与证据记录。
                       </div>
                     )}
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            </aside>
+          </div>
         </div>
-      </section>
+      )}
+
+      {/* 二级配置弹窗：上游指标图选择与体系全局属性 */}
+      {systemConfigOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-xs"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setSystemConfigOpen(false);
+          }}
+        >
+          <div className="w-full max-w-lg rounded-xl border border-[#30363d] bg-[#161b22] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#30363d] px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                <Sliders className="h-4 w-4 text-indigo-400" />
+                <span>上游指标图与体系配置</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSystemConfigOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-[#0d1117] hover:text-white cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 p-4 text-xs">
+              {metricGraphs.length > 0 && (
+                <label className="block space-y-1">
+                  <span className="text-[11px] text-slate-400">
+                    关联指标图 (metricGraphId)
+                  </span>
+                  <select
+                    value={selectedMetricGraphId}
+                    onChange={(e) => {
+                      const mgId = e.target.value;
+                      setSelectedMetricGraphId(mgId);
+                      setActiveSystem((prev) => ({
+                        ...prev,
+                        metricGraphId: mgId || undefined,
+                      }));
+                    }}
+                    className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-emerald-300 focus:border-indigo-500 focus:outline-none"
+                  >
+                    {metricGraphs.map((mg) => (
+                      <option key={mg.graphId} value={mg.graphId}>
+                        {mg.name} ({mg.graphId})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className="text-[11px] text-slate-400">体系 ID (systemId)</span>
+                  <input
+                    type="text"
+                    value={activeSystem.systemId}
+                    onChange={(e) =>
+                      setActiveSystem((prev) => ({ ...prev, systemId: e.target.value }))
+                    }
+                    className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 font-mono text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] text-slate-400">版本 (version)</span>
+                  <input
+                    type="text"
+                    value={activeSystem.version}
+                    onChange={(e) =>
+                      setActiveSystem((prev) => ({ ...prev, version: e.target.value }))
+                    }
+                    className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 font-mono text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                  />
+                </label>
+              </div>
+
+              <label className="block space-y-1">
+                <span className="text-[11px] text-slate-400">体系名称 (name)</span>
+                <input
+                  type="text"
+                  value={activeSystem.name}
+                  onChange={(e) =>
+                    setActiveSystem((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                />
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-[11px] text-slate-400">
+                  终态综合效能节点 (terminalEffectNodeId)
+                </span>
+                <select
+                  value={activeSystem.terminalEffectNodeId}
+                  onChange={(e) =>
+                    setActiveSystem((prev) => ({
+                      ...prev,
+                      terminalEffectNodeId: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-indigo-200 focus:border-indigo-500 focus:outline-none"
+                >
+                  {activeSystem.nodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.label} ({n.id})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-[11px] text-slate-400">体系说明 (description)</span>
+                <textarea
+                  rows={2}
+                  value={activeSystem.description ?? ''}
+                  onChange={(e) =>
+                    setActiveSystem((prev) => ({ ...prev, description: e.target.value }))
+                  }
+                  className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                />
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-[#30363d] px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setSystemConfigOpen(false)}
+                className="rounded-md border border-indigo-500/50 bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 cursor-pointer"
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

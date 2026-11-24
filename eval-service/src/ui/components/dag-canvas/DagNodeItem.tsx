@@ -210,13 +210,13 @@ export function DagNodeItem({
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-300">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-            <span>Fail-Closed · 数据缺失不可用</span>
+            <span>数据缺失</span>
           </div>
           <div
             className="truncate text-[10px] text-slate-400"
-            title={s?.missingDataReason || '上游缺数或所需底表/字段不存在'}
+            title={s?.missingDataReason || '推演日志中缺少对应底表或关键字段'}
           >
-            {s?.missingDataReason || '缺少实证底表或关键字段为空'}
+            {s?.missingDataReason || '推演日志中缺少对应底表或字段'}
           </div>
         </div>
       );
@@ -433,11 +433,11 @@ export function DagNodeItem({
 
       {/* 卡片头部 */}
       <div className="flex h-[34px] shrink-0 items-center justify-between gap-1.5 rounded-t-xl border-b border-[#30363d]/80 bg-[#0d1117]/85 px-2.5">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className={`shrink-0 rounded p-1 bg-[#161b22] border border-[#30363d]/70 ${isoMeta.accentTextClass}`}>
             <Icon className="h-3.5 w-3.5" />
           </div>
-          <span className="truncate text-xs font-semibold text-slate-100" title={node.label}>
+          <span className="flex-1 truncate text-xs font-semibold text-slate-100" title={node.label}>
             {node.label}
           </span>
         </div>
@@ -471,7 +471,7 @@ export function DagNodeItem({
                 e.stopPropagation();
                 onDelete(node.id);
               }}
-              className="rounded p-1 text-slate-500 transition hover:bg-rose-500/20 hover:text-rose-400 cursor-pointer"
+              className="hidden group-hover:inline-flex group-focus-within:inline-flex rounded p-1 text-slate-500 transition hover:bg-rose-500/20 hover:text-rose-400 cursor-pointer"
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -491,8 +491,8 @@ export function DagNodeItem({
               <span
                 title={
                   incomingWeightSummary.isBalanced
-                    ? '入边局部权重校验通过 (Σw = 1.00)'
-                    : '入边局部权重失衡：请调整至 Σw = 1.00'
+                    ? '权重和校验通过 (1.00)'
+                    : '入边权重和不等于 1.00'
                 }
                 className={`rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold whitespace-nowrap tabular-nums ${
                   incomingWeightSummary.isBalanced

@@ -25,7 +25,7 @@ import {
   evaluateMetricGraph,
   type MetricOperatorInput,
 } from '../src/indicators/metric-graph-store.ts';
-import { SystemDagStore } from '../src/systems/system-dag-store.ts';
+import { SystemDagStore, type StoredEvaluationSystemDag } from '../src/systems/system-dag-store.ts';
 
 const tempDirs: string[] = [];
 
@@ -1908,6 +1908,373 @@ describe('discoverSidesFromOperatorResults & POST /api/v4/metric-graphs/:graphId
       assert.ok(Math.abs((compareRes.data.bySide['蓝方'].nodeResults['mn_completion'].value ?? 0) - 0.4) < 1e-9);
       assert.ok(Math.abs((compareRes.data.bySide['蓝方'].nodeResults['mn_hit_rate'].value ?? 0) - 0.2) < 1e-9);
       assert.ok(Math.abs((compareRes.data.bySide['蓝方'].nodeResults['mn_composite'].value ?? 0) - 0.3) < 1e-9);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+// ──────────────────── 8. 三库体系动态多阵营对比评估 (system-dags/:systemId/compare-sides) ────────────────────
+
+describe('POST /api/v4/system-dags/:systemId/compare-sides', () => {
+  it('runs operators once, discovers sides dynamically (绿方/红方/蓝方), and returns overall + bySide scores & gateVerdict', async () => {
+    const dir = createTempDir('f1-v4-sys-compare-sides-');
+    const effectStore = new EffectStore(path.join(dir, 'custom-effects.json'));
+    const metricGraphStore = new MetricGraphStore(path.join(dir, 'v4-metric-graphs.json'));
+    const systemDagStore = new SystemDagStore(path.join(dir, 'v4-system-dags.json'), effectStore);
+
+    const savedGraph: MetricGraphDefinition = {
+      graphId: 'mg_sys_compare_3sides',
+      name: '三库体系动态对比指标图',
+      graphKind: 'metric',
+      nodes: [
+        {
+          id: 'mn_completion',
+          kind: 'metric',
+          label: '突击任务完成度',
+          position: { x: 0, y: 0 },
+          metricConfig: {
+            metricId: 'strike.completion',
+            name: '突击任务完成度',
+            militaryLevel: 'MOP',
+            domainTag: 'firepower',
+            mode: 'from_operator',
+            sourceRef: 'strike.single_mission_metrics',
+            targetField: '完成比',
+            reduce: 'mean',
+            unit: 'ratio',
+          },
+        },
+        {
+          id: 'mn_hit_rate',
+          kind: 'metric',
+          label: '弹药命中率',
+          position: { x: 0, y: 140 },
+          metricConfig: {
+            metricId: 'weapon.hit_rate',
+            name: '弹药命中率',
+            militaryLevel: 'MOP',
+            domainTag: 'firepower',
+            mode: 'from_operator',
+            sourceRef: 'weapon.engagement',
+            targetField: '命中值',
+            reduce: 'mean',
+            unit: 'ratio',
+          },
+        },
+        {
+          id: 'mn_fratricide',
+          kind: 'metric',
+          label: '友军误伤计数',
+          position: { x: 0, y: 280 },
+          metricConfig: {
+            metricId: 'roe.fratricide_count',
+            name: '友军误伤计数',
+            militaryLevel: 'MOP',
+            domainTag: 'survivability',
+            mode: 'from_operator',
+            sourceRef: 'roe.fratricide_count',
+            targetField: 'FratricideCount',
+            reduce: 'sum',
+            unit: 'count',
+          },
+        },
+      ],
+      edges: [],
+    };
+    metricGraphStore.upsert(savedGraph);
+
+    const savedSystem: StoredEvaluationSystemDag = {
+      systemId: 'sys_compare_3sides',
+      name: '三阵营体系对比评估模型',
+      version: '1.0.0',
+      metricGraphId: 'mg_sys_compare_3sides',
+      terminalEffectNodeId: 'ef_terminal',
+      // 故意预设单阵营 targetSide，验证 compare-sides 不受其限制且能发现全部分方
+      globalParams: {
+        targetSide: '红方',
+      },
+      nodes: [
+        {
+          id: 'px_completion',
+          kind: 'metric_proxy',
+          label: '突击任务完成度代理',
+          refId: 'strike.completion',
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: 'px_hit',
+          kind: 'metric_proxy',
+          label: '弹药命中率代理',
+          refId: 'weapon.hit_rate',
+          position: { x: 0, y: 140 },
+        },
+        {
+          id: 'px_frat',
+          kind: 'metric_proxy',
+          label: '友军误伤计数代理',
+          refId: 'roe.fratricide_count',
+          position: { x: 0, y: 280 },
+        },
+        {
+          id: 'ef_strike',
+          kind: 'effect',
+          label: '突击达成效果',
+          position: { x: 240, y: 0 },
+          inlineEffect: {
+            effectId: 'eff_cmp_strike',
+            name: '突击达成效果',
+            role: 'effect',
+            metricBinding: {
+              metricId: 'strike.completion',
+              scoringRule: { type: 'larger_is_better', worst: 0, optimal: 1 },
+            },
+            aggregation: { strategy: 'weighted_sum', missingPolicy: 'skip_renormalize' },
+          },
+        },
+        {
+          id: 'ef_hit',
+          kind: 'effect',
+          label: '武器命中效果',
+          position: { x: 240, y: 140 },
+          inlineEffect: {
+            effectId: 'eff_cmp_hit',
+            name: '武器命中效果',
+            role: 'effect',
+            metricBinding: {
+              metricId: 'weapon.hit_rate',
+              scoringRule: { type: 'larger_is_better', worst: 0, optimal: 1 },
+            },
+            aggregation: { strategy: 'weighted_sum', missingPolicy: 'skip_renormalize' },
+          },
+        },
+        {
+          id: 'dim_firepower',
+          kind: 'dimension',
+          label: '火力打击维度',
+          position: { x: 500, y: 70 },
+          inlineEffect: {
+            effectId: 'eff_cmp_dim_firepower',
+            name: '火力打击维度',
+            role: 'effect',
+            aggregation: { strategy: 'weighted_sum', missingPolicy: 'skip_renormalize' },
+          },
+        },
+        {
+          id: 'gt_frat',
+          kind: 'gate',
+          label: '误伤红线硬门控',
+          refId: 'gate_fratricide_zero',
+          position: { x: 240, y: 280 },
+        },
+        {
+          id: 'ef_terminal',
+          kind: 'effect',
+          label: '体系综合效能',
+          position: { x: 760, y: 70 },
+          inlineEffect: {
+            effectId: 'eff_cmp_terminal',
+            name: '体系综合效能',
+            role: 'effect',
+            aggregation: { strategy: 'weighted_sum', missingPolicy: 'skip_renormalize' },
+          },
+        },
+      ],
+      edges: [
+        { id: 'e_s1', sourceNodeId: 'px_completion', targetNodeId: 'ef_strike' },
+        { id: 'e_s2', sourceNodeId: 'px_hit', targetNodeId: 'ef_hit' },
+        { id: 'e_s3', sourceNodeId: 'px_frat', targetNodeId: 'gt_frat' },
+        { id: 'e_d1', sourceNodeId: 'ef_strike', targetNodeId: 'dim_firepower', weight: 0.6 },
+        { id: 'e_d2', sourceNodeId: 'ef_hit', targetNodeId: 'dim_firepower', weight: 0.4 },
+        { id: 'e_t1', sourceNodeId: 'dim_firepower', targetNodeId: 'ef_terminal', weight: 1.0 },
+      ],
+    };
+    systemDagStore.upsert(savedSystem);
+
+    const opCallCounts: Record<string, number> = {};
+    const opReceivedParams: Record<string, Record<string, unknown>> = {};
+    const deps: V4RouteDeps = {
+      effectStore,
+      metricGraphStore,
+      systemDagStore,
+      cache: new DagNodeCache(),
+      listOperators: () => [],
+      runOperator: async (operatorId, body): Promise<OperatorNodeExecutionResult> => {
+        opCallCounts[operatorId] = (opCallCounts[operatorId] ?? 0) + 1;
+        opReceivedParams[operatorId] = (body.params as Record<string, unknown>) ?? {};
+        if (operatorId === 'strike.single_mission_metrics') {
+          const rows = [
+            { 任务ID: 'M1', 分方: '绿方', 完成比: 0.6 },
+            { 任务ID: 'M2', 分方: '红方', 完成比: 0.9 },
+            { 任务ID: 'M3', 分方: '红方', 完成比: 0.7 },
+            { 任务ID: 'M4', 分方: '蓝方', 完成比: 0.5 },
+          ];
+          return {
+            nodeId: operatorId,
+            status: 'valid',
+            dataset: {
+              columns: [
+                { name: '任务ID', type: 'string' },
+                { name: '分方', type: 'string' },
+                { name: '完成比', type: 'number' },
+              ],
+              rows,
+              totalRows: rows.length,
+            },
+            evidenceRefs: [],
+            cacheKey: 'ck_sys_strike',
+            latencyMs: 1,
+          };
+        }
+        if (operatorId === 'weapon.engagement') {
+          const rows = [
+            { 发射分方: '绿方', 命中值: 1.0 },
+            { 发射分方: '红方', 命中值: 0.6 },
+            { 发射分方: '蓝方', 命中值: 0.5 },
+          ];
+          return {
+            nodeId: operatorId,
+            status: 'valid',
+            dataset: {
+              columns: [
+                { name: '发射分方', type: 'string' },
+                { name: '命中值', type: 'number' },
+              ],
+              rows,
+              totalRows: rows.length,
+            },
+            evidenceRefs: [],
+            cacheKey: 'ck_sys_weapon',
+            latencyMs: 1,
+          };
+        }
+        if (operatorId === 'roe.fratricide_count') {
+          const rows = [
+            { 分方: '绿方', FratricideCount: 0 },
+            { 分方: '红方', FratricideCount: 0 },
+            { 分方: '蓝方', FratricideCount: 1 },
+          ];
+          return {
+            nodeId: operatorId,
+            status: 'valid',
+            dataset: {
+              columns: [
+                { name: '分方', type: 'string' },
+                { name: 'FratricideCount', type: 'number' },
+              ],
+              rows,
+              totalRows: rows.length,
+            },
+            evidenceRefs: [],
+            cacheKey: 'ck_sys_frat',
+            latencyMs: 1,
+          };
+        }
+        return {
+          nodeId: operatorId,
+          status: 'unavailable',
+          evidenceRefs: [],
+          missingDataReason: `未知算子: ${operatorId}`,
+          cacheKey: '',
+          latencyMs: 0,
+        };
+      },
+    };
+
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url || '/', 'http://127.0.0.1');
+      const pathname = decodeURIComponent(url.pathname);
+      const handled = await handleV4ApiRequest(
+        req,
+        res,
+        pathname,
+        readJsonBody,
+        sendJson,
+        deps,
+      );
+      if (!handled) {
+        sendJson(res, 404, { ok: false, error: 'Not Found' });
+      }
+    });
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const addr = server.address();
+    assert.ok(addr && typeof addr === 'object');
+    const baseUrl = `http://127.0.0.1:${addr.port}`;
+
+    try {
+      const missingRes = await requestJson<{ ok: boolean; error: string }>(
+        baseUrl,
+        'POST',
+        '/api/v4/system-dags/sys_non_existent/compare-sides',
+        { runId: 'run_404' },
+      );
+      assert.equal(missingRes.status, 404);
+      assert.equal(missingRes.data.ok, false);
+
+      type SideEvalShape = {
+        overallScore: number | null;
+        rawOverallScore: number | null;
+        gateVerdict: string;
+        resolvedParamOverrides: Record<string, Record<string, unknown>>;
+        nodeResults: Record<string, { score: number | null; status: string }>;
+      };
+
+      const compareRes = await requestJson<{
+        ok: boolean;
+        systemId: string;
+        runId: string;
+        metricGraphId: string;
+        sides: string[];
+        overall: SideEvalShape;
+        bySide: Record<string, SideEvalShape>;
+      }>(baseUrl, 'POST', '/api/v4/system-dags/sys_compare_3sides/compare-sides', {
+        runId: 'run_sys_compare_1',
+      });
+
+      assert.equal(compareRes.status, 200);
+      assert.equal(compareRes.data.ok, true);
+      assert.equal(compareRes.data.systemId, 'sys_compare_3sides');
+      assert.equal(compareRes.data.runId, 'run_sys_compare_1');
+      assert.equal(compareRes.data.metricGraphId, 'mg_sys_compare_3sides');
+      assert.deepEqual(compareRes.data.sides, ['绿方', '红方', '蓝方']);
+
+      // 全量算子仅运行 1 次，且参数覆写成功透传至底层算子
+      assert.equal(opCallCounts['strike.single_mission_metrics'], 1);
+      assert.equal(opCallCounts['weapon.engagement'], 1);
+      assert.equal(opCallCounts['roe.fratricide_count'], 1);
+      assert.equal(opReceivedParams['roe.fratricide_count']?.zeroTolerance, true);
+      assert.equal(opReceivedParams['strike.single_mission_metrics']?.targetSide, undefined);
+
+      // overall: strike=mean(0.6,0.9,0.7,0.5)=0.675 (67.5), hit=mean(1.0,0.6,0.5)=0.7 (70)
+      // dim_firepower = 0.6*67.5 + 0.4*70 = 68.5, 蓝方误伤导致 overall 触发 Hard GATE -> 封顶 39
+      assert.ok(Math.abs((compareRes.data.overall.nodeResults['dim_firepower']?.score ?? 0) - 68.5) < 1e-6);
+      assert.ok(Math.abs((compareRes.data.overall.rawOverallScore ?? 0) - 68.5) < 1e-6);
+      assert.equal(compareRes.data.overall.gateVerdict, 'DISQUALIFIED');
+      assert.equal(compareRes.data.overall.overallScore, 39);
+
+      // 绿方: strike=60, hit=100 -> dim_firepower=76, PASS -> overallScore=76
+      const green = compareRes.data.bySide['绿方'];
+      assert.equal(green.gateVerdict, 'PASS');
+      assert.ok(Math.abs((green.nodeResults['dim_firepower']?.score ?? 0) - 76) < 1e-6);
+      assert.ok(Math.abs((green.rawOverallScore ?? 0) - 76) < 1e-6);
+      assert.ok(Math.abs((green.overallScore ?? 0) - 76) < 1e-6);
+
+      // 红方: strike=80, hit=60 -> dim_firepower=72, PASS -> overallScore=72
+      const red = compareRes.data.bySide['红方'];
+      assert.equal(red.gateVerdict, 'PASS');
+      assert.ok(Math.abs((red.nodeResults['dim_firepower']?.score ?? 0) - 72) < 1e-6);
+      assert.ok(Math.abs((red.rawOverallScore ?? 0) - 72) < 1e-6);
+      assert.ok(Math.abs((red.overallScore ?? 0) - 72) < 1e-6);
+
+      // 蓝方: strike=50, hit=50 -> dim_firepower=50, 误伤=1 触发 Hard GATE -> DISQUALIFIED, raw=50, overall=39
+      const blue = compareRes.data.bySide['蓝方'];
+      assert.equal(blue.gateVerdict, 'DISQUALIFIED');
+      assert.ok(Math.abs((blue.nodeResults['dim_firepower']?.score ?? 0) - 50) < 1e-6);
+      assert.ok(Math.abs((blue.rawOverallScore ?? 0) - 50) < 1e-6);
+      assert.equal(blue.overallScore, 39);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

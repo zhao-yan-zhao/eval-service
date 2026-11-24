@@ -147,73 +147,31 @@ test('Stage 5 & 6：全栈 UI 构建产物与六大工作台无头浏览器端�
     await page.waitForSelector('#op-panel-catalog:not([hidden])', { timeout: 5_000 });
     await snap('02-operators-desktop.png');
 
-    // 3. 指标工坊 (#tab-indicators)
+    // 3. 指标库 (#tab-indicators · V4 指标清单与聚焦画布)
     await page.locator('#tab-indicators').click();
     await page.waitForSelector('#panel-indicators:not([hidden])', { timeout: 5_000 });
-    const indClassicBtn = page.locator('#btn-indicator-mode-classic');
-    if (await indClassicBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {
-      await indClassicBtn.click();
-    }
-    await page.waitForTimeout(250);
+    const firstMetricCanvasBtn = page.locator('#panel-indicators tbody tr').getByRole('button', { name: '画布编排' }).first();
+    await firstMetricCanvasBtn.waitFor({ state: 'visible', timeout: 10_000 });
     await assertNoHorizontalOverflow('1440-indicators');
-    await assertVisibleCanvasDrawn('#panel-indicators', 'indicators');
 
-    await page.locator('#ind-id').fill('ind_e2e_verified_1');
-    await page.locator('#ind-name').fill('端到端实时验证响应指标');
-    await page.getByRole('button', { name: '保存为标准自定义指标' }).click();
-    await page.locator('#panel-indicators').getByText('ind_e2e_verified_1').first().waitFor({ state: 'visible', timeout: 10_000 });
+    await firstMetricCanvasBtn.click();
+    await page.locator('#panel-indicators').getByRole('button', { name: '返回指标列表' }).waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('#panel-indicators').getByRole('button', { name: '全貌' }).waitFor({ state: 'visible', timeout: 10_000 });
     await snap('03-indicators-desktop.png');
+    await page.locator('#panel-indicators').getByRole('button', { name: '返回指标列表' }).click();
+    await firstMetricCanvasBtn.waitFor({ state: 'visible', timeout: 5_000 });
 
-    // 4. 体系编排器 (#tab-systems)
+    // 4. 评估体系 (#tab-systems · V4 体系列表、总览与画布)
     await page.locator('#tab-systems').click();
     await page.waitForSelector('#panel-systems:not([hidden])', { timeout: 5_000 });
-    const sysClassicBtn = page.locator('#btn-system-mode-classic');
-    if (await sysClassicBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {
-      await sysClassicBtn.click();
-    }
+    const firstSystemDetailBtn = page.locator('#panel-systems tbody tr').getByRole('button', { name: '查看详情' }).first();
+    await firstSystemDetailBtn.waitFor({ state: 'visible', timeout: 10_000 });
     await assertNoHorizontalOverflow('1440-systems');
 
-    // 模板匹配草案生成
-    await page.locator('#panel-systems').getByRole('button', { name: '生成体系草案' }).click();
-    await page.locator('#panel-systems').getByText('草案已生成：').first().waitFor({ state: 'visible', timeout: 10_000 });
-
-    // 打开 AHP 原生 <dialog> 并运行 Python SciPy 特征根求解
-    await page.locator('#panel-systems').getByRole('button', { name: 'AHP 矩阵定权助手' }).click();
-    await page.waitForSelector('dialog[open]', { timeout: 5_000 });
-    await page.locator('dialog[open]').getByRole('button', { name: '计算 AHP 特征根权重与 CR 检验' }).click();
-    await page.locator('dialog[open]').getByText('CR =').first().waitFor({ state: 'visible', timeout: 15_000 });
-    await snap('04b-ahp-dialog.png');
-    await page.locator('dialog[open]').getByRole('button', { name: '关闭弹窗' }).click();
-    await page.waitForSelector('dialog[open]', { state: 'detached', timeout: 5_000 });
-
-    // 4b. 切换至树状层级结构视图交互、节点展开/折叠与节点属性详情面板联动
-    await page.locator('#panel-systems').getByRole('button', { name: '层级结构树' }).click();
-    await page.locator('#panel-systems').getByText('体系层级树').waitFor({ state: 'visible', timeout: 5_000 });
-    await page.locator('#panel-systems').getByRole('button', { name: '全部展开' }).click();
-    await page.locator('#panel-systems').getByText('任务航路走廊空间遵从率综合评估').first().waitFor({ state: 'visible', timeout: 5_000 });
-    
-    // 点击「空域航路空间遵从」维度节点，触发右侧 SystemNodeDetailPanel 联动展示
-    await page.locator('#panel-systems').getByText('空域航路空间遵从').first().click();
-    await page.locator('#panel-systems').getByText('权重与贡献配置').first().waitFor({ state: 'visible', timeout: 5_000 });
-    await page.locator('#panel-systems').getByText('全局级联贡献').first().waitFor({ state: 'visible', timeout: 5_000 });
-
-    // 点击「全部折叠」并验证收起，随后再次「全部展开」
-    await page.locator('#panel-systems').getByRole('button', { name: '全部折叠' }).click();
-    await page.waitForTimeout(200);
-    await page.locator('#panel-systems').getByRole('button', { name: '全部展开' }).click();
-    await page.waitForTimeout(200);
-
-    // 4c. 切换为「全景拓扑图」并验证 ECharts Canvas 正确绘制
-    await page.locator('#panel-systems').getByRole('button', { name: '全景拓扑图' }).click();
-    await page.waitForTimeout(350);
-    await assertVisibleCanvasDrawn('#panel-systems', 'systems-topology');
-    await snap('04c-systems-topology.png');
-
-    // 切回「层级结构树」并执行综合评估试算
-    await page.locator('#panel-systems').getByRole('button', { name: '层级结构树' }).click();
-    await page.waitForTimeout(200);
-    await page.locator('#panel-systems').getByRole('button', { name: '运行体系评估' }).click();
-    await page.locator('#panel-systems').getByText('体系推演评估完成！').first().waitFor({ state: 'visible', timeout: 15_000 });
+    await firstSystemDetailBtn.click();
+    await page.locator('#panel-systems table').first().waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('#panel-systems').getByRole('button', { name: '画布编排' }).click();
+    await page.locator('#panel-systems').getByRole('button', { name: '全貌' }).waitFor({ state: 'visible', timeout: 10_000 });
     await snap('04-systems-desktop.png');
 
     // 5a-spec. 全局「仿真输出规范」独立一级入口 (#tab-catalog · 共 7 个一级 Tab)

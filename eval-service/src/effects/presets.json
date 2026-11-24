@@ -385,8 +385,8 @@
   },
   {
     "effectId": "gate_excessive_attrition",
-    "name": "战损崩溃硬红线门控",
-    "description": "战役底线硬门控：当分方战损率超过 35% 时触发 DISQUALIFIED 一票否决并将总分封顶至 39 分",
+    "name": "战损红线门控",
+    "description": "战役底线门控：分方战损率超过 35% 时触发判定不合格并将总分封顶至 39 分",
     "isBuiltin": true,
     "domainTag": "survivability",
     "role": "gate",
@@ -403,7 +403,7 @@
         "operator": ">",
         "value": 0.35,
         "severity": "major",
-        "messageTemplate": "战损率超过 35% 临界线，触发战损硬红线一票否决"
+        "messageTemplate": "战损率超过 35% 临界线，触发战损红线判定"
       }
     },
     "aggregation": {

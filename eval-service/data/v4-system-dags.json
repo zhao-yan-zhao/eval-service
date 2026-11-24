@@ -1,0 +1,557 @@
+[
+  {
+    "systemId": "sys_v4_metrics_guide_full",
+    "name": "作战效能综合评估体系 (全域基线)",
+    "version": "4.0.0",
+    "description": "集成对地对海突击、空战巡逻掩护、态势感知与战损交换的作战能力效能评估，挂载战损红线与空域安全门控。",
+    "builtin": false,
+    "metricGraphId": "mg_v4_metrics_guide_full",
+    "terminalEffectNodeId": "ef_mg_terminal_overall",
+    "globalParams": {
+      "targetSide": "红方",
+      "enemySide": "蓝方"
+    },
+    "nodes": [
+      {
+        "id": "px_strike",
+        "kind": "metric_proxy",
+        "label": "突击任务平均完成率",
+        "refId": "strike.composite_mission_metrics",
+        "position": {
+          "x": 60,
+          "y": 60
+        }
+      },
+      {
+        "id": "px_patrol",
+        "kind": "metric_proxy",
+        "label": "巡逻掩护平均完成率",
+        "refId": "patrol.composite_mission_metrics",
+        "position": {
+          "x": 60,
+          "y": 244
+        }
+      },
+      {
+        "id": "px_support",
+        "kind": "metric_proxy",
+        "label": "支援保障平均完成率",
+        "refId": "support.composite_mission_metrics",
+        "position": {
+          "x": 60,
+          "y": 428
+        }
+      },
+      {
+        "id": "px_detection",
+        "kind": "metric_proxy",
+        "label": "雷达装备型号首次发现距离",
+        "refId": "detection.model_detection",
+        "position": {
+          "x": 60,
+          "y": 612
+        }
+      },
+      {
+        "id": "px_killchain",
+        "kind": "metric_proxy",
+        "label": "杀伤链闭环平均耗时",
+        "refId": "fire_control.kill_chain_closure_time",
+        "position": {
+          "x": 60,
+          "y": 796
+        }
+      },
+      {
+        "id": "px_weapon",
+        "kind": "metric_proxy",
+        "label": "主战武器平均命中率",
+        "refId": "weapon.munition_hit_rate",
+        "position": {
+          "x": 60,
+          "y": 980
+        }
+      },
+      {
+        "id": "px_cost_exchange",
+        "kind": "metric_proxy",
+        "label": "分方有效生存战损交换比",
+        "refId": "cost.effective_exchange_ratio",
+        "position": {
+          "x": 60,
+          "y": 1164
+        }
+      },
+      {
+        "id": "px_cost_survival",
+        "kind": "metric_proxy",
+        "label": "平台生存率",
+        "refId": "cost.side_attrition_metrics",
+        "position": {
+          "x": 60,
+          "y": 1348
+        }
+      },
+      {
+        "id": "px_cost_attrition",
+        "kind": "metric_proxy",
+        "label": "平台战损率 (红线输入)",
+        "refId": "cost.side_attrition_rate",
+        "position": {
+          "x": 60,
+          "y": 1532
+        }
+      },
+      {
+        "id": "px_recon",
+        "kind": "metric_proxy",
+        "label": "主战侦察平台侦察范围",
+        "refId": "isr.reconnaissance_range",
+        "position": {
+          "x": 60,
+          "y": 1716
+        }
+      },
+      {
+        "id": "px_c2",
+        "kind": "metric_proxy",
+        "label": "战场态势完整度",
+        "refId": "c2.situational_completeness",
+        "position": {
+          "x": 60,
+          "y": 1900
+        }
+      },
+      {
+        "id": "px_ew",
+        "kind": "metric_proxy",
+        "label": "持续有效干扰时间",
+        "refId": "ew.jamming_duration",
+        "position": {
+          "x": 60,
+          "y": 2084
+        }
+      },
+      {
+        "id": "px_ad",
+        "kind": "metric_proxy",
+        "label": "综合拦截概率",
+        "refId": "air_defense.composite_interception_probability",
+        "position": {
+          "x": 60,
+          "y": 2268
+        }
+      },
+      {
+        "id": "ef_strike",
+        "kind": "effect",
+        "label": "对地/海突击达成效果",
+        "refId": "eff_strike_mission",
+        "position": {
+          "x": 460,
+          "y": 60
+        }
+      },
+      {
+        "id": "ef_patrol",
+        "kind": "effect",
+        "label": "空中巡逻掩护效果",
+        "refId": "eff_patrol_coverage",
+        "position": {
+          "x": 460,
+          "y": 244
+        }
+      },
+      {
+        "id": "ef_support",
+        "kind": "effect",
+        "label": "空中支援保障效果",
+        "refId": "eff_support_mission",
+        "position": {
+          "x": 460,
+          "y": 428
+        }
+      },
+      {
+        "id": "ef_detection",
+        "kind": "effect",
+        "label": "装备雷达探测效能",
+        "refId": "eff_equipment_detection",
+        "position": {
+          "x": 460,
+          "y": 612
+        }
+      },
+      {
+        "id": "ef_killchain",
+        "kind": "effect",
+        "label": "杀伤链闭环协同敏捷度",
+        "refId": "eff_kill_chain_synergy",
+        "position": {
+          "x": 460,
+          "y": 796
+        }
+      },
+      {
+        "id": "ef_weapon",
+        "kind": "effect",
+        "label": "主战武器打击命中效果",
+        "refId": "eff_weapon_striking",
+        "position": {
+          "x": 460,
+          "y": 980
+        }
+      },
+      {
+        "id": "ef_cost_exchange",
+        "kind": "effect",
+        "label": "作战效费交换效果",
+        "refId": "eff_cost_exchange",
+        "position": {
+          "x": 460,
+          "y": 1164
+        }
+      },
+      {
+        "id": "ef_cost_survival",
+        "kind": "effect",
+        "label": "兵力生存损耗抑制效果",
+        "refId": "eff_survivability_cost",
+        "position": {
+          "x": 460,
+          "y": 1348
+        }
+      },
+      {
+        "id": "ef_recon",
+        "kind": "effect",
+        "label": "侦察平台有效探测距离效果",
+        "refId": "eff_isr_recon_range",
+        "position": {
+          "x": 460,
+          "y": 1716
+        }
+      },
+      {
+        "id": "ef_c2",
+        "kind": "effect",
+        "label": "指挥控制态势完整效果",
+        "refId": "eff_c2_decision_tempo",
+        "position": {
+          "x": 460,
+          "y": 1900
+        }
+      },
+      {
+        "id": "ef_ew",
+        "kind": "effect",
+        "label": "电子压制累计受扰秒数效果",
+        "refId": "eff_ew_jamming_duration",
+        "position": {
+          "x": 460,
+          "y": 2084
+        }
+      },
+      {
+        "id": "ef_ad",
+        "kind": "effect",
+        "label": "防空反导拦截保护效果",
+        "refId": "eff_air_defense_interception",
+        "position": {
+          "x": 460,
+          "y": 2268
+        }
+      },
+      {
+        "id": "gt_attrition_hard",
+        "kind": "gate",
+        "label": "战损崩溃硬红线门控",
+        "refId": "gate_excessive_attrition",
+        "position": {
+          "x": 460,
+          "y": 1532
+        }
+      },
+      {
+        "id": "gt_interception_soft",
+        "kind": "gate",
+        "label": "防空漏洞预警软门控",
+        "refId": "gate_interception_warning",
+        "position": {
+          "x": 460,
+          "y": 2452
+        }
+      },
+      {
+        "id": "ef_firepower_composite",
+        "kind": "effect",
+        "label": "火力打击与拦截对抗综合效果",
+        "position": {
+          "x": 860,
+          "y": 1103
+        },
+        "inlineEffect": {
+          "effectId": "eff_firepower_composite_inline",
+          "name": "火力打击与拦截对抗综合效果",
+          "description": "加权融合突击任务达成效果(0.35)、武器打击命中效果(0.35)与防空拦截效果(0.30)",
+          "domainTag": "firepower",
+          "role": "effect",
+          "aggregation": {
+            "strategy": "weighted_sum",
+            "missingPolicy": "skip_renormalize"
+          }
+        }
+      },
+      {
+        "id": "ef_recon_c2_composite",
+        "kind": "effect",
+        "label": "侦察预警与指控协同效果",
+        "position": {
+          "x": 860,
+          "y": 1471
+        },
+        "inlineEffect": {
+          "effectId": "eff_recon_c2_composite_inline",
+          "name": "侦察预警与指控协同效果",
+          "description": "加权融合侦察探测距离效果(0.35)、装备雷达探测效能(0.35)与指挥控制态势完整效果(0.30)",
+          "domainTag": "isr",
+          "role": "effect",
+          "aggregation": {
+            "strategy": "weighted_sum",
+            "missingPolicy": "skip_renormalize"
+          }
+        }
+      },
+      {
+        "id": "ef_survivability_composite",
+        "kind": "effect",
+        "label": "机动生存与电磁攻防效果",
+        "position": {
+          "x": 860,
+          "y": 1287
+        },
+        "inlineEffect": {
+          "effectId": "eff_survivability_composite_inline",
+          "name": "机动生存与电磁攻防效果",
+          "description": "加权融合巡逻掩护效果(0.35)、电子干扰效果(0.35)与兵力损耗抑制效果(0.30)",
+          "domainTag": "survivability",
+          "role": "effect",
+          "aggregation": {
+            "strategy": "weighted_sum",
+            "missingPolicy": "skip_renormalize"
+          }
+        }
+      },
+      {
+        "id": "ef_cost_synergy_composite",
+        "kind": "effect",
+        "label": "体系协同与作战效费效果",
+        "position": {
+          "x": 860,
+          "y": 796
+        },
+        "inlineEffect": {
+          "effectId": "eff_cost_synergy_composite_inline",
+          "name": "体系协同与作战效费效果",
+          "description": "加权融合支援保障效果(0.30)、杀伤链协同敏捷度(0.35)与效费交换比效果(0.35)",
+          "domainTag": "synergy",
+          "role": "effect",
+          "aggregation": {
+            "strategy": "weighted_sum",
+            "missingPolicy": "skip_renormalize"
+          }
+        }
+      },
+      {
+        "id": "ef_mg_terminal_overall",
+        "kind": "effect",
+        "label": "联合作战体系综合效能",
+        "position": {
+          "x": 1260,
+          "y": 1164
+        },
+        "inlineEffect": {
+          "effectId": "eff_mg_terminal_overall_inline",
+          "name": "联合作战体系综合效能",
+          "description": "融合火力对抗(0.30)、侦察指控(0.25)、机动生存(0.25)与协同效费(0.20)四大维度的最终效能总评分",
+          "domainTag": "synergy",
+          "role": "effect",
+          "aggregation": {
+            "strategy": "weighted_sum",
+            "missingPolicy": "skip_renormalize"
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "se_mg_px_strike",
+        "sourceNodeId": "px_strike",
+        "targetNodeId": "ef_strike"
+      },
+      {
+        "id": "se_mg_px_patrol",
+        "sourceNodeId": "px_patrol",
+        "targetNodeId": "ef_patrol"
+      },
+      {
+        "id": "se_mg_px_support",
+        "sourceNodeId": "px_support",
+        "targetNodeId": "ef_support"
+      },
+      {
+        "id": "se_mg_px_detection",
+        "sourceNodeId": "px_detection",
+        "targetNodeId": "ef_detection"
+      },
+      {
+        "id": "se_mg_px_killchain",
+        "sourceNodeId": "px_killchain",
+        "targetNodeId": "ef_killchain"
+      },
+      {
+        "id": "se_mg_px_weapon",
+        "sourceNodeId": "px_weapon",
+        "targetNodeId": "ef_weapon"
+      },
+      {
+        "id": "se_mg_px_cost_exchange",
+        "sourceNodeId": "px_cost_exchange",
+        "targetNodeId": "ef_cost_exchange"
+      },
+      {
+        "id": "se_mg_px_cost_survival",
+        "sourceNodeId": "px_cost_survival",
+        "targetNodeId": "ef_cost_survival"
+      },
+      {
+        "id": "se_mg_px_cost_attrition",
+        "sourceNodeId": "px_cost_attrition",
+        "targetNodeId": "gt_attrition_hard"
+      },
+      {
+        "id": "se_mg_px_recon",
+        "sourceNodeId": "px_recon",
+        "targetNodeId": "ef_recon"
+      },
+      {
+        "id": "se_mg_px_c2",
+        "sourceNodeId": "px_c2",
+        "targetNodeId": "ef_c2"
+      },
+      {
+        "id": "se_mg_px_ew",
+        "sourceNodeId": "px_ew",
+        "targetNodeId": "ef_ew"
+      },
+      {
+        "id": "se_mg_px_ad",
+        "sourceNodeId": "px_ad",
+        "targetNodeId": "ef_ad"
+      },
+      {
+        "id": "se_mg_px_ad_gate",
+        "sourceNodeId": "px_ad",
+        "targetNodeId": "gt_interception_soft"
+      },
+      {
+        "id": "se_fp_strike",
+        "sourceNodeId": "ef_strike",
+        "targetNodeId": "ef_firepower_composite",
+        "weight": 0.35
+      },
+      {
+        "id": "se_fp_weapon",
+        "sourceNodeId": "ef_weapon",
+        "targetNodeId": "ef_firepower_composite",
+        "weight": 0.35
+      },
+      {
+        "id": "se_fp_ad",
+        "sourceNodeId": "ef_ad",
+        "targetNodeId": "ef_firepower_composite",
+        "weight": 0.3
+      },
+      {
+        "id": "se_rc_recon",
+        "sourceNodeId": "ef_recon",
+        "targetNodeId": "ef_recon_c2_composite",
+        "weight": 0.35
+      },
+      {
+        "id": "se_rc_detection",
+        "sourceNodeId": "ef_detection",
+        "targetNodeId": "ef_recon_c2_composite",
+        "weight": 0.35
+      },
+      {
+        "id": "se_rc_c2",
+        "sourceNodeId": "ef_c2",
+        "targetNodeId": "ef_recon_c2_composite",
+        "weight": 0.3
+      },
+      {
+        "id": "se_sv_patrol",
+        "sourceNodeId": "ef_patrol",
+        "targetNodeId": "ef_survivability_composite",
+        "weight": 0.35
+      },
+      {
+        "id": "se_sv_ew",
+        "sourceNodeId": "ef_ew",
+        "targetNodeId": "ef_survivability_composite",
+        "weight": 0.35
+      },
+      {
+        "id": "se_sv_survival",
+        "sourceNodeId": "ef_cost_survival",
+        "targetNodeId": "ef_survivability_composite",
+        "weight": 0.3
+      },
+      {
+        "id": "se_cs_support",
+        "sourceNodeId": "ef_support",
+        "targetNodeId": "ef_cost_synergy_composite",
+        "weight": 0.3
+      },
+      {
+        "id": "se_cs_killchain",
+        "sourceNodeId": "ef_killchain",
+        "targetNodeId": "ef_cost_synergy_composite",
+        "weight": 0.35
+      },
+      {
+        "id": "se_cs_exchange",
+        "sourceNodeId": "ef_cost_exchange",
+        "targetNodeId": "ef_cost_synergy_composite",
+        "weight": 0.35
+      },
+      {
+        "id": "se_term_fp",
+        "sourceNodeId": "ef_firepower_composite",
+        "targetNodeId": "ef_mg_terminal_overall",
+        "weight": 0.3
+      },
+      {
+        "id": "se_term_rc",
+        "sourceNodeId": "ef_recon_c2_composite",
+        "targetNodeId": "ef_mg_terminal_overall",
+        "weight": 0.25
+      },
+      {
+        "id": "se_term_sv",
+        "sourceNodeId": "ef_survivability_composite",
+        "targetNodeId": "ef_mg_terminal_overall",
+        "weight": 0.25
+      },
+      {
+        "id": "se_term_cs",
+        "sourceNodeId": "ef_cost_synergy_composite",
+        "targetNodeId": "ef_mg_terminal_overall",
+        "weight": 0.2
+      }
+    ],
+    "createdAt": "2026-11-24T13:14:18.048Z",
+    "updatedAt": "2026-11-24T14:23:29.193Z"
+  }
+]

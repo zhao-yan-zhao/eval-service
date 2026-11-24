@@ -87,6 +87,31 @@ const CATEGORY_META: Record<
   },
 };
 
+const REDUNDANT_TITLE_PREFIXES = [
+  '数据输入',
+  '表输入',
+  'Python 算法内核',
+  'Python脚本',
+  '指标输出',
+  '二维表输出',
+  '公式计算',
+  '数据汇总',
+  '空间几何',
+  '空间态势',
+];
+
+function getCleanNodeTitle(node: CanvasNode): string {
+  const raw = (node.title || '').trim();
+  if (!raw) return '未命名节点';
+  for (const prefix of REDUNDANT_TITLE_PREFIXES) {
+    const match = raw.match(new RegExp(`^${prefix}\\s*[:：]\\s*(.+)$`, 'i'));
+    if (match && match[1]?.trim()) {
+      return match[1].trim();
+    }
+  }
+  return raw;
+}
+
 export function CanvasNodeCard({
   node,
   isSelected,
@@ -109,14 +134,21 @@ export function CanvasNodeCard({
   };
   const meta = CATEGORY_META[node.type] || fallbackMeta;
   const Icon = meta.icon || Database;
+  const displayTitle = getCleanNodeTitle(node);
 
   // 提取配置摘要文字
   const getSummaryText = () => {
     switch (node.type) {
       case 'data_input':
-        return node.config.csvTable
-          ? `规范事件表: ${node.config.csvTable}`
-          : '事件输入表';
+        if (node.config.csvTable) {
+          if (displayTitle.includes(node.config.csvTable)) {
+            return node.config.selectedColumns?.length
+              ? `事件底表 · 已选 ${node.config.selectedColumns.length} 列`
+              : '仿真事件底表';
+          }
+          return `规范事件表: ${node.config.csvTable}`;
+        }
+        return '事件输入表';
       case 'inline_calc': {
         const count = node.config.derivedColumns?.length ?? 0;
         return count > 0
@@ -193,16 +225,19 @@ export function CanvasNodeCard({
 
       {/* ─── 卡片头部 ─── */}
       <div className="flex h-[38px] shrink-0 items-center justify-between border-b border-slate-800/80 px-3 bg-slate-900/40 rounded-t-xl">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <div className={`p-1 rounded-md bg-slate-800/80 shrink-0 ${meta.accentColor}`}>
             <Icon className="h-4 w-4" />
           </div>
-          <span className="font-semibold text-xs tracking-wide text-slate-100 truncate max-w-[130px]">
-            {node.title}
+          <span
+            title={node.title}
+            className="font-semibold text-xs tracking-wide text-slate-100 truncate flex-1"
+          >
+            {displayTitle}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0 ml-1">
+        <div className="flex items-center gap-1 shrink-0 ml-1.5">
           <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${meta.badgeBg}`}>
             {meta.badgeText}
           </span>
@@ -214,7 +249,7 @@ export function CanvasNodeCard({
               e.stopPropagation();
               onDelete(node.id);
             }}
-            className="rounded p-1 text-slate-500 hover:bg-rose-500/20 hover:text-rose-400 transition"
+            className="hidden group-hover:inline-flex group-focus-within:inline-flex rounded p-1 text-slate-500 hover:bg-rose-500/20 hover:text-rose-400 transition"
           >
             <Trash2 className="h-3 w-3" />
           </button>
@@ -228,7 +263,7 @@ export function CanvasNodeCard({
         </div>
 
         {/* 吞吐与运行状态 Bar */}
-        <div className="flex items-center justify-between rounded-lg bg-slate-950/60 border border-slate-800/60 px-2.5 py-1 text-[10px] shrink-0">
+        <div className="flex items-center justify-between border-t border-slate-800/60 pt-1.5 text-[10px] shrink-0">
           <div className="flex items-center gap-1.5 text-slate-400">
             <span className={`inline-block h-2 w-2 rounded-full ring-2 ${statusColor}`} />
             <span className="truncate">

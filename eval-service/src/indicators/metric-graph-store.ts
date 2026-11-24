@@ -121,9 +121,9 @@ export interface MetricGraphExecutionResult extends DagGraphExecutionResult {
 const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
   {
     graphId: 'mg_v4_metrics_guide_full',
-    name: '8大类全域客观指标图 (metrics_calculation_guide 完整规范)',
+    name: '全域作战效能指标图集',
     description:
-      '严格对齐 Plan A 三库职责分离与 metrics_calculation_guide.html 规范覆盖第 1~8 章：L0 仅引用一库客观基础事实算子 (layer=fact) -> L1 二库多维分组聚合 (from_metric_agg) -> L2 自定义衍生公式指标 (from_metric_formula)，强隔离不含主观权重与打分',
+      '面向任务效果、指挥控制、机动生存与对抗交换的客观指标计算图集。包含单任务事实提取、分方多维聚合与复合公式衍生指标。',
     graphKind: 'metric',
     builtin: true,
     nodes: [
@@ -759,9 +759,9 @@ const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
   },
   {
     graphId: 'mg_v4_joint_demo',
-    name: '联合空中突击与体系对抗客观指标图 (V4 示范)',
+    name: '联合空中突击对抗指标图',
     description:
-      '演示一库算子表 -> 二库单任务/分方二次聚合 -> 复合公式派生指标的客观计算链（严格不含主观权重或效用打分）',
+      '覆盖突击任务完成率、巡逻在勤率、雷达首发探测距离与战损交换比的客观计算链路。',
     graphKind: 'metric',
     builtin: true,
     nodes: [
