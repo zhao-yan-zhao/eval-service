@@ -1360,6 +1360,28 @@ export interface EvaluationDagOutput {
   topologicalOrder: string[];
 }
 
+export interface V4MetricTableSlice {
+  status: 'valid' | 'degraded' | 'unavailable';
+  value?: number | boolean | null;
+  columns: Array<{ name: string; displayName?: string; type?: string }>;
+  rows: Array<Record<string, unknown>>;
+  totalRows: number;
+  truncated: boolean;
+  missingDataReason?: string;
+}
+
+export interface V4MetricSnapshotItem {
+  metricId: string;
+  proxyNodeId: string;
+  label: string;
+  parentEffectId?: string;
+  parentEffectLabel?: string;
+  targetField?: string;
+  reduce?: string;
+  overall: V4MetricTableSlice;
+  bySide: Record<string, V4MetricTableSlice>;
+}
+
 /** 节点级内容寻址缓存项 */
 export interface NodeExecutionCacheEntry {
   cacheKey: string;

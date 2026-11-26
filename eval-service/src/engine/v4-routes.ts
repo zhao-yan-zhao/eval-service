@@ -7,6 +7,11 @@ import distance from '@turf/distance';
 import { point as turfPoint, polygon as turfPolygon } from '@turf/helpers';
 import { locateCsvDirectory, readCsvTable } from '../adapters/csv-adapter.ts';
 import type {
+  EvalSqliteStore,
+  StoredV4EvalRecord,
+  StoredV4EvalSideSummary,
+} from '../adapters/sqlite-store.ts';
+import type {
   AggregationMetricItem,
   AggregationOperatorConfig,
   DagGraphDefinition,
@@ -14,12 +19,15 @@ import type {
   DatasetColumn,
   DerivedColumnConfig,
   EffectDefinition,
+  EvaluationDagOutput,
   EvaluationSystemDag,
   EvidenceRef,
   FieldDataType,
   MetricGraphDefinition,
   OperatorNodeExecutionResult,
   TableDataset,
+  V4MetricSnapshotItem,
+  V4MetricTableSlice,
 } from '../core/types.ts';
 import type { EffectStore } from '../effects/store.ts';
 import {
@@ -70,6 +78,7 @@ export interface V4RouteDeps {
     body: Record<string, unknown>,
   ) => Promise<OperatorNodeExecutionResult>;
   resolveCsvDir?: (runId?: string, dataSourceId?: string) => string | undefined;
+  getEvalStore?: () => EvalSqliteStore;
 }
 
 const CANONICAL_SIDE_COLUMNS = [
@@ -2180,6 +2189,120 @@ export async function handleV4ApiRequest(
       return true;
     }
 
+const MAX_V4_METRIC_SNAPSHOT_ROWS = 200;
+
+function buildV4MetricSnapshots(
+  dag: EvaluationSystemDag,
+  overallMetricResult: MetricGraphExecutionResult,
+  sideMetricResults: Record<string, MetricGraphExecutionResult>,
+  overallEval: EvaluationDagOutput,
+  bySideEval: Record<string, EvaluationDagOutput>,
+  sides: string[],
+  effectStore: EffectStore,
+  maxRows = MAX_V4_METRIC_SNAPSHOT_ROWS,
+): V4MetricSnapshotItem[] {
+  const nodeMap = new Map(dag.nodes.map((n) => [n.id, n]));
+  const snapshots: V4MetricSnapshotItem[] = [];
+
+  for (const node of dag.nodes) {
+    if (node.kind !== 'metric_proxy' && node.kind !== 'metric') continue;
+    const paramMetricId =
+      typeof node.params?.metricId === 'string' ? node.params.metricId.trim() : '';
+    const metricId = (node.refId?.trim() || paramMetricId || node.id).trim();
+    if (!metricId) continue;
+
+    const outgoingEdge = dag.edges.find((e) => e.sourceNodeId === node.id);
+    const parentNode = outgoingEdge ? nodeMap.get(outgoingEdge.targetNodeId) : undefined;
+    const parentEffectDef =
+      parentNode?.inlineEffect ??
+      (parentNode?.refId ? effectStore.get(parentNode.refId) : undefined);
+
+    const parentEffectId = parentNode?.id;
+    const parentEffectLabel =
+      parentNode?.label ||
+      parentEffectDef?.name ||
+      (parentEffectId ? overallEval.nodeResults?.[parentEffectId]?.label : undefined);
+    const targetField =
+      parentEffectDef?.metricBinding?.targetField ??
+      (typeof node.params?.targetField === 'string' ? node.params.targetField : undefined);
+    const reduce =
+      parentEffectDef?.metricBinding?.reduce ??
+      (typeof node.params?.reduce === 'string' ? node.params.reduce : undefined);
+
+    const toSlice = (
+      metricResult: MetricGraphExecutionResult | undefined,
+      evalOutput: EvaluationDagOutput | undefined,
+    ): V4MetricTableSlice => {
+      const metricInput =
+        metricResult?.metricInputsForSystem?.[metricId] ??
+        metricResult?.metricInputsForSystem?.[node.id];
+      const rawRows = Array.isArray(metricInput?.dataset?.rows)
+        ? metricInput!.dataset!.rows
+        : [];
+      const schemaCols =
+        metricInput?.dataset?.columns ?? metricInput?.dataset?.schema ?? [];
+      let columns: Array<{ name: string; displayName?: string; type?: string }> =
+        schemaCols.map((c) => ({
+          name: c.name,
+          ...(c.displayName ? { displayName: c.displayName } : {}),
+          ...(c.type ? { type: c.type } : {}),
+        }));
+      if (columns.length === 0 && rawRows.length > 0) {
+        columns = Object.keys(rawRows[0]).map((name) => ({ name }));
+      }
+
+      const rawScalar = metricInput?.value;
+      let value: number | boolean | null | undefined =
+        typeof rawScalar === 'number' || typeof rawScalar === 'boolean'
+          ? rawScalar
+          : undefined;
+      if (value === undefined && parentEffectId) {
+        const parentRaw = evalOutput?.nodeResults?.[parentEffectId]?.rawValue;
+        if (typeof parentRaw === 'number' || typeof parentRaw === 'boolean') {
+          value = parentRaw;
+        }
+      }
+      if (value === undefined) {
+        const nodeRaw = evalOutput?.nodeResults?.[node.id]?.rawValue;
+        if (typeof nodeRaw === 'number' || typeof nodeRaw === 'boolean') {
+          value = nodeRaw;
+        }
+      }
+
+      return {
+        status: metricInput?.status ?? 'unavailable',
+        ...(value !== undefined ? { value } : {}),
+        columns,
+        rows: rawRows.slice(0, maxRows),
+        totalRows: rawRows.length,
+        truncated: rawRows.length > maxRows,
+        ...(metricInput?.missingDataReason
+          ? { missingDataReason: metricInput.missingDataReason }
+          : {}),
+      };
+    };
+
+    const bySide: Record<string, V4MetricTableSlice> = {};
+    for (const side of sides) {
+      bySide[side] = toSlice(sideMetricResults[side], bySideEval[side]);
+    }
+
+    snapshots.push({
+      metricId,
+      proxyNodeId: node.id,
+      label: node.label || metricId,
+      ...(parentEffectId ? { parentEffectId } : {}),
+      ...(parentEffectLabel ? { parentEffectLabel } : {}),
+      ...(targetField ? { targetField } : {}),
+      ...(reduce ? { reduce } : {}),
+      overall: toSlice(overallMetricResult, overallEval),
+      bySide,
+    });
+  }
+
+  return snapshots;
+}
+
     const systemCompareSidesMatch = pathname.match(
       /^\/api\/v4\/system-dags\/([^/]+)\/compare-sides$/,
     );
@@ -2245,6 +2368,7 @@ export async function handleV4ApiRequest(
 
       let overall: EvaluationDagRunOutput;
       const bySide: Record<string, EvaluationDagRunOutput> = {};
+      const sideMetricResults: Record<string, MetricGraphExecutionResult> = {};
       try {
         overall = evaluateSystemDagWithInputs(
           ctx.dag,
@@ -2270,6 +2394,7 @@ export async function handleV4ApiRequest(
               globalParamOverrides: compareGlobalParams,
             },
           );
+          sideMetricResults[side] = sideMetricResult;
           bySide[side] = evaluateSystemDagWithInputs(
             ctx.dag,
             sideMetricResult.metricInputsForSystem,
@@ -2292,17 +2417,70 @@ export async function handleV4ApiRequest(
         return true;
       }
 
-      sendJson(res, 200, {
-        ok: true,
-        systemId: asNonEmptyString(ctx.dag.systemId) ?? systemId,
-        runId: ctx.runId,
-        metricGraphId:
-          asNonEmptyString(metricGraph.graphId) ??
-          asNonEmptyString(body.metricGraphId) ??
-          asNonEmptyString(ctx.dag.metricGraphId),
-        sides,
+      const resolvedSystemId = asNonEmptyString(ctx.dag.systemId) ?? systemId;
+      const resolvedMetricGraphId =
+        asNonEmptyString(metricGraph.graphId) ??
+        asNonEmptyString(body.metricGraphId) ??
+        asNonEmptyString(ctx.dag.metricGraphId);
+      const evalId =
+        overall.evalId ||
+        `v4eval_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const createdAt = overall.createdAt || new Date().toISOString();
+      const systemName = ctx.dag.name || resolvedSystemId;
+      const systemVersion = ctx.dag.version || '1.0.0';
+      const sideSummaries: StoredV4EvalSideSummary[] = sides.map((side) => ({
+        side,
+        overallScore: bySide[side]?.overallScore ?? null,
+        rawOverallScore: bySide[side]?.rawOverallScore ?? null,
+        gateVerdict: bySide[side]?.gateVerdict ?? 'PASS',
+        availableWeightRatio: bySide[side]?.availableWeightRatio ?? 0,
+      }));
+      const metricSnapshots = buildV4MetricSnapshots(
+        ctx.dag,
+        overallMetricResult,
+        sideMetricResults,
         overall,
         bySide,
+        sides,
+        deps.effectStore,
+      );
+
+      if (body.persist !== false && deps.getEvalStore) {
+        const evalRecord: StoredV4EvalRecord = {
+          evalId,
+          runId: ctx.runId,
+          dataSourceId: ctx.dataSourceId,
+          systemId: resolvedSystemId,
+          systemName,
+          systemVersion,
+          metricGraphId: resolvedMetricGraphId,
+          sides,
+          overallScore: overall.overallScore ?? null,
+          gateVerdict: overall.gateVerdict ?? 'PASS',
+          availableWeightRatio: overall.availableWeightRatio ?? 0,
+          sideSummaries,
+          overall,
+          bySide,
+          metricSnapshots,
+          createdAt,
+        };
+        deps.getEvalStore().saveV4Evaluation(evalRecord);
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        evalId,
+        createdAt,
+        systemId: resolvedSystemId,
+        systemName,
+        systemVersion,
+        runId: ctx.runId,
+        metricGraphId: resolvedMetricGraphId,
+        sides,
+        sideSummaries,
+        overall,
+        bySide,
+        metricSnapshots,
       });
       return true;
     }
@@ -2361,6 +2539,45 @@ export async function handleV4ApiRequest(
       const saved = deps.systemDagStore.upsert(candidateDag);
       sendJson(res, 200, { ok: true, system: saved, validation });
       return true;
+    }
+
+    if (method === 'GET' && pathname === '/api/v4/evaluations') {
+      const store = deps.getEvalStore?.();
+      const urlObj = new URL(req.url || pathname, 'http://localhost');
+      const runIdParam = urlObj.searchParams.get('runId') || undefined;
+      const limitParam = Number(urlObj.searchParams.get('limit') || 50);
+      const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
+      const evaluations = store ? store.listV4Evaluations(runIdParam, limit) : [];
+      sendJson(res, 200, { ok: true, evaluations });
+      return true;
+    }
+
+    const v4EvalMatch = pathname.match(/^\/api\/v4\/evaluations\/([^/]+)$/);
+    if (v4EvalMatch) {
+      const evalId = decodeURIComponent(v4EvalMatch[1]);
+      const store = deps.getEvalStore?.();
+      if (!store) {
+        sendError(sendJson, res, 503, 'V4 评估历史存储未初始化');
+        return true;
+      }
+      if (method === 'GET') {
+        const evaluation = store.getV4Evaluation(evalId);
+        if (!evaluation) {
+          sendError(sendJson, res, 404, `未找到 V4 评估记录: ${evalId}`);
+          return true;
+        }
+        sendJson(res, 200, { ok: true, evaluation });
+        return true;
+      }
+      if (method === 'DELETE') {
+        const deleted = store.deleteV4Evaluation(evalId);
+        if (!deleted) {
+          sendError(sendJson, res, 404, `未找到 V4 评估记录: ${evalId}`);
+          return true;
+        }
+        sendJson(res, 200, { ok: true, evalId, deleted: true });
+        return true;
+      }
     }
 
     return false;

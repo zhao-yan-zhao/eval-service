@@ -1370,7 +1370,9 @@ export function MetricDagStudioPanel({
         setOpPreview(null);
         return;
       }
-      const cacheKey = `${trimmedId}::${selectedRunId ?? ''}::${activeSourceId ?? ''}`;
+      const matchedSourceId =
+        activeSourceId && activeSourceId === selectedRunId ? activeSourceId : undefined;
+      const cacheKey = `${trimmedId}::${selectedRunId ?? ''}::${matchedSourceId ?? ''}`;
       if (!force) {
         const cached = opPreviewCacheRef.current.get(cacheKey);
         if (cached) {
@@ -1383,7 +1385,7 @@ export function MetricDagStudioPanel({
       setOpPreview({
         operatorId: trimmedId,
         runId: selectedRunId,
-        dataSourceId: activeSourceId,
+        dataSourceId: matchedSourceId,
         loading: true,
       });
 
@@ -1394,7 +1396,7 @@ export function MetricDagStudioPanel({
           body: JSON.stringify({
             operatorId: trimmedId,
             runId: selectedRunId,
-            dataSourceId: activeSourceId,
+            ...(matchedSourceId ? { dataSourceId: matchedSourceId } : {}),
           }),
         });
         const json = (await res.json().catch(() => ({}))) as {
@@ -1443,8 +1445,10 @@ export function MetricDagStudioPanel({
       : '';
 
   useEffect(() => {
-    if (!activeOpSourceRef) {
-      setOpPreview(null);
+    if (viewMode !== 'canvas' || !activeOpSourceRef) {
+      if (!activeOpSourceRef) {
+        setOpPreview(null);
+      }
       return;
     }
     const isKnownOperator = operatorMap.has(activeOpSourceRef);
@@ -1453,7 +1457,7 @@ export function MetricDagStudioPanel({
       void runOperatorPreview(activeOpSourceRef, false);
     }, delayMs);
     return () => clearTimeout(timer);
-  }, [activeOpSourceRef, operatorMap, runOperatorPreview]);
+  }, [viewMode, activeOpSourceRef, operatorMap, runOperatorPreview]);
 
   // 计算当前画布聚焦锚点与三个作用域子图 (当前链路 / 同能力域 / 完整图集)
   const effectiveFocusNodeId = useMemo(() => {

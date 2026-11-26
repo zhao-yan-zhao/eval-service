@@ -358,19 +358,14 @@ export async function createEvalApp(deps?: EvalServerDeps) {
       }
     };
 
-    if (dataSourceId) {
-      const ds = dataSourceStore.get(dataSourceId);
-      if (ds?.kind === 'csv_dir') {
-        const hit = checkDir(ds.path);
-        if (hit) return hit;
-      }
-    }
-
     if (runId) {
       const sit = sqliteStore.getRunSituation(runId);
       if (sit?.scenarioPath) {
         const hit = checkDir(sit.scenarioPath);
         if (hit) return hit;
+      }
+      if (sit?.coverage?.sourceKind && sit.coverage.sourceKind !== 'event_csv') {
+        return undefined;
       }
       const dsByRun = dataSourceStore.get(runId);
       if (dsByRun?.kind === 'csv_dir') {
@@ -383,6 +378,14 @@ export async function createEvalApp(deps?: EvalServerDeps) {
       }
       if (runId === 'gj11_pl15_bvr_real') {
         const hit = checkDir(BUILTIN_SAMPLES.gj11CsvDir);
+        if (hit) return hit;
+      }
+    }
+
+    if (dataSourceId) {
+      const ds = dataSourceStore.get(dataSourceId);
+      if (ds?.kind === 'csv_dir') {
+        const hit = checkDir(ds.path);
         if (hit) return hit;
       }
     }
@@ -405,6 +408,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
     listOperators: (opts) => listV4OperatorSummaries(opts),
     listComponents: () => listV4BuiltinComponents(),
     resolveCsvDir: resolveV4CsvDir,
+    getEvalStore: () => sqliteStore,
     runOperator: async (operatorId, body) => {
       const runId =
         typeof body.runId === 'string' && body.runId.trim() ? body.runId.trim() : 'default_v4_run';
@@ -2856,6 +2860,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
       }
       sseClients.clear();
       await disposeV4OperatorPool().catch(() => {});
+      server.closeAllConnections?.();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       sqliteStore.close();
     },

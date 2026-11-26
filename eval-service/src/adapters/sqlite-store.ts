@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type {
   BuiltinOperatorOverride,
   CustomOperatorDefinition,
+  EvaluationDagOutput,
   EvidenceRef,
   IndicatorDefinition,
   IndicatorSystem,
@@ -14,6 +15,7 @@ import type {
   StructuredSimEvent,
   SystemEvaluationOutput,
   TacticalFeedbackPayload,
+  V4MetricSnapshotItem,
 } from '../core/types.ts';
 import { OPERATORS_V2 } from '../operators/v2/index.ts';
 
@@ -53,6 +55,36 @@ export interface StoredEvalSummary {
   overallConfidence: string;
   availableWeightRatio: number;
   createdAt: string;
+}
+
+export interface StoredV4EvalSideSummary {
+  side: string;
+  overallScore: number | null;
+  rawOverallScore: number | null;
+  gateVerdict: 'PASS' | 'WARNING' | 'DISQUALIFIED';
+  availableWeightRatio: number;
+}
+
+export interface StoredV4EvalSummary {
+  evalId: string;
+  runId: string;
+  dataSourceId?: string;
+  systemId: string;
+  systemName: string;
+  systemVersion: string;
+  metricGraphId?: string;
+  sides: string[];
+  overallScore: number | null;
+  gateVerdict: 'PASS' | 'WARNING' | 'DISQUALIFIED';
+  availableWeightRatio: number;
+  sideSummaries: StoredV4EvalSideSummary[];
+  createdAt: string;
+}
+
+export interface StoredV4EvalRecord extends StoredV4EvalSummary {
+  overall: EvaluationDagOutput;
+  bySide: Record<string, EvaluationDagOutput>;
+  metricSnapshots?: V4MetricSnapshotItem[];
 }
 
 export interface RealtimeJudgementCard {
@@ -312,7 +344,34 @@ export class EvalSqliteStore {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS v4_eval_results (
+        eval_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        data_source_id TEXT,
+        system_id TEXT NOT NULL,
+        system_name TEXT NOT NULL,
+        system_version TEXT NOT NULL DEFAULT '1.0.0',
+        metric_graph_id TEXT,
+        sides_json TEXT NOT NULL,
+        overall_score REAL,
+        gate_verdict TEXT NOT NULL DEFAULT 'PASS',
+        available_weight_ratio REAL NOT NULL DEFAULT 0,
+        side_summaries_json TEXT NOT NULL,
+        overall_json TEXT NOT NULL,
+        by_side_json TEXT NOT NULL,
+        metric_snapshots_json TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_v4_eval_results_run_created
+        ON v4_eval_results (run_id, created_at DESC);
     `);
+
+    try {
+      this.db.exec('ALTER TABLE v4_eval_results ADD COLUMN metric_snapshots_json TEXT');
+    } catch {
+      // 列已存在时静默跳过
+    }
   }
 
   seedThreeLibraries(): void {
@@ -875,6 +934,118 @@ export class EvalSqliteStore {
 
   deleteEvaluation(evalId: string): boolean {
     const info = this.db.prepare('DELETE FROM eval_results WHERE eval_id = ?').run(evalId);
+    return info.changes > 0;
+  }
+
+  saveV4Evaluation(record: StoredV4EvalRecord): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO v4_eval_results (
+          eval_id, run_id, data_source_id, system_id, system_name, system_version,
+          metric_graph_id, sides_json, overall_score, gate_verdict,
+          available_weight_ratio, side_summaries_json, overall_json, by_side_json,
+          metric_snapshots_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        record.evalId,
+        record.runId,
+        record.dataSourceId ?? null,
+        record.systemId,
+        record.systemName,
+        record.systemVersion || '1.0.0',
+        record.metricGraphId ?? null,
+        JSON.stringify(record.sides),
+        record.overallScore,
+        record.gateVerdict,
+        record.availableWeightRatio,
+        JSON.stringify(record.sideSummaries),
+        JSON.stringify(record.overall),
+        JSON.stringify(record.bySide),
+        record.metricSnapshots ? JSON.stringify(record.metricSnapshots) : null,
+        record.createdAt,
+      );
+  }
+
+  listV4Evaluations(runId?: string, limit = 50): StoredV4EvalSummary[] {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+    const rows = (
+      runId
+        ? this.db
+            .prepare(
+              `SELECT eval_id, run_id, data_source_id, system_id, system_name, system_version,
+                      metric_graph_id, sides_json, overall_score, gate_verdict,
+                      available_weight_ratio, side_summaries_json, created_at
+               FROM v4_eval_results
+               WHERE run_id = ?
+               ORDER BY created_at DESC
+               LIMIT ?`,
+            )
+            .all(runId, safeLimit)
+        : this.db
+            .prepare(
+              `SELECT eval_id, run_id, data_source_id, system_id, system_name, system_version,
+                      metric_graph_id, sides_json, overall_score, gate_verdict,
+                      available_weight_ratio, side_summaries_json, created_at
+               FROM v4_eval_results
+               ORDER BY created_at DESC
+               LIMIT ?`,
+            )
+            .all(safeLimit)
+    ) as Array<Record<string, unknown>>;
+
+    return rows.map((r) => ({
+      evalId: String(r.eval_id),
+      runId: String(r.run_id),
+      dataSourceId: r.data_source_id ? String(r.data_source_id) : undefined,
+      systemId: String(r.system_id),
+      systemName: String(r.system_name),
+      systemVersion: String(r.system_version || '1.0.0'),
+      metricGraphId: r.metric_graph_id ? String(r.metric_graph_id) : undefined,
+      sides: JSON.parse(String(r.sides_json || '[]')) as string[],
+      overallScore: r.overall_score !== null && r.overall_score !== undefined ? Number(r.overall_score) : null,
+      gateVerdict: (String(r.gate_verdict || 'PASS') as StoredV4EvalSummary['gateVerdict']),
+      availableWeightRatio: Number(r.available_weight_ratio ?? 0),
+      sideSummaries: JSON.parse(String(r.side_summaries_json || '[]')) as StoredV4EvalSideSummary[],
+      createdAt: String(r.created_at),
+    }));
+  }
+
+  getV4Evaluation(evalId: string): StoredV4EvalRecord | null {
+    const r = this.db
+      .prepare(
+        `SELECT eval_id, run_id, data_source_id, system_id, system_name, system_version,
+                metric_graph_id, sides_json, overall_score, gate_verdict,
+                available_weight_ratio, side_summaries_json, overall_json, by_side_json,
+                metric_snapshots_json, created_at
+         FROM v4_eval_results WHERE eval_id = ?`,
+      )
+      .get(evalId) as Record<string, unknown> | undefined;
+    if (!r) return null;
+    return {
+      evalId: String(r.eval_id),
+      runId: String(r.run_id),
+      dataSourceId: r.data_source_id ? String(r.data_source_id) : undefined,
+      systemId: String(r.system_id),
+      systemName: String(r.system_name),
+      systemVersion: String(r.system_version || '1.0.0'),
+      metricGraphId: r.metric_graph_id ? String(r.metric_graph_id) : undefined,
+      sides: JSON.parse(String(r.sides_json || '[]')) as string[],
+      overallScore: r.overall_score !== null && r.overall_score !== undefined ? Number(r.overall_score) : null,
+      gateVerdict: (String(r.gate_verdict || 'PASS') as StoredV4EvalSummary['gateVerdict']),
+      availableWeightRatio: Number(r.available_weight_ratio ?? 0),
+      sideSummaries: JSON.parse(String(r.side_summaries_json || '[]')) as StoredV4EvalSideSummary[],
+      overall: JSON.parse(String(r.overall_json || '{}')) as EvaluationDagOutput,
+      bySide: JSON.parse(String(r.by_side_json || '{}')) as Record<string, EvaluationDagOutput>,
+      ...(r.metric_snapshots_json
+        ? { metricSnapshots: JSON.parse(String(r.metric_snapshots_json)) as V4MetricSnapshotItem[] }
+        : {}),
+      createdAt: String(r.created_at),
+    };
+  }
+
+  deleteV4Evaluation(evalId: string): boolean {
+    const info = this.db.prepare('DELETE FROM v4_eval_results WHERE eval_id = ?').run(evalId);
     return info.changes > 0;
   }
 

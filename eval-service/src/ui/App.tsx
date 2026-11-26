@@ -237,13 +237,16 @@ export function App() {
               <ErrorBoundary fallbackTitle="评估总览驾驶舱渲染异常">
                 <CockpitView
                   runs={runs}
-                  systems={systems}
                   selectedRunId={selectedRunId}
-                  selectedSystemId={selectedSystemId}
                   activeSourceId={activeSourceId}
                   onSelectRun={setSelectedRunId}
-                  onSelectSystem={setSelectedSystemId}
                   onOpenV4SystemCanvas={() => setActiveTab('systems')}
+                  onNavigateToTab={(tab, targetId) => {
+                    setActiveTab(tab);
+                    if (tab === 'operators' && targetId) {
+                      setFocusedOperatorTarget({ id: targetId, nonce: Date.now() });
+                    }
+                  }}
                 />
               </ErrorBoundary>
             </section>

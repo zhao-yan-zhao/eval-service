@@ -1,0 +1,22 @@
+[
+  {
+    "effectId": "eff_test_metric",
+    "name": "测试命中率效果",
+    "role": "effect",
+    "domainTag": "firepower",
+    "metricBinding": {
+      "metricId": "m_hit_rate",
+      "reduce": "mean",
+      "scoringRule": {
+        "type": "larger_is_better",
+        "optimal": 1,
+        "worst": 0
+      }
+    },
+    "aggregation": {
+      "strategy": "weighted_sum",
+      "missingPolicy": "skip_renormalize"
+    },
+    "isBuiltin": false
+  }
+]

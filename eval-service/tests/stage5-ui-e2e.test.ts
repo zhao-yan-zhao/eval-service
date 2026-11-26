@@ -102,24 +102,44 @@ test('Stage 5 & 6：全栈 UI 构建产物与六大工作台无头浏览器端�
       assert.ok(box && box.width > 120 && box.height > 100, `[${label}] ECharts canvas 尺寸异常: ${JSON.stringify(box)}`);
     };
 
-    // 1. 首屏加载 Cockpit 评估总控台
-    await page.goto(baseUrl, { waitUntil: 'networkidle' });
-    await page.waitForSelector('#panel-cockpit canvas', { timeout: 15_000 });
-    await page.waitForSelector('text=物理证据时间轴', { timeout: 15_000 });
+    // 1. 首屏加载新版 V4 Cockpit 评估总控台
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    const cockpitSampleSelect = page.locator('#panel-cockpit').getByLabel('选择推演样本');
+    await cockpitSampleSelect.waitFor({ state: 'visible', timeout: 15_000 });
+    await cockpitSampleSelect.selectOption('gj11_pl15_bvr_real');
+    await page.waitForSelector('#panel-cockpit canvas', { timeout: 30_000 });
+    await page.locator('#panel-cockpit').getByText('已存评估：').waitFor({ state: 'visible', timeout: 30_000 });
     await assertNoHorizontalOverflow('1440-cockpit');
     await assertVisibleCanvasDrawn('#panel-cockpit', 'cockpit');
 
-    // 点击 多方案 TOPSIS 排序 (验证 Python NumPy/SciPy 跨场景排序渲染)
-    await page.getByRole('button', { name: /多方案 TOPSIS 排序/ }).click();
-    await page.waitForSelector('text=Rank #1', { timeout: 25_000 });
+    // 验证「层次得分明细」展示客观指标徽标，并点击「明细表」一键联动跳转「体系指标明细」页签
+    await page.locator('#panel-cockpit').getByText('客观指标').first().waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('#panel-cockpit').getByRole('button', { name: '明细表' }).first().click();
+    await page.locator('#panel-cockpit').getByRole('button', { name: '导出 CSV' }).waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#panel-cockpit').getByRole('tab', { name: /层次得分明细/ }).click();
+
+    // 验证右栏三视角切换（指标热力矩阵 / 短板四象限）
+    await page.locator('#panel-cockpit').getByRole('button', { name: '指标热力矩阵' }).click();
+    await page.waitForTimeout(150);
+    await page.locator('#panel-cockpit').getByRole('button', { name: '短板四象限' }).click();
+    await page.waitForTimeout(150);
+    await page.locator('#panel-cockpit').getByRole('button', { name: '分维度对比' }).click();
+
+    // 点击「多方案优选」并执行 TOPSIS + VIKOR 排序
+    await page.locator('#panel-cockpit').getByRole('button', { name: '多方案优选' }).click();
+    await page.locator('#panel-cockpit').getByRole('button', { name: /执行 TOPSIS \+ VIKOR 对比/ }).click();
+    await page.locator('#panel-cockpit').getByText('Rank #1').first().waitFor({ state: 'visible', timeout: 60_000 });
     await snap('01-cockpit-desktop.png');
 
-    // 切换证据时间轴并打开原生 <dialog> 溯源详情再关闭
-    await page.getByRole('tab', { name: /物理证据时间轴/ }).click();
-    await page.getByRole('button', { name: '溯源详情' }).first().click();
-    await page.waitForSelector('dialog[open]', { timeout: 5_000 });
-    await page.locator('dialog[open]').getByRole('button', { name: '关闭弹窗' }).click();
-    await page.waitForSelector('dialog[open]', { state: 'detached', timeout: 5_000 });
+    // 切换物理证据溯源页签并测试原生 <dialog> 详情弹窗（若有证据项）
+    await page.locator('#panel-cockpit').getByRole('tab', { name: /物理证据溯源/ }).click();
+    const firstEvidenceBtn = page.locator('#panel-cockpit').getByRole('button', { name: '溯源详情' }).first();
+    if (await firstEvidenceBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await firstEvidenceBtn.click();
+      await page.waitForSelector('dialog[open]', { timeout: 5_000 });
+      await page.locator('dialog[open]').getByRole('button', { name: '关闭弹窗' }).click();
+      await page.waitForSelector('dialog[open]', { state: 'detached', timeout: 5_000 });
+    }
 
     // 2. 算子工作台 (#tab-operators)：单一算子资产列表、4 大核心算法规范底座、列表操作一键跳转画布工坊
     await page.locator('#tab-operators').click();

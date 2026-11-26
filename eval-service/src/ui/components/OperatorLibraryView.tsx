@@ -37,11 +37,7 @@ import { PipelineCanvasStudio } from './pipeline-canvas/index.ts';
 import { OperatorInlineEditor } from './OperatorInlineEditor.tsx';
 import { CreateOperatorModal } from './CreateOperatorModal.tsx';
 import { evalApi } from '../api.ts';
-import {
-  UnifiedAssetSelector,
-  V4TablePivotPreview,
-  type UnifiedAssetOption,
-} from './v4/index.ts';
+import { V4TablePivotPreview } from './v4/index.ts';
 import type { TableDataset } from '../../core/types.ts';
 
 interface V4OperatorDetailInfo {
@@ -411,6 +407,8 @@ export function OperatorLibraryView({
   const algoCounts = useMemo(() => {
     const counts: Record<string, number> = {
       all: operators.length,
+      python_script: 0,
+      spatial: 0,
       inline_calc: 0,
       group_agg: 0,
       data_input: 0,
@@ -521,24 +519,6 @@ export function OperatorLibraryView({
     }
   }, [detailOp]);
 
-  const operatorSelectorOptions = useMemo<UnifiedAssetOption[]>(() => {
-    const domainLabelMap: Record<string, string> = {
-      time: '时效域',
-      effectiveness: '效能域',
-      situation: '态势域',
-      compliance: '合规域',
-      cost: '成本域',
-    };
-    return operators.map((op) => ({
-      id: op.id,
-      label: op.name || op.id,
-      subLabel: op.id,
-      group: domainLabelMap[op.category] ?? '通用算子',
-      badge: op.layer === 'fact' ? '基础事实' : '复合算子',
-      badgeTone: op.layer === 'fact' ? 'cyan' : 'slate',
-    }));
-  }, [operators]);
-
   return (
     <div className="flex flex-col gap-3 text-slate-100">
       {viewMode === 'canvas' ? (
@@ -572,21 +552,6 @@ export function OperatorLibraryView({
                   ? `全部算子 · ${operators.length}`
                   : `${filteredOperators.length} / ${operators.length} 项`}
               </span>
-
-              <UnifiedAssetSelector
-                value={selectedCanvasOp?.id ?? ''}
-                options={operatorSelectorOptions}
-                placeholder="定位算子..."
-                searchPlaceholder="搜索名称、ID 或领域..."
-                accent="cyan"
-                onChange={(opId) => {
-                  const target = operators.find((o) => o.id === opId) ?? null;
-                  if (target) {
-                    setSelectedCanvasOp(target);
-                    setViewMode('canvas');
-                  }
-                }}
-              />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -610,10 +575,12 @@ export function OperatorLibraryView({
                 className="h-8 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none cursor-pointer"
               >
                 <option value="all">全部实现方式</option>
-                <option value="formula">行内公式 ({algoCounts.formula ?? 0})</option>
-                <option value="agg">跨行聚合 ({algoCounts.agg ?? 0})</option>
-                <option value="input">数据输入 ({algoCounts.input ?? 0})</option>
-                <option value="output">结果输出 ({algoCounts.output ?? 0})</option>
+                <option value="python_script">Python 脚本 ({algoCounts.python_script ?? 0})</option>
+                <option value="spatial">空间几何 ({algoCounts.spatial ?? 0})</option>
+                <option value="inline_calc">行内公式 ({algoCounts.inline_calc ?? 0})</option>
+                <option value="group_agg">跨行聚合 ({algoCounts.group_agg ?? 0})</option>
+                <option value="data_input">数据抽取 ({algoCounts.data_input ?? 0})</option>
+                <option value="result_output">二维表输出 ({algoCounts.result_output ?? 0})</option>
               </select>
 
               <div className="relative w-44 xl:w-52">
@@ -654,18 +621,6 @@ export function OperatorLibraryView({
               >
                 <Layers className="h-3.5 w-3.5 text-cyan-400" />
                 <span className="hidden xl:inline">扩展管理</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedCanvasOp(null);
-                  setViewMode('canvas');
-                }}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-cyan-500/45 bg-cyan-500/15 px-2.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/25 transition cursor-pointer"
-              >
-                <Workflow className="h-3.5 w-3.5" />
-                <span>画布编排</span>
               </button>
             </div>
           </div>

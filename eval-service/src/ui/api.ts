@@ -1221,4 +1221,91 @@ export const evalApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  compareV4SystemSides: (
+    systemId: string,
+    body: {
+      runId?: string;
+      dataSourceId?: string;
+      persist?: boolean;
+      system?: EvaluationSystemDag;
+    },
+  ) =>
+    requestJson<V4CompareSidesResponse>(
+      `/api/v4/system-dags/${encodeURIComponent(systemId)}/compare-sides`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    ),
+
+  listV4Evaluations: (runId?: string, limit = 50) => {
+    const params = new URLSearchParams();
+    if (runId) params.set('runId', runId);
+    if (limit) params.set('limit', String(limit));
+    const qs = params.toString();
+    return requestJson<{ ok: boolean; evaluations: StoredV4EvalSummary[] }>(
+      `/api/v4/evaluations${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  getV4Evaluation: (evalId: string) =>
+    requestJson<{ ok: boolean; evaluation: StoredV4EvalRecord }>(
+      `/api/v4/evaluations/${encodeURIComponent(evalId)}`,
+    ),
+
+  deleteV4Evaluation: (evalId: string) =>
+    requestJson<{ ok: boolean; evalId: string; deleted: boolean }>(
+      `/api/v4/evaluations/${encodeURIComponent(evalId)}`,
+      { method: 'DELETE' },
+    ),
 };
+
+export interface StoredV4EvalSideSummary {
+  side: string;
+  overallScore: number | null;
+  rawOverallScore: number | null;
+  gateVerdict: 'PASS' | 'WARNING' | 'DISQUALIFIED';
+  availableWeightRatio: number;
+}
+
+export interface StoredV4EvalSummary {
+  evalId: string;
+  runId: string;
+  dataSourceId?: string;
+  systemId: string;
+  systemName: string;
+  systemVersion: string;
+  metricGraphId?: string;
+  sides: string[];
+  overallScore: number | null;
+  gateVerdict: 'PASS' | 'WARNING' | 'DISQUALIFIED';
+  availableWeightRatio: number;
+  sideSummaries: StoredV4EvalSideSummary[];
+  createdAt: string;
+}
+
+export type { V4MetricSnapshotItem, V4MetricTableSlice } from '../core/types.ts';
+import type { V4MetricSnapshotItem } from '../core/types.ts';
+
+export interface StoredV4EvalRecord extends StoredV4EvalSummary {
+  overall: EvaluationDagOutput;
+  bySide: Record<string, EvaluationDagOutput>;
+  metricSnapshots?: V4MetricSnapshotItem[];
+}
+
+export interface V4CompareSidesResponse {
+  ok: boolean;
+  evalId?: string;
+  createdAt?: string;
+  systemId: string;
+  systemName?: string;
+  systemVersion?: string;
+  runId: string;
+  metricGraphId?: string;
+  sides: string[];
+  sideSummaries?: StoredV4EvalSideSummary[];
+  overall: EvaluationDagOutput;
+  bySide: Record<string, EvaluationDagOutput>;
+  metricSnapshots?: V4MetricSnapshotItem[];
+}
