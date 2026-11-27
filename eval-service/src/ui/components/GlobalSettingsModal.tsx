@@ -16,6 +16,8 @@ import {
   Folder,
   HardDrive,
   Layers,
+  Pause,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -24,6 +26,7 @@ import {
   ShieldCheck,
   Trash2,
   Upload,
+  Wrench,
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
@@ -32,6 +35,7 @@ import {
   type ComponentManifest,
   type DataSourceProbeResult,
   type DataSourceStatus,
+  type ImportJobStatus,
   type StoredRunSummary,
 } from '../api.ts';
 
@@ -73,6 +77,19 @@ export function GlobalSettingsModal({
   const [serverActiveSourceId, setServerActiveSourceId] = useState(activeSourceId);
   const [dsLoading, setDsLoading] = useState(false);
   const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [importJobs, setImportJobs] = useState<ImportJobStatus[]>([]);
+
+  // 路径失效修复与重定位弹窗
+  const [relocateTarget, setRelocateTarget] = useState<DataSourceStatus | null>(null);
+  const [relocatePath, setRelocatePath] = useState('');
+  const [relocateProbe, setRelocateProbe] = useState<DataSourceProbeResult | null>(null);
+  const [relocating, setRelocating] = useState(false);
+
+  // 大体积操作预警确认弹窗 (> 200MB)
+  const [bigJobConfirm, setBigJobConfirm] = useState<{
+    ds: DataSourceStatus;
+    mode: 'archive' | 'sqlite_import';
+  } | null>(null);
 
   // 新增探测表单
   const [newPath, setNewPath] = useState('');
@@ -81,12 +98,32 @@ export function GlobalSettingsModal({
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState<DataSourceProbeResult | null>(null);
 
-  const loadSources = async () => {
+  const loadJobs = async () => {
+    try {
+      const res = await evalApi.listDataSourceJobs();
+      setImportJobs(res.jobs);
+    } catch {
+      // 忽略任务列表读取异常
+    }
+  };
+
+  const loadSources = async (showFeedback = false) => {
     setDsLoading(true);
     try {
-      const res = await evalApi.listDataSources();
+      const [res, jobsRes] = await Promise.all([
+        evalApi.listDataSources(),
+        evalApi.listDataSourceJobs().catch(() => ({ jobs: [] as ImportJobStatus[] })),
+      ]);
       setDataSources(res.dataSources);
       setServerActiveSourceId(res.activeSourceId);
+      setImportJobs(jobsRes.jobs);
+      if (showFeedback) {
+        const accessibleCount = res.dataSources.filter((d) => d.accessible).length;
+        setMsg({
+          kind: 'ok',
+          text: `数据源检测完成：共 ${res.dataSources.length} 个数据源，其中 ${accessibleCount} 个可用`,
+        });
+      }
     } catch (e) {
       setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -176,6 +213,99 @@ export function GlobalSettingsModal({
     }
   };
 
+  const openRelocateModal = (ds: DataSourceStatus) => {
+    setRelocateTarget(ds);
+    setRelocatePath(ds.dedicatedBackupPath || ds.source.path);
+    setRelocateProbe(null);
+  };
+
+  const handleRelocateProbe = async () => {
+    const target = relocatePath.trim();
+    if (!target) return;
+    setRelocating(true);
+    try {
+      const res = await evalApi.probeDataSource(target);
+      setRelocateProbe(res.probe);
+    } catch (err) {
+      setRelocateProbe({
+        accessible: false,
+        path: target,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRelocating(false);
+    }
+  };
+
+  const handleRelocateSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!relocateTarget || !relocatePath.trim()) return;
+    setRelocating(true);
+    setMsg(null);
+    try {
+      const res = await evalApi.relocateDataSource(relocateTarget.source.id, relocatePath.trim());
+      setDataSources(res.dataSources);
+      setRelocateTarget(null);
+      setMsg({ kind: 'ok', text: `已成功修复并重定向数据源「${relocateTarget.source.name}」` });
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setRelocating(false);
+    }
+  };
+
+  const triggerBackgroundJob = async (ds: DataSourceStatus, mode: 'archive' | 'sqlite_import', skipConfirm = false) => {
+    const sizeBytes = ds.totalSizeBytes ?? 0;
+    const BIG_THRESHOLD = 200 * 1024 * 1024; // 200 MB
+    if (!skipConfirm && sizeBytes > BIG_THRESHOLD) {
+      setBigJobConfirm({ ds, mode });
+      return;
+    }
+    setBigJobConfirm(null);
+    setMsg(null);
+    try {
+      const res =
+        mode === 'archive'
+          ? await evalApi.archiveDataSource(ds.source.id)
+          : await evalApi.importDataSourceSqlite(ds.source.id);
+      setImportJobs((prev) => [res.job, ...prev.filter((j) => j.jobId !== res.job.jobId)]);
+      setMsg({
+        kind: 'ok',
+        text: `已启动后台${mode === 'archive' ? '专用仓归档' : 'SQLite 全量入库'}任务（支持随时暂停与断点续传）`,
+      });
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
+  const handlePauseJob = async (jobId: string) => {
+    try {
+      const res = await evalApi.pauseDataSourceJob(jobId);
+      setImportJobs((prev) => prev.map((j) => (j.jobId === jobId ? res.job : j)));
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
+  const handleResumeJob = async (jobId: string) => {
+    try {
+      const res = await evalApi.resumeDataSourceJob(jobId);
+      setImportJobs((prev) => prev.map((j) => (j.jobId === jobId ? res.job : j)));
+      setMsg({ kind: 'ok', text: '已从断点检查点恢复后台任务' });
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
+  const handleDiscardJob = async (jobId: string) => {
+    try {
+      await evalApi.deleteDataSourceJob(jobId);
+      setImportJobs((prev) => prev.filter((j) => j.jobId !== jobId));
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
   // -------------------------------------------------------------
   // Tab 2: 物理双库隔离与多库管理 (Database Isolation)
   // -------------------------------------------------------------
@@ -194,12 +324,20 @@ export function GlobalSettingsModal({
   const [dbModal, setDbModal] = useState<{ action: 'create' | 'clone'; type: 'operator' | 'scenario' } | null>(null);
   const [modalInputName, setModalInputName] = useState('');
   const [templateChoice, setTemplateChoice] = useState<'empty' | 'standard'>('empty');
+  const [dbRuns, setDbRuns] = useState<StoredRunSummary[]>(runs);
+  const [confirmDeleteRun, setConfirmDeleteRun] = useState<StoredRunSummary | null>(null);
+  const [confirmDeleteDb, setConfirmDeleteDb] = useState<{ filename: string; fileSize: number } | null>(null);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [deletingDbName, setDeletingDbName] = useState<string | null>(null);
+  const [refreshingDbs, setRefreshingDbs] = useState(false);
 
-  const loadDatabases = async () => {
+  const loadDatabases = async (showFeedback = false) => {
+    if (showFeedback) setRefreshingDbs(true);
     try {
-      const [cur, list] = await Promise.all([
+      const [cur, list, runsRes] = await Promise.all([
         evalApi.getCurrentDb(),
         evalApi.listDatabases(),
+        evalApi.listRuns().catch(() => ({ runs: [] as StoredRunSummary[] })),
       ]);
 
       if (cur.operatorDb) {
@@ -214,10 +352,51 @@ export function GlobalSettingsModal({
         setScenarioDbStats(cur.stats);
       }
 
-      setOperatorDbs(list.operatorDatabases || []);
-      setScenarioDbs(list.scenarioDatabases || list.databases || []);
+      const opList = list.operatorDatabases || [];
+      const scList = list.scenarioDatabases || list.databases || [];
+      setOperatorDbs(opList);
+      setScenarioDbs(scList);
+      setDbRuns(runsRes.runs);
+      if (showFeedback) {
+        setMsg({
+          kind: 'ok',
+          text: `已刷新数据库列表（算子库 ${opList.length} 个 · 想定库 ${scList.length} 个 · 当前库内场次 ${runsRes.runs.length} 场）`,
+        });
+      }
     } catch (err) {
       setMsg({ kind: 'err', text: '加载数据库信息失败: ' + String(err) });
+    } finally {
+      if (showFeedback) setRefreshingDbs(false);
+    }
+  };
+
+  const executeDeleteRun = async (run: StoredRunSummary) => {
+    setConfirmDeleteRun(null);
+    setDeletingRunId(run.runId);
+    setMsg(null);
+    try {
+      const res = await evalApi.deleteRunAsync(run.runId);
+      setImportJobs((prev) => [res.job, ...prev.filter((j) => j.jobId !== res.job.jobId)]);
+      setMsg({ kind: 'ok', text: `已启动清理任务：正在删除「${run.scenarioName}」并压缩空间…` });
+    } catch (err) {
+      setMsg({ kind: 'err', text: `删除推演场次失败: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setDeletingRunId(null);
+    }
+  };
+
+  const executeDeleteDbFile = async (filename: string) => {
+    setConfirmDeleteDb(null);
+    setDeletingDbName(filename);
+    setMsg(null);
+    try {
+      await evalApi.deleteDatabaseFile(filename);
+      setMsg({ kind: 'ok', text: `已彻底删除数据库文件「${filename}」` });
+      await loadDatabases();
+    } catch (err) {
+      setMsg({ kind: 'err', text: `删除数据库文件失败: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setDeletingDbName(null);
     }
   };
 
@@ -452,11 +631,15 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
 
-  const loadComponents = async () => {
+  const loadComponents = async (showFeedback = false) => {
     setCompLoading(true);
     try {
       const res = await evalApi.listComponents();
-      setComponents(res.components || []);
+      const list = res.components || [];
+      setComponents(list);
+      if (showFeedback) {
+        setMsg({ kind: 'ok', text: `已刷新算子组件清单：共 ${list.length} 个组件` });
+      }
     } catch (err) {
       setMsg({ kind: 'err', text: '加载组件列表失败: ' + String(err) });
     } finally {
@@ -610,6 +793,32 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
     }
   }, [open, initialTab]);
 
+  // 有后台任务正在运行时，自动高频刷新进度与状态
+  const hasRunningJobs = importJobs.some((j) => j.status === 'running');
+  useEffect(() => {
+    if (!open || !hasRunningJobs) return;
+    let active = true;
+    const timer = window.setInterval(async () => {
+      if (!active) return;
+      try {
+        const res = await evalApi.listDataSourceJobs();
+        if (!active) return;
+        setImportJobs(res.jobs);
+        const stillRunning = res.jobs.some((j) => j.status === 'running');
+        if (!stillRunning) {
+          await Promise.all([loadSources(), loadDatabases()]);
+          if (onRefreshAll) await onRefreshAll();
+        }
+      } catch {
+        // ignore polling error
+      }
+    }, 800);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [open, hasRunningJobs]);
+
   const currentRun = runs.find((r) => r.runId === selectedRunId);
   const effectiveActiveSourceId = serverActiveSourceId || activeSourceId;
 
@@ -757,6 +966,55 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
                 </div>
               </div>
 
+              {/* 断点续传与中断恢复横幅 */}
+              {importJobs.some((j) => j.status === 'paused' || j.status === 'interrupted' || j.status === 'failed') && (
+                <div className="space-y-2">
+                  {importJobs
+                    .filter((j) => j.status === 'paused' || j.status === 'interrupted' || j.status === 'failed')
+                    .map((job) => (
+                      <div
+                        key={job.jobId}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-950/20 px-4 py-3 text-xs"
+                      >
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 font-semibold text-amber-200">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                            <span>
+                              检测到{job.status === 'paused' ? '已暂停' : job.status === 'interrupted' ? '服务中断' : '异常中止'}的
+                              {job.jobType === 'archive' ? '专用仓归档' : 'SQLite 入库'}任务：
+                              {job.sourceName || job.sourceId}
+                            </span>
+                            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">
+                              已完成 {job.processedFiles}/{job.totalFiles} · {job.percent.toFixed(1)}%
+                            </span>
+                          </div>
+                          {job.error && (
+                            <div className="text-[11px] text-amber-300/80">{job.error}</div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleResumeJob(job.jobId)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-950/50 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:border-emerald-400 transition"
+                          >
+                            <Play className="h-3 w-3 text-emerald-400" />
+                            从断点继续
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDiscardJob(job.jobId)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#30363d] bg-[#0f141a] px-2.5 py-1.5 text-xs text-slate-300 hover:border-rose-500 hover:text-rose-300 transition"
+                          >
+                            <X className="h-3 w-3" />
+                            放弃
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+
               {/* 数据源列表 */}
               <div>
                 <div className="mb-2.5 flex items-center justify-between">
@@ -766,12 +1024,13 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
                   </span>
                   <button
                     type="button"
-                    onClick={loadSources}
+                    onClick={() => loadSources(true)}
                     disabled={dsLoading}
-                    className="inline-flex items-center gap-1 text-[11px] text-[#8b949e] hover:text-slate-200 transition"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#30363d] bg-[#1c2128] px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:border-blue-500/60 hover:text-white disabled:opacity-50 transition"
+                    title="重新探测所有数据源路径与可用状态"
                   >
-                    <RefreshCw className={`h-3 w-3 ${dsLoading ? 'animate-spin' : ''}`} />
-                    重新检测
+                    <RefreshCw className={`h-3 w-3 ${dsLoading ? 'animate-spin text-blue-400' : ''}`} />
+                    <span>{dsLoading ? '检测中…' : '重新检测'}</span>
                   </button>
                 </div>
 
@@ -781,90 +1040,332 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
                       ds.source.id === effectiveActiveSourceId ||
                       (ds.importedRunId !== undefined && ds.importedRunId === selectedRunId);
                     const isBusy = activatingId === ds.source.id;
+                    const activeJob = importJobs.find(
+                      (j) =>
+                        j.sourceId === ds.source.id &&
+                        (j.status === 'running' || j.status === 'paused' || j.status === 'interrupted'),
+                    );
                     return (
                       <div
                         key={ds.source.id}
-                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-3.5 text-xs transition ${
+                        className={`rounded-xl border p-3.5 text-xs transition ${
                           isActive
                             ? 'border-emerald-500/50 bg-emerald-950/20 shadow-sm'
                             : ds.accessible
                             ? 'border-[#2a313c] bg-[#0f141a] hover:border-slate-600'
-                            : 'border-rose-950/60 bg-rose-950/10 opacity-75'
+                            : 'border-amber-500/40 bg-amber-950/10'
                         }`}
                       >
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                                ds.accessible ? 'bg-emerald-400' : 'bg-rose-500'
-                              }`}
-                            />
-                            <span className="font-semibold text-slate-100 text-sm">{ds.source.name}</span>
-                            <span className="rounded border border-[#30363d] bg-[#161b22] px-2 py-0.5 text-[10px] text-blue-300 font-mono">
-                              {ds.source.kind === 'csv_dir' ? 'CSV 目录' : 'JSONL 状态帧'}
-                            </span>
-                            {isActive && (
-                              <span className="inline-flex items-center gap-1 rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-500/30">
-                                <CheckCircle2 className="h-3 w-3" />
-                                正在使用
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                  ds.accessible ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                                }`}
+                              />
+                              <span className="font-semibold text-slate-100 text-sm">{ds.source.name}</span>
+                              <span className="rounded border border-[#30363d] bg-[#161b22] px-2 py-0.5 text-[10px] text-blue-300 font-mono">
+                                {ds.source.kind === 'csv_dir' ? 'CSV 目录' : 'JSONL 状态帧'}
                               </span>
-                            )}
-                          </div>
-                          <div className="truncate font-mono text-[11px] text-[#8b949e]" title={ds.source.path}>
-                            {ds.source.path}
-                          </div>
-                          {ds.fileCount !== undefined && (
-                            <div className="text-[11px] text-slate-400">
-                              {ds.fileCount} 个文件 · 共 {((ds.totalSizeBytes ?? 0) / (1024 * 1024)).toFixed(2)} MB
+                              {ds.isArchived && (
+                                <span className="inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-950/40 px-2 py-0.5 text-[10px] text-cyan-300">
+                                  <Archive className="h-2.5 w-2.5" />
+                                  专用仓
+                                </span>
+                              )}
+                              {ds.importedRunId && (
+                                <span className="inline-flex items-center gap-1 rounded border border-purple-500/30 bg-purple-950/40 px-2 py-0.5 text-[10px] text-purple-300">
+                                  <Database className="h-2.5 w-2.5" />
+                                  已入库 SQLite
+                                </span>
+                              )}
+                              {isActive && (
+                                <span className="inline-flex items-center gap-1 rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-emerald-500/30">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  正在使用
+                                </span>
+                              )}
                             </div>
-                          )}
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={!ds.accessible || isBusy}
-                            onClick={() => handleActivate(ds.source.id)}
-                            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-40 ${
-                              isActive
-                                ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
-                                : 'border-[#30363d] bg-[#1c2128] text-white hover:border-blue-500 hover:text-blue-200'
-                            }`}
-                          >
-                            {isBusy ? (
-                              <>
-                                <RefreshCw className="h-3 w-3 animate-spin text-blue-400" />
-                                切换中…
-                              </>
-                            ) : isActive ? (
-                              <>
-                                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                                已生效
-                              </>
+                            <div className="truncate font-mono text-[11px] text-[#8b949e]" title={ds.resolvedPath || ds.source.path}>
+                              {ds.source.path}
+                            </div>
+                            {!ds.accessible ? (
+                              <div className="text-[11px] text-amber-300/90 flex items-center gap-1.5">
+                                <AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" />
+                                <span>
+                                  {ds.error || '当前机器路径不存在'}
+                                  {ds.dedicatedBackupPath ? `（✨ 专用仓已发现备份: ${ds.dedicatedBackupPath}）` : ''}
+                                </span>
+                              </div>
                             ) : (
-                              <>
-                                <Play className="h-3 w-3 text-emerald-400" />
-                                设为当前测试数据
-                              </>
+                              ds.fileCount !== undefined && (
+                                <div className="text-[11px] text-slate-400">
+                                  {ds.fileCount} 个文件 · 共 {((ds.totalSizeBytes ?? 0) / (1024 * 1024)).toFixed(2)} MB
+                                </div>
+                              )
                             )}
-                          </button>
+                          </div>
 
-                          {!ds.source.isBuiltin && (
+                          <div className="flex flex-wrap shrink-0 items-center gap-1.5">
+                            {!ds.accessible ? (
+                              <button
+                                type="button"
+                                onClick={() => openRelocateModal(ds)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-950/40 px-3 py-1.5 text-xs font-medium text-amber-200 hover:border-amber-400 hover:bg-amber-900/50 transition"
+                              >
+                                <Wrench className="h-3 w-3 text-amber-400" />
+                                路径失效（点击修复）
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => handleActivate(ds.source.id)}
+                                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-40 ${
+                                  isActive
+                                    ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
+                                    : 'border-[#30363d] bg-[#1c2128] text-white hover:border-blue-500 hover:text-blue-200'
+                                }`}
+                              >
+                                {isBusy ? (
+                                  <>
+                                    <RefreshCw className="h-3 w-3 animate-spin text-blue-400" />
+                                    切换中…
+                                  </>
+                                ) : isActive ? (
+                                  <>
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                                    已生效
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="h-3 w-3 text-emerald-400" />
+                                    设为当前测试数据
+                                  </>
+                                )}
+                              </button>
+                            )}
+
+                            {ds.accessible && !ds.isArchived && (
+                              <button
+                                type="button"
+                                disabled={activeJob?.status === 'running'}
+                                onClick={() => triggerBackgroundJob(ds, 'archive')}
+                                className="rounded-lg border border-[#30363d] bg-[#0f141a] p-1.5 text-cyan-300 hover:border-cyan-500 disabled:opacity-40 transition"
+                                title="归档复制到专用目录 (data/simulations/)"
+                              >
+                                <Archive className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+
+                            {ds.accessible && (
+                              <button
+                                type="button"
+                                disabled={activeJob?.status === 'running'}
+                                onClick={() => triggerBackgroundJob(ds, 'sqlite_import')}
+                                className="rounded-lg border border-[#30363d] bg-[#0f141a] p-1.5 text-purple-300 hover:border-purple-500 disabled:opacity-40 transition"
+                                title="全量提取并存入 SQLite 想定库 (支持断点续传)"
+                              >
+                                <Database className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+
                             <button
                               type="button"
-                              onClick={() => handleDeleteDataSource(ds.source.id)}
-                              className="rounded-lg border border-[#30363d] bg-[#0f141a] p-1.5 text-rose-400 hover:border-rose-500"
-                              title="移除自定义数据源"
+                              onClick={() => openRelocateModal(ds)}
+                              className="rounded-lg border border-[#30363d] bg-[#0f141a] p-1.5 text-slate-300 hover:border-blue-500 transition"
+                              title="修改/重定向路径"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Pencil className="h-3.5 w-3.5" />
                             </button>
-                          )}
+
+                            {!ds.source.isBuiltin && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDataSource(ds.source.id)}
+                                className="rounded-lg border border-[#30363d] bg-[#0f141a] p-1.5 text-rose-400 hover:border-rose-500"
+                                title="移除自定义数据源"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
+
+                        {/* 实时后台任务进度条 */}
+                        {activeJob && (
+                          <div className="mt-3 rounded-lg border border-[#30363d] bg-[#161b22] p-2.5 space-y-1.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                              <div className="flex items-center gap-2 font-medium text-slate-200">
+                                {activeJob.status === 'running' ? (
+                                  <RefreshCw className="h-3 w-3 animate-spin text-blue-400" />
+                                ) : (
+                                  <Pause className="h-3 w-3 text-amber-400" />
+                                )}
+                                <span>
+                                  {activeJob.jobType === 'archive' ? '专用仓归档复制' : 'SQLite 分批入库'}
+                                  {activeJob.status === 'paused' ? '（已暂停）' : activeJob.status === 'interrupted' ? '（已中断）' : '…'}
+                                </span>
+                                {activeJob.currentFile && (
+                                  <span className="truncate max-w-[220px] font-mono text-[10px] text-[#8b949e]">
+                                    {activeJob.currentFile}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 font-mono text-[11px] text-slate-300">
+                                <span>
+                                  {activeJob.processedFiles}/{activeJob.totalFiles} · {activeJob.percent.toFixed(1)}%
+                                </span>
+                                {activeJob.speedBytesPerSec > 0 && activeJob.jobType === 'archive' && (
+                                  <span className="text-cyan-300">
+                                    {(activeJob.speedBytesPerSec / (1024 * 1024)).toFixed(1)} MB/s
+                                  </span>
+                                )}
+                                {activeJob.etaSeconds !== null && (
+                                  <span className="text-slate-400">剩余 ~{activeJob.etaSeconds}s</span>
+                                )}
+                                {activeJob.status === 'running' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePauseJob(activeJob.jobId)}
+                                    className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-950/40 px-2 py-0.5 text-[10px] text-amber-200 hover:border-amber-400"
+                                  >
+                                    <Pause className="h-2.5 w-2.5" />
+                                    暂停
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResumeJob(activeJob.jobId)}
+                                    className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-950/40 px-2 py-0.5 text-[10px] text-emerald-200 hover:border-emerald-400"
+                                  >
+                                    <Play className="h-2.5 w-2.5" />
+                                    继续
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0d1117]">
+                              <div
+                                className={`h-full transition-all duration-300 ${
+                                  activeJob.status === 'running' ? 'bg-blue-500' : 'bg-amber-500'
+                                }`}
+                                style={{ width: `${Math.max(2, activeJob.percent)}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </div>
+
+              {/* 路径失效修复与重定位子面板 */}
+              {relocateTarget && (
+                <form
+                  onSubmit={handleRelocateSubmit}
+                  className="rounded-xl border border-amber-500/40 bg-[#161b22] p-4 space-y-3 shadow-lg"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-amber-200">
+                      <Wrench className="h-4 w-4 text-amber-400" />
+                      修复 / 重定向数据源路径：{relocateTarget.source.name}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRelocateTarget(null)}
+                      className="text-slate-400 hover:text-slate-200"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-[#8b949e]">
+                    原路径：<code className="text-rose-300">{relocateTarget.source.path}</code>
+                    {relocateTarget.dedicatedBackupPath && (
+                      <button
+                        type="button"
+                        onClick={() => setRelocatePath(relocateTarget.dedicatedBackupPath!)}
+                        className="ml-2 inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-950/40 px-2 py-0.5 text-[10px] text-emerald-300 hover:border-emerald-400"
+                      >
+                        ✨ 一键填入专用仓备份 ({relocateTarget.dedicatedBackupPath})
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      required
+                      value={relocatePath}
+                      onChange={(e) => {
+                        setRelocatePath(e.target.value);
+                        setRelocateProbe(null);
+                      }}
+                      placeholder="输入当前电脑上的新路径（支持相对路径 data/simulations/...）"
+                      className="min-w-[260px] flex-1 rounded-lg border border-[#30363d] bg-[#0f141a] px-3 py-2 font-mono text-xs text-slate-100 focus:border-amber-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={relocating || !relocatePath.trim()}
+                      onClick={handleRelocateProbe}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#30363d] bg-[#1c2128] px-3 py-2 text-xs text-slate-200 hover:border-blue-500 disabled:opacity-40"
+                    >
+                      <Eye className="h-3.5 w-3.5 text-blue-400" />
+                      探测路径
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={relocating || !relocatePath.trim()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-950/50 px-4 py-2 text-xs font-medium text-emerald-200 hover:border-emerald-400 disabled:opacity-40"
+                    >
+                      {relocating ? '保存中…' : '确认修复并保存'}
+                    </button>
+                  </div>
+                  {relocateProbe && (
+                    <div
+                      className={`text-xs rounded-lg border p-2 ${
+                        relocateProbe.accessible
+                          ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-200'
+                          : 'border-rose-500/40 bg-rose-950/20 text-rose-200'
+                      }`}
+                    >
+                      {relocateProbe.accessible
+                        ? `✅ 探测有效：${relocateProbe.scenarioName || relocateProbe.kind} (${relocateProbe.fileCount ?? 0} 个文件)`
+                        : `❌ ${relocateProbe.error || '路径不可访问'}`}
+                    </div>
+                  )}
+                </form>
+              )}
+
+              {/* 大体积文件预警确认框 */}
+              {bigJobConfirm && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 space-y-2.5 text-xs">
+                  <div className="flex items-center gap-2 font-semibold text-amber-200">
+                    <AlertTriangle className="h-4 w-4 text-amber-400" />
+                    大体积仿真数据提示 ({((bigJobConfirm.ds.totalSizeBytes ?? 0) / (1024 * 1024)).toFixed(1)} MB)
+                  </div>
+                  <p className="text-slate-300 leading-relaxed">
+                    数据源「{bigJobConfirm.ds.source.name}」体积较大。系统将在后台分批流式执行
+                    {bigJobConfirm.mode === 'archive' ? '专用仓归档复制' : 'SQLite 全量入库'}，过程中您可以正常使用其他功能，也可随时暂停或支持中断后断点续传。确认立即开始吗？
+                  </p>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBigJobConfirm(null)}
+                      className="rounded-lg border border-[#30363d] bg-[#0f141a] px-3 py-1.5 text-slate-300 hover:border-slate-500"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => triggerBackgroundJob(bigJobConfirm.ds, bigJobConfirm.mode, true)}
+                      className="rounded-lg border border-emerald-500/40 bg-emerald-950/50 px-3.5 py-1.5 font-medium text-emerald-200 hover:border-emerald-400"
+                    >
+                      确认并后台执行
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* 探测添加新目录 */}
               <form
@@ -1265,11 +1766,278 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
                   </div>
                 </div>
 
+                {/* 当前库内推演场次明细与单场删除管理 */}
+                <div className="rounded-xl border border-[#2a313c] bg-[#0f141a] p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Layers className="h-3.5 w-3.5 text-emerald-400" />
+                      当前库内推演场次 ({dbRuns.length})
+                    </span>
+                    <span className="text-[11px] text-[#8b949e]">可按场次独立清理数据并自动压缩空间</span>
+                  </div>
+
+                  {/* 正在进行中的删除进度条 */}
+                  {importJobs
+                    .filter((j) => j.jobType === 'delete_run' && j.status === 'running')
+                    .map((job) => (
+                      <div
+                        key={job.jobId}
+                        className="rounded-lg border border-rose-500/40 bg-rose-950/20 p-3 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-2 font-medium text-rose-200">
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin text-rose-400" />
+                            正在删除「{job.sourceName}」：{job.currentFile || '清理中...'}
+                          </span>
+                          <span className="font-mono text-rose-300">
+                            步骤 {job.processedFiles}/{job.totalFiles} · {job.percent.toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0d1117]">
+                          <div
+                            className="h-full bg-rose-500 transition-all duration-300"
+                            style={{ width: `${Math.max(5, job.percent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                  {/* 内联二次确认框（替代原生 confirm） */}
+                  {confirmDeleteRun && (
+                    <div className="rounded-lg border border-rose-500/50 bg-rose-950/30 p-3 space-y-2 text-xs">
+                      <div className="flex items-center gap-2 font-semibold text-rose-200">
+                        <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+                        确认彻底删除推演场次「{confirmDeleteRun.scenarioName}」？
+                      </div>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        将清除 <span className="font-mono text-rose-300">{confirmDeleteRun.eventCount}</span> 条仿真事件、
+                        <span className="font-mono text-rose-300">{confirmDeleteRun.unitCount}</span> 个作战单元航迹点及相关评估快照，并自动执行 <code className="text-slate-200">VACUUM</code> 压缩释放磁盘空间（此操作不可撤销）。
+                      </p>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteRun(null)}
+                          className="rounded-lg border border-[#30363d] bg-[#0f141a] px-3 py-1 text-slate-300 hover:border-slate-500"
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => executeDeleteRun(confirmDeleteRun)}
+                          className="rounded-lg border border-rose-500/60 bg-rose-600/80 px-3 py-1 font-medium text-white hover:bg-rose-500 transition"
+                        >
+                          确认删除并清理空间
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {dbRuns.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-[#2a313c] py-3 text-center text-xs text-[#8b949e]">
+                      当前想定库暂无已入库的推演场次
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                      {dbRuns.map((r) => {
+                        const isDelRunning = importJobs.some(
+                          (j) => j.jobType === 'delete_run' && j.sourceId === r.runId && j.status === 'running',
+                        );
+                        return (
+                          <div
+                            key={r.runId}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#242b35] bg-[#161b22] px-3 py-2 text-xs"
+                          >
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium text-slate-100 truncate">{r.scenarioName}</span>
+                                <span className="rounded bg-[#0d1117] px-1.5 py-0.5 font-mono text-[10px] text-emerald-300 border border-[#30363d]">
+                                  {r.runId}
+                                </span>
+                                {r.runId === selectedRunId && (
+                                  <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] text-blue-300 border border-blue-500/30">
+                                    当前查看
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-[#8b949e] flex flex-wrap gap-3">
+                                <span>单元: {r.unitCount}</span>
+                                <span>事件: {r.eventCount}</span>
+                                <span>阵营: {r.sides.join(' / ') || '-'}</span>
+                                <span>时段: {r.startClock} ~ {r.endClock}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isDelRunning || deletingRunId === r.runId}
+                              onClick={() => setConfirmDeleteRun(r)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-[#30363d] bg-[#0f141a] px-2.5 py-1 text-[11px] text-rose-400 hover:border-rose-500 hover:bg-rose-950/30 disabled:opacity-40 transition"
+                              title="从当前想定库删除此场次全部数据"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              {isDelRunning ? '清理中…' : '删除该场'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-[#8b949e] leading-relaxed">
                   <strong className="text-emerald-300">独立推演资产：</strong> 仅承载推演局次、航迹经纬度与 44 类实测事件链及评估得分，重置或清空当前想定库不会对算子库造成任何副作用。
                 </div>
               </div>
               )}
+
+              {/* 所有物理库文件清单管理 */}
+              <div className="rounded-xl border border-[#2a313c] bg-[#161b22] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <HardDrive className="h-4 w-4 text-blue-400" />
+                    所有物理数据库文件管理 (data/*.db)
+                  </span>
+                  <button
+                    type="button"
+                    disabled={refreshingDbs}
+                    onClick={() => loadDatabases(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#30363d] bg-[#1c2128] px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:border-blue-500/60 hover:text-white disabled:opacity-50 transition"
+                    title="重新扫描并获取所有物理数据库文件状态"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${refreshingDbs ? 'animate-spin text-blue-400' : ''}`} />
+                    <span>{refreshingDbs ? '刷新中…' : '刷新列表'}</span>
+                  </button>
+                </div>
+
+                {confirmDeleteDb && (
+                  <div className="rounded-lg border border-rose-500/50 bg-rose-950/30 p-3 space-y-2 text-xs">
+                    <div className="flex items-center gap-2 font-semibold text-rose-200">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+                      确认物理删除数据库文件「{confirmDeleteDb.filename}」？
+                    </div>
+                    <p className="text-slate-300 text-[11px]">
+                      文件大小：{(confirmDeleteDb.fileSize / (1024 * 1024)).toFixed(2)} MB。删除后磁盘文件将不可恢复。
+                    </p>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteDb(null)}
+                        className="rounded-lg border border-[#30363d] bg-[#0f141a] px-3 py-1 text-slate-300 hover:border-slate-500"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => executeDeleteDbFile(confirmDeleteDb.filename)}
+                        className="rounded-lg border border-rose-500/60 bg-rose-600/80 px-3 py-1 font-medium text-white hover:bg-rose-500 transition"
+                      >
+                        确认删除文件
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* 算子库文件清单 */}
+                  <div className="rounded-lg border border-[#2a313c] bg-[#0f141a] p-3 space-y-2">
+                    <div className="text-[11px] font-semibold text-cyan-300">
+                      算子/指标/体系库 ({operatorDbs.length})
+                    </div>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                      {operatorDbs.map((db) => (
+                        <div
+                          key={`op-${db.filename}`}
+                          className="flex items-center justify-between gap-2 rounded border border-[#242b35] bg-[#161b22] px-2.5 py-1.5 text-xs"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-mono text-[11px] text-slate-200" title={db.filePath}>
+                              {db.filename}
+                            </div>
+                            <div className="text-[10px] text-[#8b949e]">
+                              {(db.fileSize / 1024).toFixed(1)} KB
+                            </div>
+                          </div>
+                          {db.isActive ? (
+                            <span className="rounded bg-cyan-500/20 px-2 py-0.5 text-[10px] text-cyan-300 border border-cyan-500/30">
+                              使用中
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={switchingDb}
+                                onClick={() => handleSwitchDatabase(db.filename, 'operator')}
+                                className="rounded border border-[#30363d] bg-[#0f141a] px-2 py-0.5 text-[10px] text-slate-200 hover:border-cyan-500"
+                              >
+                                切换
+                              </button>
+                              <button
+                                type="button"
+                                disabled={deletingDbName === db.filename}
+                                onClick={() => setConfirmDeleteDb({ filename: db.filename, fileSize: db.fileSize })}
+                                className="rounded border border-[#30363d] bg-[#0f141a] p-1 text-rose-400 hover:border-rose-500"
+                                title="删除此物理库文件"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 想定库文件清单 */}
+                  <div className="rounded-lg border border-[#2a313c] bg-[#0f141a] p-3 space-y-2">
+                    <div className="text-[11px] font-semibold text-emerald-300">
+                      想定推演数据库 ({scenarioDbs.length})
+                    </div>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                      {scenarioDbs.map((db) => (
+                        <div
+                          key={`sc-${db.filename}`}
+                          className="flex items-center justify-between gap-2 rounded border border-[#242b35] bg-[#161b22] px-2.5 py-1.5 text-xs"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-mono text-[11px] text-slate-200" title={db.filePath}>
+                              {db.filename}
+                            </div>
+                            <div className="text-[10px] text-[#8b949e]">
+                              {db.fileSize >= 1024 * 1024
+                                ? `${(db.fileSize / (1024 * 1024)).toFixed(2)} MB`
+                                : `${(db.fileSize / 1024).toFixed(1)} KB`}
+                            </div>
+                          </div>
+                          {db.isActive ? (
+                            <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300 border border-emerald-500/30">
+                              使用中
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={switchingDb}
+                                onClick={() => handleSwitchDatabase(db.filename, 'scenario')}
+                                className="rounded border border-[#30363d] bg-[#0f141a] px-2 py-0.5 text-[10px] text-slate-200 hover:border-emerald-500"
+                              >
+                                切换
+                              </button>
+                              <button
+                                type="button"
+                                disabled={deletingDbName === db.filename}
+                                onClick={() => setConfirmDeleteDb({ filename: db.filename, fileSize: db.fileSize })}
+                                className="rounded border border-[#30363d] bg-[#0f141a] p-1 text-rose-400 hover:border-rose-500"
+                                title="删除此物理库文件"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               {/* 底部存储解耦架构说明 */}
               <div className="rounded-xl border border-blue-500/25 bg-[#0d1117] p-3.5 text-xs text-[#8b949e] leading-relaxed">
@@ -1416,13 +2184,13 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
                   </button>
                   <button
                     type="button"
-                    onClick={loadComponents}
+                    onClick={() => loadComponents(true)}
                     disabled={compLoading}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-xs text-slate-300 hover:text-white transition"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#30363d] bg-[#1c2128] px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:border-blue-500/60 hover:text-white disabled:opacity-50 transition"
                     title="重新获取最新组件清单"
                   >
-                    <RefreshCw className={`h-3 w-3 ${compLoading ? 'animate-spin' : ''}`} />
-                    <span>刷新</span>
+                    <RefreshCw className={`h-3 w-3 ${compLoading ? 'animate-spin text-blue-400' : ''}`} />
+                    <span>{compLoading ? '刷新中…' : '刷新'}</span>
                   </button>
                 </div>
               </div>

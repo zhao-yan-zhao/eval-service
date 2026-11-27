@@ -3,15 +3,17 @@ import {
   ArrowUpDown,
   BarChart3,
   Calculator,
+  ChevronDown,
   Code2,
   Compass,
   Cpu,
   Database,
   Eye,
   Layers,
-  Lock,
+  MoreHorizontal,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
   Sparkles,
@@ -31,6 +33,7 @@ import { PipelineCanvasStudio } from './pipeline-canvas/index.ts';
 import { OperatorInlineEditor } from './OperatorInlineEditor.tsx';
 import { CreateOperatorModal } from './CreateOperatorModal.tsx';
 import { V4TablePivotPreview } from './v4/index.ts';
+import { UnifiedAssetSelector, type UnifiedAssetOption } from './v4/UnifiedAssetSelector.tsx';
 
 export const DOMAIN_CATEGORIES = [
   { id: 'all' as const, label: '全部算子' },
@@ -219,10 +222,38 @@ export function OperatorLibraryView({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [detailOp, setDetailOp] = useState<V4OperatorItem | null>(null);
   const [editingOp, setEditingOp] = useState<V4OperatorItem | null>(null);
+  const [coldStartBannerDismissed, setColdStartBannerDismissed] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const editorDialogRef = useRef<HTMLDialogElement | null>(null);
   const detailDialogRef = useRef<HTMLDialogElement | null>(null);
   const editorHeadingId = useId();
   const detailHeadingId = useId();
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [moreMenuOpen]);
+
+  const operatorSelectorOptions = useMemo<UnifiedAssetOption[]>(
+    () =>
+      operators.map((op) => ({
+        id: op.id,
+        label: op.name,
+        subLabel: op.id,
+        group: getDomainBadge(op.category).label,
+        badge: op.militaryLevel,
+        badgeTone: 'cyan',
+      })),
+    [operators],
+  );
 
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const savedListScrollTopRef = useRef<number>(0);
@@ -381,7 +412,7 @@ export function OperatorLibraryView({
   }, [detailOp]);
 
   return (
-    <div className="flex flex-col gap-3 text-slate-100">
+    <div className="flex flex-col gap-3 rounded-xl border border-[#30363d] bg-[#0d1117] p-3 text-slate-100">
       {viewMode === 'canvas' ? (
         <div className="w-full">
           <PipelineCanvasStudio
@@ -407,11 +438,26 @@ export function OperatorLibraryView({
                 <span>V4 算子资产</span>
               </div>
 
-              <span className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono text-[11px] text-slate-300 tabular-nums">
+              <span className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-slate-300 tabular-nums">
                 {filteredOperators.length === operators.length
                   ? `全部算子 · ${operators.length}`
                   : `${filteredOperators.length} / ${operators.length} 项`}
               </span>
+
+              <UnifiedAssetSelector
+                value={selectedCanvasOp?.id ?? ''}
+                options={operatorSelectorOptions}
+                placeholder="定位算子..."
+                searchPlaceholder="搜索名称、ID 或领域..."
+                accent="cyan"
+                onChange={(opId) => {
+                  const target = operators.find((o) => o.id === opId);
+                  if (target) {
+                    setSelectedCanvasOp(target);
+                    setViewMode('canvas');
+                  }
+                }}
+              />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -423,7 +469,7 @@ export function OperatorLibraryView({
               >
                 {DOMAIN_CATEGORIES.map((f) => (
                   <option key={f.id} value={f.id}>
-                    {f.id === 'all' ? `全部算子 · ${domainCounts.all ?? 0}` : `${f.label} (${domainCounts[f.id] ?? 0})`}
+                    {f.id === 'all' ? `全部分域 (${domainCounts.all ?? 0})` : `${f.label} (${domainCounts[f.id] ?? 0})`}
                   </option>
                 ))}
               </select>
@@ -442,11 +488,11 @@ export function OperatorLibraryView({
                 <option value="data_input">数据抽取 ({algoCounts.data_input ?? 0})</option>
               </select>
 
-              <div className="relative w-44 xl:w-52">
+              <div className="relative w-48 xl:w-56">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                 <input
                   type="text"
-                  placeholder="搜索算子..."
+                  placeholder="搜索算子 / ID / 说明..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="h-8 w-full rounded-md border border-[#30363d] bg-[#0d1117] pl-8 pr-7 text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
@@ -472,26 +518,76 @@ export function OperatorLibraryView({
                 <span>新建算子</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => (onOpenSettings ? onOpenSettings('components') : undefined)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs text-slate-200 hover:border-slate-500 hover:text-white transition cursor-pointer"
-                title="扩展管理与组件规范导入"
-              >
-                <Layers className="h-3.5 w-3.5 text-cyan-400" />
-                <span className="hidden xl:inline">扩展管理</span>
-              </button>
+              <div className="relative" ref={moreMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setMoreMenuOpen((prev) => !prev)}
+                  className={`inline-flex h-8 items-center gap-1 rounded-md border px-2.5 text-xs transition cursor-pointer ${
+                    moreMenuOpen
+                      ? 'border-slate-500 bg-slate-700 text-white'
+                      : 'border-[#30363d] bg-[#0d1117] text-slate-300 hover:border-slate-500 hover:text-white'
+                  }`}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                  <span>更多</span>
+                  <ChevronDown className="h-3 w-3 opacity-75" />
+                </button>
+
+                {moreMenuOpen && (
+                  <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border border-[#30363d] bg-[#0d1117] p-1.5 shadow-2xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        if (onOpenSettings) onOpenSettings('components');
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-cyan-200 hover:bg-[#161b22] transition cursor-pointer"
+                    >
+                      <Layers className="h-3.5 w-3.5 text-cyan-400" />
+                      <span>扩展管理</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setMoreMenuOpen(false);
+                        setRefreshing(true);
+                        try {
+                          await onRefresh();
+                        } finally {
+                          setRefreshing(false);
+                        }
+                      }}
+                      disabled={refreshing || loading}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-slate-300 hover:bg-[#161b22] disabled:opacity-50 transition cursor-pointer"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 text-slate-400 ${refreshing || loading ? 'animate-spin' : ''}`}
+                      />
+                      <span>刷新算子库</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {operators.length > 0 && !selectedRunId && (
+          {operators.length > 0 && !selectedRunId && !coldStartBannerDismissed && (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-[#161b22] to-blue-950/30 px-3.5 py-2 text-xs text-cyan-200">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 shrink-0 text-cyan-400" />
                 <span>
-                  一库 V4 算子库已就绪（共 {operators.length} 个算子）。请在右上角选择推演场次进行实时二维表试算与门控验证。
+                  一库 V4 算子库已就绪（共 {operators.length} 个算子）。点击任意算子进入画布编排，或在右上角选择推演场次进行实时二维表试算。
                 </span>
               </div>
+              <button
+                type="button"
+                onClick={() => setColdStartBannerDismissed(true)}
+                className="text-slate-400 hover:text-slate-200 cursor-pointer text-xs"
+                title="隐藏提示"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           )}
 
@@ -509,49 +605,47 @@ export function OperatorLibraryView({
               className="max-h-[calc(100dvh-200px)] min-h-[380px] overflow-auto"
             >
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="sticky top-0 z-10 bg-[#161b22]">
-                  <tr className="border-b border-[#30363d] text-slate-400 font-semibold text-[11px]">
-                    <th className="px-2.5 py-2.5 w-11 text-center whitespace-nowrap">序号</th>
-                    <th className="px-2.5 py-2.5 whitespace-nowrap">标识与名称</th>
-                    <th className="px-2.5 py-2.5 whitespace-nowrap">领域</th>
-                    <th className="px-2.5 py-2.5 whitespace-nowrap">实现方式</th>
-                    <th className="px-2.5 py-2.5 whitespace-nowrap">层级</th>
-                    <th className="px-2.5 py-2.5">算法说明</th>
-                    <th className="px-2.5 py-2.5 whitespace-nowrap">
+                <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#161b22] text-[11px] font-medium text-slate-400">
+                  <tr>
+                    <th className="px-3.5 py-2.5 w-12 text-center whitespace-nowrap font-medium">序号</th>
+                    <th className="px-3.5 py-2.5 whitespace-nowrap font-medium">算子名称与标识</th>
+                    <th className="px-3.5 py-2.5 whitespace-nowrap font-medium">层级 / 领域</th>
+                    <th className="px-3.5 py-2.5 whitespace-nowrap font-medium">实现方式</th>
+                    <th className="px-3.5 py-2.5 font-medium">算法说明</th>
+                    <th className="px-3.5 py-2.5 whitespace-nowrap font-medium">
                       <button
                         type="button"
                         onClick={() => toggleSort('layer')}
-                        className="inline-flex items-center gap-1 font-semibold text-slate-300 hover:text-white whitespace-nowrap"
+                        className="inline-flex items-center gap-1 font-medium text-slate-300 hover:text-white whitespace-nowrap cursor-pointer"
                       >
                         <span>就绪门控</span>
                         <ArrowUpDown className="h-3 w-3" />
                       </button>
                     </th>
-                    <th className="px-2.5 py-2.5 text-right whitespace-nowrap">操作</th>
+                    <th className="px-3.5 py-2.5 text-right whitespace-nowrap font-medium">操作</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-sans">
+                <tbody className="divide-y divide-[#30363d]/70 font-sans">
                   {loading && operators.length === 0 ? (
                     Array.from({ length: 6 }).map((_, i) => (
                       <tr key={`op-skeleton-${i}`} className="animate-pulse">
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3.5 py-3 text-center">
                           <div className="mx-auto h-3 w-5 rounded bg-slate-800" />
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="h-3 w-32 rounded bg-slate-700/60 mb-1.5" />
-                          <div className="h-3.5 w-48 rounded bg-slate-800/80" />
+                        <td className="px-3.5 py-3">
+                          <div className="h-3.5 w-40 rounded bg-slate-700/60 mb-1.5" />
+                          <div className="h-2.5 w-28 rounded bg-slate-800/80" />
                         </td>
-                        <td className="px-4 py-3"><div className="h-4 w-14 rounded bg-slate-800" /></td>
-                        <td className="px-4 py-3"><div className="h-4 w-16 rounded bg-slate-800" /></td>
-                        <td className="px-4 py-3"><div className="h-4 w-12 rounded bg-slate-800" /></td>
-                        <td className="px-4 py-3"><div className="h-3.5 w-64 rounded bg-slate-800/70" /></td>
-                        <td className="px-4 py-3"><div className="h-4 w-20 rounded bg-slate-800" /></td>
-                        <td className="px-4 py-3 text-right"><div className="inline-block h-6 w-16 rounded bg-slate-800" /></td>
+                        <td className="px-3.5 py-3"><div className="h-4 w-20 rounded bg-slate-800" /></td>
+                        <td className="px-3.5 py-3"><div className="h-4 w-16 rounded bg-slate-800" /></td>
+                        <td className="px-3.5 py-3"><div className="h-3.5 w-56 rounded bg-slate-800/70" /></td>
+                        <td className="px-3.5 py-3"><div className="h-4 w-20 rounded bg-slate-800" /></td>
+                        <td className="px-3.5 py-3 text-right"><div className="inline-block h-6 w-20 rounded bg-slate-800" /></td>
                       </tr>
                     ))
                   ) : filteredOperators.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                      <td colSpan={7} className="py-12 text-center text-slate-500">
                         <div className="flex flex-col items-center gap-2">
                           <span>未检索到符合条件的算子</span>
                           {operators.length === 0 && (
@@ -574,16 +668,25 @@ export function OperatorLibraryView({
                       return (
                         <tr
                           key={op.id}
-                          className={`transition ${isLastVisited ? 'bg-cyan-500/10 hover:bg-cyan-500/15' : 'hover:bg-slate-800/30'}`}
+                          onClick={() => {
+                            setSelectedCanvasOp(op);
+                            setViewMode('canvas');
+                          }}
+                          title="点击进入该算子的画布编排"
+                          className={`group cursor-pointer transition ${
+                            isLastVisited ? 'bg-cyan-500/10 hover:bg-cyan-500/15' : 'hover:bg-[#1b2230]'
+                          }`}
                         >
-                          <td className="px-4 py-3 text-center font-mono text-slate-500 text-[11px]">
+                          <td className="px-3.5 py-2.5 text-center font-mono text-slate-500 text-[11px] align-middle">
                             {idx + 1}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-3.5 py-2.5 align-middle">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-mono text-[11px] text-cyan-400/90 font-medium">{op.id}</span>
+                              <span className="font-semibold text-xs text-slate-100 group-hover:text-cyan-200 transition">
+                                {op.name}
+                              </span>
                               <span
-                                className={`rounded px-1.5 py-0.2 text-[9px] font-semibold border ${
+                                className={`rounded px-1.5 py-0 text-[9px] font-semibold border ${
                                   op.layer === 'fact'
                                     ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
                                     : 'border-amber-500/40 bg-amber-500/15 text-amber-300'
@@ -592,85 +695,91 @@ export function OperatorLibraryView({
                                 {op.layer === 'fact' ? 'V4 事实' : 'V4 汇总'}
                               </span>
                             </div>
-                            <div className="font-bold text-xs text-slate-100 mt-0.5">{op.name}</div>
+                            <div className="font-mono text-[11px] text-slate-400 mt-0.5">{op.id}</div>
                           </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-block whitespace-nowrap rounded-md border px-2 py-0.5 text-[10px] font-semibold ${domainInfo.badgeBg}`}>
-                              {domainInfo.label}
-                            </span>
+                          <td className="px-3.5 py-2.5 align-middle whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1">
+                              <span className="rounded border border-cyan-500/35 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-cyan-200">
+                                {op.militaryLevel}
+                              </span>
+                              <span className={`inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${domainInfo.badgeBg}`}>
+                                {domainInfo.label}
+                              </span>
+                            </div>
                           </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-medium ${pCat.badgeBg}`}>
+                          <td className="px-3.5 py-2.5 align-middle whitespace-nowrap">
+                            <span className={`inline-block rounded border px-2 py-0.5 text-[10px] font-medium ${pCat.badgeBg}`}>
                               {pCat.label}
                             </span>
                           </td>
-                          <td className="px-4 py-3 font-mono text-slate-300 text-[11px]">
-                            {op.militaryLevel}
+                          <td className="px-3.5 py-2.5 text-slate-400 text-xs max-w-sm align-middle">
+                            <div className="line-clamp-2 leading-relaxed">{op.description}</div>
                           </td>
-                          <td className="px-4 py-3 text-slate-300 text-xs leading-relaxed max-w-md">
-                            <div>{op.description}</div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
+                          <td className="px-3.5 py-2.5 whitespace-nowrap align-middle">
                             <span
-                              className="inline-block rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400"
+                              className="inline-block rounded border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400"
                               title={`必需底表: ${(op.requiredTables ?? []).join(', ') || '通用'}`}
                             >
                               V4 实证就绪
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5 pr-4">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedCanvasOp(op);
-                                setViewMode('canvas');
-                              }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/50 bg-cyan-500/20 px-2.5 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30 shadow-sm transition"
-                              title="在可视化画布中编辑此算子流水线"
-                            >
-                              <Workflow className="h-3.5 w-3.5" />
-                              <span>画布编排</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setEditingOp(op)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1 text-xs text-slate-200 hover:text-white hover:bg-slate-700 transition"
-                              title="配置参数与计算规则"
-                            >
-                              <Settings2 className="h-3.5 w-3.5 text-slate-400" />
-                              <span>配置</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setDetailOp(op)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1 text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-700 transition"
-                              title="查看底层数据来源与字段映射"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                              <span>详情</span>
-                            </button>
-
-                            {!op.isBuiltin ? (
+                          <td className="px-3.5 py-2.5 text-right whitespace-nowrap align-middle">
+                            <div className="inline-flex items-center justify-end gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteOperator(op)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2 py-1 text-xs font-medium text-rose-300 hover:bg-rose-500/30 hover:text-rose-100 transition shadow-sm"
-                                title="删除此自定义算子"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedCanvasOp(op);
+                                  setViewMode('canvas');
+                                }}
+                                className="inline-flex items-center gap-1 rounded-md border border-cyan-500/45 bg-cyan-500/15 px-2.5 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/30 transition cursor-pointer"
+                                title="在可视化画布中编辑此算子流水线"
                               >
-                                <Trash2 className="h-3.5 w-3.5 text-rose-400" />
-                                <span>删除</span>
+                                <Workflow className="h-3.5 w-3.5" />
+                                <span>画布编排</span>
                               </button>
-                            ) : (
-                              <span
-                                className="inline-flex items-center gap-0.5 px-1.5 py-1 text-[11px] text-slate-600 select-none"
-                                title="内置标准 V4 算子受保护，不可删除；支持参数修改与恢复默认"
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingOp(op);
+                                }}
+                                aria-label="配置"
+                                className="inline-flex items-center gap-1 rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-slate-300 hover:border-slate-500 hover:text-white transition cursor-pointer"
+                                title="配置参数与计算规则"
                               >
-                                <Lock className="h-3 w-3" />
-                                <span>内置</span>
-                              </span>
-                            )}
+                                <Settings2 className="h-3.5 w-3.5 text-slate-400" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDetailOp(op);
+                                }}
+                                aria-label="详情"
+                                className="inline-flex items-center gap-1 rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-slate-300 hover:border-slate-500 hover:text-white transition cursor-pointer"
+                                title="查看底层数据来源与字段映射"
+                              >
+                                <Eye className="h-3.5 w-3.5 text-slate-400" />
+                              </button>
+
+                              {!op.isBuiltin && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteOperator(op);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/25 transition cursor-pointer"
+                                  title="删除此自定义算子"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <span>删除</span>
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

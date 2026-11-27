@@ -542,6 +542,7 @@ export function SystemDagStudioPanel({
     }
   }, [viewMode]);
   const [systemSearch, setSystemSearch] = useState('');
+  const [systemTypeFilter, setSystemTypeFilter] = useState<'all' | 'builtin' | 'custom'>('all');
   const [drawerTab, setDrawerTab] = useState<DrawerTab>('basic');
   const [collapsedRowKeys, setCollapsedRowKeys] = useState<Set<string>>(() => new Set());
   const didInitRef = useRef(false);
@@ -695,10 +696,22 @@ export function SystemDagStudioPanel({
     [metricGraphs],
   );
 
+  const systemTypeCounts = useMemo(() => {
+    let builtin = 0;
+    let custom = 0;
+    for (const s of systems) {
+      if (s.builtin) builtin++;
+      else custom++;
+    }
+    return { all: systems.length, builtin, custom };
+  }, [systems]);
+
   const filteredSystems = useMemo(() => {
     const q = systemSearch.trim().toLowerCase();
-    if (!q) return systems;
     return systems.filter((s) => {
+      if (systemTypeFilter === 'builtin' && !s.builtin) return false;
+      if (systemTypeFilter === 'custom' && s.builtin) return false;
+      if (!q) return true;
       const boundMgId = resolveDefaultMetricGraphId(metricGraphs, s);
       const boundMgName = metricGraphMap.get(boundMgId)?.name ?? '';
       return (
@@ -709,7 +722,7 @@ export function SystemDagStudioPanel({
         boundMgName.toLowerCase().includes(q)
       );
     });
-  }, [systems, systemSearch, metricGraphs, metricGraphMap, resolveDefaultMetricGraphId]);
+  }, [systems, systemSearch, systemTypeFilter, metricGraphs, metricGraphMap, resolveDefaultMetricGraphId]);
 
   const resetEvaluationState = useCallback(() => {
     setEvalOutput(null);
@@ -1917,10 +1930,10 @@ export function SystemDagStudioPanel({
               <Scale className="h-3.5 w-3.5" />
               <span>评估体系</span>
             </div>
-            <span className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono text-[11px] text-slate-300 tabular-nums">
-              {systemSearch.trim()
-                ? `${filteredSystems.length} / ${systems.length} 套体系`
-                : `共 ${systems.length} 套体系`}
+            <span className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-slate-300 tabular-nums">
+              {filteredSystems.length !== systems.length
+                ? `${filteredSystems.length} / ${systems.length} 项`
+                : `共 ${systems.length} 项`}
             </span>
 
             <UnifiedAssetSelector
@@ -1937,14 +1950,25 @@ export function SystemDagStudioPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative w-64 sm:w-72">
+            <select
+              aria-label="按体系类型筛选"
+              value={systemTypeFilter}
+              onChange={(e) => setSystemTypeFilter(e.target.value as 'all' | 'builtin' | 'custom')}
+              className="h-8 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none cursor-pointer"
+            >
+              <option value="all">全部类型 ({systemTypeCounts.all})</option>
+              <option value="builtin">内置 ({systemTypeCounts.builtin})</option>
+              <option value="custom">自定义 ({systemTypeCounts.custom})</option>
+            </select>
+
+            <div className="relative w-48 xl:w-56">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
               <input
                 type="text"
                 value={systemSearch}
                 onChange={(e) => setSystemSearch(e.target.value)}
-                placeholder="搜索体系名称、systemId 或指标库..."
-                className="w-full rounded-md border border-[#30363d] bg-[#0d1117] py-1.5 pl-8 pr-7 text-xs text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+                placeholder="搜索体系 / ID / 指标图..."
+                className="h-8 w-full rounded-md border border-[#30363d] bg-[#0d1117] pl-8 pr-7 text-xs text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
               />
               {systemSearch && (
                 <button
@@ -1961,23 +1985,46 @@ export function SystemDagStudioPanel({
             <button
               type="button"
               onClick={handleCreateNewSystem}
-              className="inline-flex items-center gap-1.5 rounded-md border border-indigo-400/60 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-indigo-950/60 hover:bg-indigo-500 transition cursor-pointer"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-indigo-400/60 bg-indigo-600 px-3 text-xs font-semibold text-white shadow-lg shadow-indigo-950/60 hover:bg-indigo-500 transition cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>新建体系</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => void loadAllAssets()}
-              disabled={loadingInit}
-              className="inline-flex items-center gap-1.5 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1.5 text-xs text-slate-200 hover:border-slate-500 hover:text-white disabled:opacity-50 transition cursor-pointer"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 text-slate-400 ${loadingInit ? 'animate-spin' : ''}`}
-              />
-              <span>刷新</span>
-            </button>
+            <div className="relative" ref={moreMenuRef}>
+              <button
+                type="button"
+                onClick={() => setMoreMenuOpen((prev) => !prev)}
+                className={`inline-flex h-8 items-center gap-1 rounded-md border px-2.5 text-xs transition cursor-pointer ${
+                  moreMenuOpen
+                    ? 'border-slate-500 bg-slate-700 text-white'
+                    : 'border-[#30363d] bg-[#0d1117] text-slate-300 hover:border-slate-500 hover:text-white'
+                }`}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+                <span>更多</span>
+                <ChevronDown className="h-3 w-3 opacity-75" />
+              </button>
+
+              {moreMenuOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border border-[#30363d] bg-[#0d1117] p-1.5 shadow-2xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      void loadAllAssets();
+                    }}
+                    disabled={loadingInit}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-slate-300 hover:bg-[#161b22] disabled:opacity-50 transition cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 text-slate-400 ${loadingInit ? 'animate-spin' : ''}`}
+                    />
+                    <span>刷新体系库</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : (
@@ -2056,40 +2103,10 @@ export function SystemDagStudioPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            {discoveredSides.length > 0 && (
-              <label className="flex items-center gap-1.5 text-xs text-slate-300">
-                <span className="text-[11px] text-slate-400">阵营切片:</span>
-                <select
-                  value={targetSide}
-                  onChange={(e) => handleChangeTargetSide(e.target.value)}
-                  title="按参演阵营筛选评估结果"
-                  className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-indigo-200 focus:border-indigo-500 focus:outline-none cursor-pointer"
-                >
-                  <option value="ALL">全部阵营 ({discoveredSides.length} 方)</option>
-                  {discoveredSides.map((side) => (
-                    <option key={side} value={side}>
-                      {side}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            <button
-              type="button"
-              onClick={() => void handleCompareSides()}
-              disabled={comparingSides || evaluating || activeSystem.nodes.length === 0}
-              title="对比各阵营评估结果"
-              className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/50 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50 transition cursor-pointer"
-            >
-              <Scale className="h-3.5 w-3.5 text-cyan-300" />
-              <span>{comparingSides ? '对比中...' : '阵营对比'}</span>
-            </button>
-
             <button
               type="button"
               onClick={() => void handleEvaluateSystemDag()}
-              disabled={evaluating || comparingSides || activeSystem.nodes.length === 0}
+              disabled={evaluating || activeSystem.nodes.length === 0}
               className="inline-flex items-center gap-1.5 rounded-md border border-indigo-400/60 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-indigo-950/60 hover:bg-indigo-500 disabled:opacity-50 transition cursor-pointer"
             >
               <Play className="h-3.5 w-3.5" />
@@ -2295,14 +2312,14 @@ export function SystemDagStudioPanel({
               className="max-h-[calc(100dvh-200px)] min-h-[380px] overflow-auto"
             >
               <table className="w-full border-collapse text-left text-xs">
-                <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#0d1117] text-[11px] text-slate-400">
+                <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#161b22] text-[11px] font-medium text-slate-400">
                   <tr>
-                    <th className="px-4 py-2.5 font-medium">体系名称与标识</th>
-                    <th className="px-3 py-2.5 font-medium whitespace-nowrap">类型</th>
-                    <th className="px-3 py-2.5 font-medium whitespace-nowrap">构成规模</th>
-                    <th className="px-3 py-2.5 font-medium whitespace-nowrap">关联指标图</th>
-                    <th className="px-3 py-2.5 font-medium whitespace-nowrap">评估结论</th>
-                    <th className="px-4 py-2.5 font-medium whitespace-nowrap text-right">操作</th>
+                    <th className="px-3.5 py-2.5 font-medium">体系名称与标识</th>
+                    <th className="px-3.5 py-2.5 font-medium whitespace-nowrap">类型</th>
+                    <th className="px-3.5 py-2.5 font-medium whitespace-nowrap">构成规模</th>
+                    <th className="px-3.5 py-2.5 font-medium whitespace-nowrap">关联指标图</th>
+                    <th className="px-3.5 py-2.5 font-medium whitespace-nowrap">评估结论</th>
+                    <th className="px-3.5 py-2.5 font-medium whitespace-nowrap text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#30363d]/70">
@@ -2388,7 +2405,7 @@ export function SystemDagStudioPanel({
                         }`}
                       >
                         {/* 1. 体系名称 & systemId */}
-                        <td className="px-4 py-3 align-middle">
+                        <td className="px-3.5 py-2.5 align-middle">
                           <div className="min-w-0 max-w-md space-y-0.5">
                             <div className="flex items-center gap-2">
                               <span className="truncate font-semibold text-slate-100 group-hover:text-indigo-200 transition">
@@ -2515,7 +2532,7 @@ export function SystemDagStudioPanel({
                         </td>
 
                         {/* 6. 操作按钮 */}
-                        <td className="px-4 py-3 align-middle whitespace-nowrap text-right">
+                        <td className="px-3.5 py-2.5 align-middle whitespace-nowrap text-right">
                           <div className="inline-flex items-center justify-end gap-1.5">
                             <button
                               type="button"
@@ -4785,7 +4802,7 @@ export function SystemDagStudioPanel({
                       </>
                     ) : (
                       <div className="rounded-lg border border-dashed border-[#30363d] p-6 text-center text-[11px] text-slate-500">
-                        尚未运行评估。点击顶部「运行评估」或「阵营对比」后查看计算结果与证据记录。
+                        尚未运行评估。点击顶部「运行评估」后查看计算结果与证据记录。
                       </div>
                     )}
                   </div>

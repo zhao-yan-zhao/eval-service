@@ -49,6 +49,7 @@ const TABS: Array<{ key: TabKey; label: string; short: string; icon: typeof Gaug
 
 export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('cockpit');
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabKey>>(() => new Set(['cockpit']));
   const [operators, setOperators] = useState<V4OperatorItem[]>([]);
   const [effects, setEffects] = useState<EffectDefinition[]>([]);
   const [metricGraphs, setMetricGraphs] = useState<MetricGraphDefinition[]>([]);
@@ -103,6 +104,12 @@ export function App() {
   }, [loadAll]);
 
   useEffect(() => {
+    setVisitedTabs((prev) => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [activeTab]);
 
@@ -249,108 +256,122 @@ export function App() {
               </ErrorBoundary>
             </section>
 
-            <section
-              id="panel-operators"
-              role="tabpanel"
-              aria-labelledby="tab-operators"
-              hidden={activeTab !== 'operators'}
-            >
-              <ErrorBoundary fallbackTitle="算子工坊渲染异常">
-                <OperatorLibraryView
-                  loading={loadingInit}
-                  operators={operators}
-                  runs={runs}
-                  selectedRunId={selectedRunId}
-                  activeSourceId={activeSourceId}
-                  onSelectRun={setSelectedRunId}
-                  catalog={catalog}
-                  focusedOperatorTarget={focusedOperatorTarget}
-                  onRefresh={loadAll}
-                  onOpenSettings={(tab) => {
-                    setSettingsInitialTab((tab as SettingsTabKey) || 'components');
-                    setSettingsModalOpen(true);
-                  }}
-                />
-              </ErrorBoundary>
-            </section>
+            {visitedTabs.has('operators') && (
+              <section
+                id="panel-operators"
+                role="tabpanel"
+                aria-labelledby="tab-operators"
+                hidden={activeTab !== 'operators'}
+              >
+                <ErrorBoundary fallbackTitle="算子工坊渲染异常">
+                  <OperatorLibraryView
+                    loading={loadingInit}
+                    operators={operators}
+                    runs={runs}
+                    selectedRunId={selectedRunId}
+                    activeSourceId={activeSourceId}
+                    onSelectRun={setSelectedRunId}
+                    catalog={catalog}
+                    focusedOperatorTarget={focusedOperatorTarget}
+                    onRefresh={loadAll}
+                    onOpenSettings={(tab) => {
+                      setSettingsInitialTab((tab as SettingsTabKey) || 'components');
+                      setSettingsModalOpen(true);
+                    }}
+                  />
+                </ErrorBoundary>
+              </section>
+            )}
 
-            <section
-              id="panel-indicators"
-              role="tabpanel"
-              aria-labelledby="tab-indicators"
-              hidden={activeTab !== 'indicators'}
-            >
-              <ErrorBoundary fallbackTitle="指标中心渲染异常">
-                <MetricDagStudioPanel
-                  selectedRunId={selectedRunId}
-                  activeSourceId={activeSourceId}
-                  onDrillDownToOperator={(operatorId) => {
-                    setActiveTab('operators');
-                    setFocusedOperatorTarget({ id: operatorId, nonce: Date.now() });
-                  }}
-                />
-              </ErrorBoundary>
-            </section>
+            {visitedTabs.has('indicators') && (
+              <section
+                id="panel-indicators"
+                role="tabpanel"
+                aria-labelledby="tab-indicators"
+                hidden={activeTab !== 'indicators'}
+              >
+                <ErrorBoundary fallbackTitle="指标中心渲染异常">
+                  <MetricDagStudioPanel
+                    selectedRunId={selectedRunId}
+                    activeSourceId={activeSourceId}
+                    initialOperators={operators}
+                    initialMetricGraphs={metricGraphs}
+                    onDrillDownToOperator={(operatorId) => {
+                      setActiveTab('operators');
+                      setFocusedOperatorTarget({ id: operatorId, nonce: Date.now() });
+                    }}
+                  />
+                </ErrorBoundary>
+              </section>
+            )}
 
-            <section
-              id="panel-systems"
-              role="tabpanel"
-              aria-labelledby="tab-systems"
-              hidden={activeTab !== 'systems'}
-            >
-              <ErrorBoundary fallbackTitle="评估体系设计器渲染异常">
-                <SystemDagStudioPanel
-                  selectedRunId={selectedRunId}
-                  activeSourceId={activeSourceId}
-                  onDrillDownToMetric={() => {
-                    setActiveTab('indicators');
-                  }}
-                />
-              </ErrorBoundary>
-            </section>
+            {visitedTabs.has('systems') && (
+              <section
+                id="panel-systems"
+                role="tabpanel"
+                aria-labelledby="tab-systems"
+                hidden={activeTab !== 'systems'}
+              >
+                <ErrorBoundary fallbackTitle="评估体系设计器渲染异常">
+                  <SystemDagStudioPanel
+                    selectedRunId={selectedRunId}
+                    activeSourceId={activeSourceId}
+                    onDrillDownToMetric={() => {
+                      setActiveTab('indicators');
+                    }}
+                  />
+                </ErrorBoundary>
+              </section>
+            )}
 
-            <section
-              id="panel-catalog"
-              role="tabpanel"
-              aria-labelledby="tab-catalog"
-              hidden={activeTab !== 'catalog'}
-            >
-              <ErrorBoundary fallbackTitle="输出字段规范字典渲染异常">
-                <SimulationCatalogPanel catalog={catalog} operators={operators} />
-              </ErrorBoundary>
-            </section>
+            {visitedTabs.has('catalog') && (
+              <section
+                id="panel-catalog"
+                role="tabpanel"
+                aria-labelledby="tab-catalog"
+                hidden={activeTab !== 'catalog'}
+              >
+                <ErrorBoundary fallbackTitle="输出字段规范字典渲染异常">
+                  <SimulationCatalogPanel catalog={catalog} operators={operators} />
+                </ErrorBoundary>
+              </section>
+            )}
 
-            <section
-              id="panel-data"
-              role="tabpanel"
-              aria-labelledby="tab-data"
-              hidden={activeTab !== 'data'}
-            >
-              <ErrorBoundary fallbackTitle="推演数据浏览器渲染异常">
-                <DataExplorerView
-                  runs={runs}
-                  catalog={catalog}
-                  selectedRunId={selectedRunId}
-                  onSelectRun={setSelectedRunId}
-                  onRefresh={loadAll}
-                  onOpenSettings={(tab) => {
-                    setSettingsInitialTab((tab as SettingsTabKey) || 'database');
-                    setSettingsModalOpen(true);
-                  }}
-                />
-              </ErrorBoundary>
-            </section>
+            {visitedTabs.has('data') && (
+              <section
+                id="panel-data"
+                role="tabpanel"
+                aria-labelledby="tab-data"
+                hidden={activeTab !== 'data'}
+              >
+                <ErrorBoundary fallbackTitle="推演数据浏览器渲染异常">
+                  <DataExplorerView
+                    runs={runs}
+                    catalog={catalog}
+                    selectedRunId={selectedRunId}
+                    onSelectRun={setSelectedRunId}
+                    onRefresh={loadAll}
+                    onOpenSettings={(tab) => {
+                      setSettingsInitialTab((tab as SettingsTabKey) || 'database');
+                      setSettingsModalOpen(true);
+                    }}
+                  />
+                </ErrorBoundary>
+              </section>
+            )}
 
-            <section
-              id="panel-realtime"
-              role="tabpanel"
-              aria-labelledby="tab-realtime"
-              hidden={activeTab !== 'realtime'}
-            >
-              <ErrorBoundary fallbackTitle="实时研判监控台渲染异常">
-                <RealtimeMonitorView systems={systems} />
-              </ErrorBoundary>
-            </section>
+            {visitedTabs.has('realtime') && (
+              <section
+                id="panel-realtime"
+                role="tabpanel"
+                aria-labelledby="tab-realtime"
+                hidden={activeTab !== 'realtime'}
+              >
+                <ErrorBoundary fallbackTitle="实时研判监控台渲染异常">
+                  <RealtimeMonitorView systems={systems} />
+                </ErrorBoundary>
+              </section>
+            )}
           </>
         )}
       </main>

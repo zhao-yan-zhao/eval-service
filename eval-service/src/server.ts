@@ -11,8 +11,10 @@ import {
 import {
   DataSourceStore,
   probeSimulationPath,
+  resolvePhysicalPath,
   type SimulationDataSource,
 } from './adapters/data-source-store.ts';
+import { ImportJobManager } from './adapters/import-job-manager.ts';
 import { locateCsvDirectory } from './adapters/csv-adapter.ts';
 import {
   buildRunSourceProfile,
@@ -344,7 +346,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
       }
       const dsByRun = dataSourceStore.get(runId);
       if (dsByRun?.kind === 'csv_dir') {
-        const hit = checkDir(dsByRun.path);
+        const hit = checkDir(resolvePhysicalPath(dsByRun.path, dsByRun.id));
         if (hit) return hit;
       }
       if (runId === '55th_taihai_csv') {
@@ -360,7 +362,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
     if (dataSourceId) {
       const ds = dataSourceStore.get(dataSourceId);
       if (ds?.kind === 'csv_dir') {
-        const hit = checkDir(ds.path);
+        const hit = checkDir(resolvePhysicalPath(ds.path, ds.id));
         if (hit) return hit;
       }
     }
@@ -368,7 +370,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
     const activeId = dataSourceStore.getActiveSourceId();
     const activeDs = activeId ? dataSourceStore.get(activeId) : undefined;
     if (activeDs?.kind === 'csv_dir') {
-      const hit = checkDir(activeDs.path);
+      const hit = checkDir(resolvePhysicalPath(activeDs.path, activeDs.id));
       if (hit) return hit;
     }
 
@@ -460,13 +462,22 @@ export async function createEvalApp(deps?: EvalServerDeps) {
   >();
 
   const sseClients = new Set<http.ServerResponse>();
-  monitor.subscribe((payload) => {
-    const msg = `event: ${payload.type}\ndata: ${JSON.stringify(payload)}\n\n`;
+  const broadcastSse = (event: string, payload: unknown) => {
+    const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
     for (const client of sseClients) {
       if (!client.writableEnded) {
         client.write(msg);
       }
     }
+  };
+  monitor.subscribe((payload) => {
+    broadcastSse(payload.type, payload);
+  });
+
+  const importJobManager = new ImportJobManager({
+    getSqliteStore: () => sqliteStore,
+    dataSourceStore,
+    broadcast: broadcastSse,
   });
 
   const rebindV4AssetStores = (newOpStore: EvalSqliteStore) => {
@@ -860,6 +871,53 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           }
         } catch (err) {
           sendError(res, 500, '上传数据库失败: ' + String(err));
+        }
+        return;
+      }
+
+      if (req.method === 'DELETE' && pathname === '/api/db/file') {
+        try {
+          const filename = reqUrl.searchParams.get('filename')?.trim();
+          if (!filename) {
+            sendError(res, 400, '缺少 filename 参数');
+            return;
+          }
+          const safeFilename = path.basename(filename);
+          if (!/\.(db|sqlite|sqlite3)$/i.test(safeFilename)) {
+            sendError(res, 400, '仅允许删除 .db / .sqlite / .sqlite3 数据库文件');
+            return;
+          }
+          const dataDir = path.resolve(EVAL_SERVICE_ROOT, 'data');
+          const targetPath = path.resolve(dataDir, safeFilename);
+          if (!targetPath.startsWith(dataDir)) {
+            sendError(res, 403, '禁止越权访问目录');
+            return;
+          }
+          if (
+            targetPath === path.resolve(operatorSqliteStore.dbPath) ||
+            targetPath === path.resolve(scenarioSqliteStore.dbPath)
+          ) {
+            sendError(res, 400, `数据库「${safeFilename}」当前正在挂载使用中，请先切换到其他库后再删除`);
+            return;
+          }
+          if (!fs.existsSync(targetPath)) {
+            sendError(res, 404, `数据库文件不存在: ${safeFilename}`);
+            return;
+          }
+          fs.unlinkSync(targetPath);
+          // 清理可能伴随的 WAL/SHM 文件
+          for (const ext of ['-wal', '-shm']) {
+            if (fs.existsSync(`${targetPath}${ext}`)) {
+              try {
+                fs.unlinkSync(`${targetPath}${ext}`);
+              } catch {
+                // ignore
+              }
+            }
+          }
+          sendJson(res, 200, { ok: true, deleted: true, filename: safeFilename });
+        } catch (err) {
+          sendError(res, 500, '删除数据库文件失败: ' + String(err));
         }
         return;
       }
@@ -1300,8 +1358,9 @@ export async function createEvalApp(deps?: EvalServerDeps) {
             sendError(res, 404, `未找到数据源: ${body.sourceId}`);
             return;
           }
-          if (!fs.existsSync(ds.path)) {
-            sendError(res, 400, `数据源路径不存在或不可访问: ${ds.path}`);
+          const resolvedPath = resolvePhysicalPath(ds.path, ds.id);
+          if (!fs.existsSync(resolvedPath)) {
+            sendError(res, 400, `数据源路径不存在或不可访问: ${resolvedPath}`);
             return;
           }
           dataSourceStore.setActiveSourceId(ds.id);
@@ -1309,8 +1368,8 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           if (!sqliteStore.getRunSituation(runId)) {
             const situation =
               ds.kind === 'csv_dir'
-                ? await buildSituationModel({ runId, csvDir: ds.path, scenarioPath: ds.path })
-                : await buildSituationModel({ runId, jsonlFile: ds.path, scenarioPath: ds.path });
+                ? await buildSituationModel({ runId, csvDir: resolvedPath, scenarioPath: ds.path })
+                : await buildSituationModel({ runId, jsonlFile: resolvedPath, scenarioPath: ds.path });
             situation.scenarioName = ds.name || ds.scenarioName || situation.scenarioName;
             sqliteStore.saveSituationRun(situation);
           }
@@ -1329,12 +1388,52 @@ export async function createEvalApp(deps?: EvalServerDeps) {
 
       if (req.method === 'POST' && pathname === '/api/data-sources/probe') {
         try {
-          const body = await readJsonBody<{ path: string }>(req);
-          const probeRes = probeSimulationPath(body.path);
+          const body = await readJsonBody<{ path: string; sourceId?: string }>(req);
+          const probeRes = probeSimulationPath(body.path, body.sourceId);
           sendJson(res, 200, { ok: true, probe: probeRes });
         } catch (err) {
           sendError(res, 400, err instanceof Error ? err.message : String(err));
         }
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/data-sources/jobs') {
+        sendJson(res, 200, {
+          ok: true,
+          jobs: importJobManager.listJobs(),
+        });
+        return;
+      }
+
+      const dsJobPauseMatch = pathname.match(/^\/api\/data-sources\/jobs\/([^/]+)\/pause$/);
+      if (req.method === 'POST' && dsJobPauseMatch) {
+        const jobId = decodeURIComponent(dsJobPauseMatch[1]);
+        const job = importJobManager.pauseJob(jobId);
+        if (!job) {
+          sendError(res, 404, `未找到任务: ${jobId}`);
+          return;
+        }
+        sendJson(res, 200, { ok: true, job });
+        return;
+      }
+
+      const dsJobResumeMatch = pathname.match(/^\/api\/data-sources\/jobs\/([^/]+)\/resume$/);
+      if (req.method === 'POST' && dsJobResumeMatch) {
+        try {
+          const jobId = decodeURIComponent(dsJobResumeMatch[1]);
+          const job = await importJobManager.resumeJob(jobId);
+          sendJson(res, 200, { ok: true, job });
+        } catch (err) {
+          sendError(res, 400, err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      const dsJobDelMatch = pathname.match(/^\/api\/data-sources\/jobs\/([^/]+)$/);
+      if (req.method === 'DELETE' && dsJobDelMatch) {
+        const jobId = decodeURIComponent(dsJobDelMatch[1]);
+        const deleted = importJobManager.deleteJob(jobId);
+        sendJson(res, 200, { ok: true, deleted });
         return;
       }
 
@@ -1347,6 +1446,54 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           }
           const saved = dataSourceStore.upsert(body);
           sendJson(res, 200, { ok: true, dataSource: saved });
+        } catch (err) {
+          sendError(res, 400, err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      const dsRelocateMatch = pathname.match(/^\/api\/data-sources\/([^/]+)\/relocate$/);
+      if ((req.method === 'PUT' || req.method === 'POST') && dsRelocateMatch) {
+        try {
+          const dsId = decodeURIComponent(dsRelocateMatch[1]);
+          const body = await readJsonBody<{ newPath: string }>(req);
+          if (!body.newPath) {
+            sendError(res, 400, '必须提供 newPath');
+            return;
+          }
+          const updated = dataSourceStore.relocateSourcePath(dsId, body.newPath);
+          const knownRunIds = new Set<string>((sqliteStore.listRuns() as Array<{ runId: string }>).map((r) => r.runId));
+          sendJson(res, 200, {
+            ok: true,
+            dataSource: updated,
+            dataSources: dataSourceStore.listAll(knownRunIds),
+          });
+        } catch (err) {
+          sendError(res, 400, err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      const dsArchiveMatch = pathname.match(/^\/api\/data-sources\/([^/]+)\/archive$/);
+      if (req.method === 'POST' && dsArchiveMatch) {
+        try {
+          const dsId = decodeURIComponent(dsArchiveMatch[1]);
+          const body = await readJsonBody<{ resumeJobId?: string }>(req).catch(() => ({} as { resumeJobId?: string }));
+          const job = await importJobManager.startArchiveJob(dsId, body.resumeJobId);
+          sendJson(res, 200, { ok: true, job });
+        } catch (err) {
+          sendError(res, 400, err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      const dsImportSqliteMatch = pathname.match(/^\/api\/data-sources\/([^/]+)\/import-sqlite$/);
+      if (req.method === 'POST' && dsImportSqliteMatch) {
+        try {
+          const dsId = decodeURIComponent(dsImportSqliteMatch[1]);
+          const body = await readJsonBody<{ resumeJobId?: string }>(req).catch(() => ({} as { resumeJobId?: string }));
+          const job = await importJobManager.startSqliteImportJob(dsId, body.resumeJobId);
+          sendJson(res, 200, { ok: true, job });
         } catch (err) {
           sendError(res, 400, err instanceof Error ? err.message : String(err));
         }
@@ -1372,8 +1519,9 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           sendError(res, 404, `未找到数据源: ${dsId}`);
           return;
         }
-        if (!fs.existsSync(ds.path)) {
-          sendError(res, 400, `数据源路径不存在或不可访问: ${ds.path}`);
+        const resolvedPath = resolvePhysicalPath(ds.path, ds.id);
+        if (!fs.existsSync(resolvedPath)) {
+          sendError(res, 400, `数据源路径不存在或不可访问: ${resolvedPath}`);
           return;
         }
         try {
@@ -1382,13 +1530,13 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           if (ds.kind === 'csv_dir') {
             situation = await buildSituationModel({
               runId,
-              csvDir: ds.path,
+              csvDir: resolvedPath,
               scenarioPath: ds.path,
             });
           } else {
             situation = await buildSituationModel({
               runId,
-              jsonlFile: ds.path,
+              jsonlFile: resolvedPath,
               scenarioPath: ds.path,
             });
           }
@@ -1412,6 +1560,25 @@ export async function createEvalApp(deps?: EvalServerDeps) {
       // ─── 推演 Run 导入与 eval.db 探针 ───
       if (req.method === 'GET' && pathname === '/api/runs') {
         sendJson(res, 200, { ok: true, runs: sqliteStore.listRuns() });
+        return;
+      }
+
+      const runDelMatch = pathname.match(/^\/api\/runs\/([^/]+)$/);
+      if (req.method === 'DELETE' && runDelMatch) {
+        try {
+          const runId = decodeURIComponent(runDelMatch[1]);
+          const isAsync = reqUrl.searchParams.get('async') === 'true';
+          if (isAsync) {
+            const existingRun = sqliteStore.listRuns().find((r) => r.runId === runId);
+            const job = await importJobManager.startDeleteRunJob(runId, existingRun?.scenarioName);
+            sendJson(res, 200, { ok: true, job });
+            return;
+          }
+          const deleted = sqliteStore.deleteRun(runId);
+          sendJson(res, 200, { ok: true, deleted, runId });
+        } catch (err) {
+          sendError(res, 400, err instanceof Error ? err.message : String(err));
+        }
         return;
       }
 
@@ -1701,13 +1868,14 @@ export async function createEvalApp(deps?: EvalServerDeps) {
             sendError(res, 400, `数据源 ${ds.id} 类型为 ${ds.kind}，实时伴随流仅支持 jsonl_file 数据源`);
             return;
           }
-          if (!fs.existsSync(ds.path)) {
-            sendError(res, 400, `数据源文件不存在: ${ds.path}`);
+          const resolvedJsonl = resolvePhysicalPath(ds.path, ds.id);
+          if (!fs.existsSync(resolvedJsonl)) {
+            sendError(res, 400, `数据源文件不存在: ${resolvedJsonl}`);
             return;
           }
           monitor.createSessionFromFile({
             runId,
-            jsonlFile: ds.path,
+            jsonlFile: resolvedJsonl,
             systemId: body.systemId,
             speedMultiplier: body.speedMultiplier,
           });

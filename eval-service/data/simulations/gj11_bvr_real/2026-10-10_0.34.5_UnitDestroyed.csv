@@ -1,0 +1,7 @@
+﻿﻿TimelineID,Time,UnitID,UnitName,UnitClass,UnitSide,MiscInfo,Reason,Cause
+39c47807bece4e0690feb0598f7a92d1,00:02:04.8000000,8rcdt2-0hnp63clnm45t,CH-AA-10 Abaddon [PL-15] #3,CH-AA-10 Abaddon [PL-15],红方,,武器通过与 东-HaveRaider #1 的交互被已摧毁，导出武器终局数据以获取更多信息。,冲击 / 爆炸
+39c47807bece4e0690feb0598f7a92d1,00:03:17.8000000,8rcdt2-0hnp63clnm6ql,CH-AA-10 Abaddon [PL-15] #4,CH-AA-10 Abaddon [PL-15],红方,,武器通过与 东-HaveRaider #1 的交互被已摧毁，导出武器终局数据以获取更多信息。,冲击 / 爆炸
+39c47807bece4e0690feb0598f7a92d1,00:03:41.2000000,8rcdt2-0hnp63clnm7f7,AIM-120D AMRAAM P3I.4 #5,AIM-120D AMRAAM P3I.4,蓝方,,武器通过与 西-GJ-11 #1 的交互被已摧毁，导出武器终局数据以获取更多信息。,冲击 / 爆炸
+39c47807bece4e0690feb0598f7a92d1,00:04:13.7000000,J7CYWB-0HNP5UM8NUF38,东-HaveRaider #1,Have Raider UCAV,蓝方,,单元已遭受结构性损伤。,Weapon Interaction
+39c47807bece4e0690feb0598f7a92d1,00:04:13.7000000,8rcdt2-0hnp63clnm920,CH-AA-10 Abaddon [PL-15] #6,CH-AA-10 Abaddon [PL-15],红方,,武器通过与 东-HaveRaider #1 的交互被已摧毁，导出武器终局数据以获取更多信息。,冲击 / 爆炸
+39c47807bece4e0690feb0598f7a92d1,00:04:59.9000000,8rcdt2-0hnp63clnm9i8,AIM-120D AMRAAM P3I.4 #7,AIM-120D AMRAAM P3I.4,蓝方,,武器：AIM-120D AMRAAM P3I.4 #7已耗尽能量...自我毁灭,-

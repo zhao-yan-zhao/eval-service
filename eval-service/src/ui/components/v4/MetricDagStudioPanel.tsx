@@ -48,9 +48,13 @@ import {
 import { V4TablePivotPreview } from './V4TablePivotPreview.tsx';
 import { UnifiedAssetSelector, type UnifiedAssetOption } from './UnifiedAssetSelector.tsx';
 
+import type { V4OperatorItem } from '../../api.ts';
+
 export interface MetricDagStudioPanelProps {
   activeSourceId?: string;
   selectedRunId?: string;
+  initialOperators?: V4OperatorItem[];
+  initialMetricGraphs?: MetricGraphDefinition[];
   onDrillDownToOperator?: (operatorId: string) => void;
 }
 
@@ -687,14 +691,29 @@ function extractPreviewColumns(
 export function MetricDagStudioPanel({
   activeSourceId,
   selectedRunId,
+  initialOperators,
+  initialMetricGraphs,
   onDrillDownToOperator,
 }: MetricDagStudioPanelProps) {
-  const [operators, setOperators] = useState<V4OperatorOption[]>([]);
-  const [graphs, setGraphs] = useState<StoredMetricGraph[]>([]);
-  const [activeGraph, setActiveGraph] = useState<StoredMetricGraph>(() =>
-    createDraftMetricGraph(1),
+  const hasInitialData = initialOperators !== undefined && initialMetricGraphs !== undefined;
+  const initialDefaultGraph = useMemo(() => {
+    if (!initialMetricGraphs || initialMetricGraphs.length === 0) return null;
+    return pickDefaultMetricGraph(initialMetricGraphs) ?? initialMetricGraphs[0];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [operators, setOperators] = useState<V4OperatorOption[]>(() =>
+    initialOperators
+      ? normalizeOperatorList(initialOperators.filter((op) => !op.layer || op.layer === 'fact'))
+      : [],
   );
-  const [isLocalDraftMode, setIsLocalDraftMode] = useState(false);
+  const [graphs, setGraphs] = useState<StoredMetricGraph[]>(() => initialMetricGraphs ?? []);
+  const [activeGraph, setActiveGraph] = useState<StoredMetricGraph>(() =>
+    initialDefaultGraph ? structuredClone(initialDefaultGraph) : createDraftMetricGraph(1),
+  );
+  const [isLocalDraftMode, setIsLocalDraftMode] = useState(
+    () => hasInitialData && (initialMetricGraphs?.length ?? 0) === 0,
+  );
   const [targetSide, setTargetSide] = useState<string>('ALL');
   const [discoveredSides, setDiscoveredSides] = useState<string[]>([]);
 
@@ -708,7 +727,9 @@ export function MetricDagStudioPanel({
     }
   }, [viewMode]);
   const [canvasScope, setCanvasScope] = useState<CanvasScope>('lineage');
-  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(
+    () => initialDefaultGraph?.nodes[0]?.id ?? null,
+  );
   const [pinnedCanvasNodeIds, setPinnedCanvasNodeIds] = useState<string[]>([]);
   const [leftPaletteCollapsed, setLeftPaletteCollapsed] = useState(false);
   const [drawerTab, setDrawerTab] = useState<'config' | 'preview'>('config');
@@ -727,11 +748,13 @@ export function MetricDagStudioPanel({
   const [newMetricDomain, setNewMetricDomain] = useState<MetricDomainTag>('firepower');
   const [newMetricUnit, setNewMetricUnit] = useState('');
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
+    () => initialDefaultGraph?.nodes[0]?.id ?? null,
+  );
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
-  const [loadingInit, setLoadingInit] = useState(true);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [loadingInit, setLoadingInit] = useState(!hasInitialData);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(hasInitialData);
   const [coldStartBannerDismissed, setColdStartBannerDismissed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -741,6 +764,9 @@ export function MetricDagStudioPanel({
   );
 
   const [execResults, setExecResults] = useState<Record<string, MetricNodeExecState>>({});
+  const [execResultsByGraph, setExecResultsByGraph] = useState<
+    Record<string, Record<string, MetricNodeExecState>>
+  >({});
   const [sideComparison, setSideComparison] = useState<SideComparisonState | null>(null);
   const [lastExecStats, setLastExecStats] = useState<{
     totalLatencyMs?: number;
@@ -764,61 +790,59 @@ export function MetricDagStudioPanel({
   const loadInitialData = useCallback(async () => {
     setLoadingInit(true);
     try {
-      // 1. 加载一库 V4 算子列表（优先 layer=fact，回退 /api/v4/operators）
-      let loadedOps: V4OperatorOption[] = [];
-      try {
-        const res = await fetch('/api/v4/operators?layer=fact');
-        if (res.ok) {
-          const json = (await res.json()) as { operators?: unknown[] };
-          loadedOps = normalizeOperatorList(json.operators ?? []);
-        } else if (res.status === 404) {
-          const fbRes = await fetch('/api/v4/operators');
-          if (fbRes.ok) {
-            const fbJson = (await fbRes.json()) as { operators?: unknown[] };
-            loadedOps = normalizeOperatorList(fbJson.operators ?? []);
+      const fetchOperators = async (): Promise<V4OperatorOption[]> => {
+        try {
+          const res = await fetch('/api/v4/operators?layer=fact');
+          if (res.ok) {
+            const json = (await res.json()) as { operators?: unknown[] };
+            return normalizeOperatorList(json.operators ?? []);
           }
+          if (res.status === 404) {
+            const fbRes = await fetch('/api/v4/operators');
+            if (fbRes.ok) {
+              const fbJson = (await fbRes.json()) as { operators?: unknown[] };
+              return normalizeOperatorList(fbJson.operators ?? []);
+            }
+          }
+        } catch {
+          // 保持空列表并允许手填 sourceRef
         }
-      } catch {
-        // 保持空列表并允许手填 sourceRef
-      }
+        return [];
+      };
+
+      // 并发加载一库 V4 算子列表与二库已保存指标 DAG
+      const [loadedOps, gResult] = await Promise.all([
+        fetchOperators(),
+        fetch('/api/v4/metric-graphs')
+          .then(async (gRes) => ({
+            ok: gRes.ok,
+            status: gRes.status,
+            json: gRes.ok ? ((await gRes.json()) as { graphs?: MetricGraphDefinition[] }) : null,
+          }))
+          .catch(() => null),
+      ]);
+
       setOperators(loadedOps);
 
-      // 2. 加载二库已保存指标 DAG
-      try {
-        const gRes = await fetch('/api/v4/metric-graphs');
-        if (gRes.ok) {
-          const gJson = (await gRes.json()) as { graphs?: MetricGraphDefinition[] };
-          const list = Array.isArray(gJson.graphs) ? gJson.graphs : [];
-          setGraphs(list);
-          if (list.length > 0) {
-            const defaultGraph = pickDefaultMetricGraph(list) ?? list[0];
-            setActiveGraph(structuredClone(defaultGraph));
-            const firstNodeId = defaultGraph.nodes[0]?.id ?? null;
-            setSelectedNodeId(firstNodeId);
-            setFocusNodeId(firstNodeId);
-            setIsLocalDraftMode(false);
-          } else {
-            const draft = createDraftMetricGraph(1);
-            setActiveGraph(draft);
-            const firstNodeId = draft.nodes[0]?.id ?? null;
-            setSelectedNodeId(firstNodeId);
-            setFocusNodeId(firstNodeId);
-            setIsLocalDraftMode(true);
-          }
+      if (gResult?.ok && gResult.json) {
+        const list = Array.isArray(gResult.json.graphs) ? gResult.json.graphs : [];
+        setGraphs(list);
+        if (list.length > 0) {
+          const defaultGraph = pickDefaultMetricGraph(list) ?? list[0];
+          setActiveGraph(structuredClone(defaultGraph));
+          const firstNodeId = defaultGraph.nodes[0]?.id ?? null;
+          setSelectedNodeId(firstNodeId);
+          setFocusNodeId(firstNodeId);
+          setIsLocalDraftMode(false);
         } else {
           const draft = createDraftMetricGraph(1);
-          setGraphs([]);
           setActiveGraph(draft);
           const firstNodeId = draft.nodes[0]?.id ?? null;
           setSelectedNodeId(firstNodeId);
           setFocusNodeId(firstNodeId);
           setIsLocalDraftMode(true);
-          setBanner({
-            kind: 'warn',
-            text: `GET /api/v4/metric-graphs 返回 HTTP ${gRes.status}，已载入本地可编辑指标 DAG 草案`,
-          });
         }
-      } catch {
+      } else {
         const draft = createDraftMetricGraph(1);
         setGraphs([]);
         setActiveGraph(draft);
@@ -828,7 +852,9 @@ export function MetricDagStudioPanel({
         setIsLocalDraftMode(true);
         setBanner({
           kind: 'warn',
-          text: '后端指标 DAG 接口暂不可达，已载入本地可编辑指标流草案',
+          text: gResult
+            ? `GET /api/v4/metric-graphs 返回 HTTP ${gResult.status}，已载入本地可编辑指标 DAG 草案`
+            : '后端指标 DAG 接口暂不可达，已载入本地可编辑指标流草案',
         });
       }
     } finally {
@@ -838,8 +864,19 @@ export function MetricDagStudioPanel({
   }, []);
 
   useEffect(() => {
-    void loadInitialData();
-  }, [loadInitialData]);
+    if (!hasInitialData) {
+      void loadInitialData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (initialOperators !== undefined) {
+      setOperators(
+        normalizeOperatorList(initialOperators.filter((op) => !op.layer || op.layer === 'fact')),
+      );
+    }
+  }, [initialOperators]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -960,6 +997,29 @@ export function MetricDagStudioPanel({
     setDrawerTab('config');
     setViewMode('canvas');
   }, []);
+
+  const enterCanvasForGraphNode = useCallback(
+    (targetGraph: StoredMetricGraph, nodeId: string, scope: CanvasScope = 'lineage') => {
+      if (targetGraph.graphId !== activeGraph.graphId) {
+        setActiveGraph(structuredClone(targetGraph));
+        setExecResults(execResultsByGraph[targetGraph.graphId] ?? {});
+        setSideComparison(null);
+        setDiscoveredSides([]);
+        setTargetSide('ALL');
+        setLastExecStats(null);
+        setIsLocalDraftMode(false);
+      }
+      setSelectedNodeId(nodeId);
+      setFocusNodeId(nodeId);
+      setSelectedEdgeId(null);
+      setPinnedCanvasNodeIds([]);
+      setCanvasScope(scope);
+      setMoreMenuOpen(false);
+      setDrawerTab('config');
+      setViewMode('canvas');
+    },
+    [activeGraph.graphId, execResultsByGraph],
+  );
 
   const handleSelectGraph = useCallback((target: StoredMetricGraph) => {
     setActiveGraph(structuredClone(target));
@@ -1236,6 +1296,7 @@ export function MetricDagStudioPanel({
 
       const rawNodeResults = execution.nodeResults ?? {};
       setExecResults(rawNodeResults);
+      setExecResultsByGraph((prev) => ({ ...prev, [activeGraph.graphId]: rawNodeResults }));
       setLastExecStats({
         totalLatencyMs: execution.totalLatencyMs,
         cacheHits: execution.cacheHits,
@@ -1265,6 +1326,86 @@ export function MetricDagStudioPanel({
       setExecuting(false);
     }
   }, [activeGraph, selectedRunId, activeSourceId, targetSide]);
+
+  const handleExecuteAllGraphs = useCallback(async () => {
+    const mergedGraphs =
+      graphs.length > 0
+        ? graphs.map((g) => (g.graphId === activeGraph.graphId ? activeGraph : g))
+        : [activeGraph];
+    const nonEmptyGraphs = mergedGraphs.filter((g) => g.nodes.length > 0);
+    if (nonEmptyGraphs.length === 0) return;
+
+    setExecuting(true);
+    setBanner(null);
+    try {
+      const resultsMap: Record<string, Record<string, MetricNodeExecState>> = {};
+      let totalNodes = 0;
+      let totalUnavail = 0;
+      let totalLatency = 0;
+
+      await Promise.all(
+        nonEmptyGraphs.map(async (g) => {
+          const sanitizedGraph: MetricGraphDefinition = {
+            ...g,
+            graphKind: 'metric',
+            edges: stripMetricWeights(g.edges),
+          };
+          const res = await fetch('/api/v4/metric-graphs/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              graph: sanitizedGraph,
+              runId: selectedRunId,
+              dataSourceId: activeSourceId,
+            }),
+          });
+          const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+          if (!res.ok || json.ok === false) {
+            throw new Error(
+              typeof json.error === 'string'
+                ? json.error
+                : `执行指标 DAG (${g.name}) 失败 (HTTP ${res.status})`,
+            );
+          }
+          const execution = (json.execution ?? json.result ?? json) as {
+            nodeResults?: Record<string, MetricNodeExecState>;
+            totalLatencyMs?: number;
+          };
+          const nr = execution.nodeResults ?? {};
+          resultsMap[g.graphId] = nr;
+          totalLatency += execution.totalLatencyMs ?? 0;
+          const vals = Object.values(nr);
+          totalNodes += vals.length;
+          totalUnavail += vals.filter((r) => r.status === 'unavailable').length;
+        }),
+      );
+
+      setExecResultsByGraph((prev) => ({ ...prev, ...resultsMap }));
+      if (resultsMap[activeGraph.graphId]) {
+        setExecResults(resultsMap[activeGraph.graphId]);
+      }
+      setLastExecStats({ totalLatencyMs: totalLatency, runId: selectedRunId });
+
+      if (totalUnavail > 0) {
+        setBanner({
+          kind: 'warn',
+          text: `试算完成：${totalNodes - totalUnavail}/${totalNodes} 项正常，${totalUnavail} 项缺数`,
+        });
+      } else {
+        setBanner({
+          kind: 'info',
+          text: `试算完成（共 ${totalNodes} 个指标正常，耗时 ${totalLatency.toFixed(1)}ms）`,
+        });
+      }
+    } catch (err) {
+      setBanner({
+        kind: 'error',
+        text: `指标计算失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setExecuting(false);
+    }
+  }, [graphs, activeGraph, selectedRunId, activeSourceId]);
 
   // 多阵营同屏对比试算（分方完全由后端动态发现）
   const handleCompareSides = useCallback(async () => {
@@ -1891,11 +2032,61 @@ export function MetricDagStudioPanel({
     return { incoming, outgoing };
   }, [activeGraph.nodes, activeGraph.edges]);
 
+  // 统一合并所有指标图集中的指标节点，避免清单拆分散落
+  const allMetricItems = useMemo(() => {
+    const mergedGraphs =
+      graphs.length > 0
+        ? graphs.map((g) => (g.graphId === activeGraph.graphId ? activeGraph : g))
+        : [activeGraph];
+    const sortedGraphs = [...mergedGraphs].sort((a, b) => {
+      if (a.graphId === 'mg_v4_metrics_guide_full') return -1;
+      if (b.graphId === 'mg_v4_metrics_guide_full') return 1;
+      return a.graphId.localeCompare(b.graphId);
+    });
+
+    const items: Array<{
+      key: string;
+      graph: StoredMetricGraph;
+      node: MetricDagNode;
+      incoming: Array<{ edge: DagEdge; sourceNode?: MetricDagNode }>;
+      nodeByMetricId: Map<string, MetricDagNode>;
+    }> = [];
+    const seenMetricKeys = new Set<string>();
+
+    for (const g of sortedGraphs) {
+      const nodeById = new Map(g.nodes.map((n) => [n.id, n]));
+      const gNodeByMetricId = new Map<string, MetricDagNode>();
+      for (const n of g.nodes) {
+        if (n.metricConfig?.metricId) gNodeByMetricId.set(n.metricConfig.metricId, n);
+      }
+      const incomingMap = new Map<string, Array<{ edge: DagEdge; sourceNode?: MetricDagNode }>>();
+      for (const edge of g.edges) {
+        const arr = incomingMap.get(edge.targetNodeId) ?? [];
+        arr.push({ edge, sourceNode: nodeById.get(edge.sourceNodeId) });
+        incomingMap.set(edge.targetNodeId, arr);
+      }
+
+      for (const node of g.nodes) {
+        const dedupeKey = node.metricConfig?.metricId || node.id;
+        if (seenMetricKeys.has(dedupeKey)) continue;
+        seenMetricKeys.add(dedupeKey);
+        items.push({
+          key: `${g.graphId}::${node.id}`,
+          graph: g,
+          node,
+          incoming: incomingMap.get(node.id) ?? [],
+          nodeByMetricId: gNodeByMetricId,
+        });
+      }
+    }
+    return items;
+  }, [graphs, activeGraph]);
+
   // 指标清单：按 militaryLevel (MOP -> MOE -> MOFE) & domainTag 排序过滤
-  const filteredSortedNodes = useMemo(() => {
+  const filteredSortedItems = useMemo(() => {
     const q = listSearch.trim().toLowerCase();
-    return [...activeGraph.nodes]
-      .filter((n) => {
+    return [...allMetricItems]
+      .filter(({ node: n }) => {
         const cfg = n.metricConfig;
         const level = cfg?.militaryLevel ?? 'MOP';
         const domain = cfg?.domainTag ?? 'firepower';
@@ -1916,17 +2107,17 @@ export function MetricDagStudioPanel({
         return haystack.includes(q);
       })
       .sort((a, b) => {
-        const la = MILITARY_LEVEL_ORDER[a.metricConfig?.militaryLevel ?? 'MOP'] ?? 9;
-        const lb = MILITARY_LEVEL_ORDER[b.metricConfig?.militaryLevel ?? 'MOP'] ?? 9;
+        const la = MILITARY_LEVEL_ORDER[a.node.metricConfig?.militaryLevel ?? 'MOP'] ?? 9;
+        const lb = MILITARY_LEVEL_ORDER[b.node.metricConfig?.militaryLevel ?? 'MOP'] ?? 9;
         if (la !== lb) return la - lb;
-        const da = a.metricConfig?.domainTag ?? '';
-        const db = b.metricConfig?.domainTag ?? '';
+        const da = a.node.metricConfig?.domainTag ?? '';
+        const db = b.node.metricConfig?.domainTag ?? '';
         if (da !== db) return da.localeCompare(db);
-        const ma = a.metricConfig?.metricId ?? a.id;
-        const mb = b.metricConfig?.metricId ?? b.id;
+        const ma = a.node.metricConfig?.metricId ?? a.node.id;
+        const mb = b.node.metricConfig?.metricId ?? b.node.id;
         return ma.localeCompare(mb);
       });
-  }, [activeGraph.nodes, listSearch, listLevelFilter, listDomainFilter]);
+  }, [allMetricItems, listSearch, listLevelFilter, listDomainFilter]);
 
   const domainCounts = useMemo(() => {
     const counts: Record<MetricDomainTag, number> = {
@@ -1937,25 +2128,41 @@ export function MetricDagStudioPanel({
       synergy: 0,
       cost: 0,
     };
-    for (const n of activeGraph.nodes) {
+    for (const { node: n } of allMetricItems) {
       const dom = n.metricConfig?.domainTag;
       if (dom && dom in counts) {
         counts[dom] += 1;
       }
     }
     return counts;
-  }, [activeGraph.nodes]);
+  }, [allMetricItems]);
 
   const levelCounts = useMemo(() => {
     const counts: Record<MetricMilitaryLevel, number> = { MOP: 0, MOE: 0, MOFE: 0 };
-    for (const n of activeGraph.nodes) {
+    for (const { node: n } of allMetricItems) {
       const lvl = n.metricConfig?.militaryLevel ?? 'MOP';
       counts[lvl] = (counts[lvl] ?? 0) + 1;
     }
     return counts;
-  }, [activeGraph.nodes]);
+  }, [allMetricItems]);
 
   const selectedExec = selectedNode ? execResults[selectedNode.id] : undefined;
+
+  const allMetricSelectorOptions = useMemo<UnifiedAssetOption[]>(() => {
+    return allMetricItems.map(({ graph, node: n }) => {
+      const cfg = n.metricConfig;
+      const lvl = cfg?.militaryLevel ?? 'MOP';
+      const dom = cfg?.domainTag ? (DOMAIN_CN_MAP[cfg.domainTag] ?? cfg.domainTag) : '未分类';
+      return {
+        id: `${graph.graphId}::${n.id}`,
+        label: cfg?.name || n.label || n.id,
+        subLabel: cfg?.metricId || n.id,
+        group: dom,
+        badge: lvl,
+        badgeTone: lvl === 'MOFE' ? 'indigo' : lvl === 'MOE' ? 'cyan' : 'emerald',
+      };
+    });
+  }, [allMetricItems]);
 
   const metricSelectorOptions = useMemo<UnifiedAssetOption[]>(() => {
     return activeGraph.nodes.map((n) => {
@@ -1976,66 +2183,37 @@ export function MetricDagStudioPanel({
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-[#30363d] bg-[#0d1117] p-3 text-slate-100">
       {viewMode === 'list' ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-[#30363d] bg-[#161b22] p-3.5">
-          {/* 统一单行紧凑顶栏：库徽章 + 计数 + 下拉直达画布 | 能力域下拉 + 层次下拉 + 搜索 + 主操作 */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#30363d] pb-3">
+        <>
+          {/* 统一单行紧凑顶栏：库徽章 + 图集 + 计数 + 定位指标 | 能力域 + 层次 + 搜索 + 试算 + 新建指标 + 更多 ▾ */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#30363d] bg-[#161b22] px-3.5 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-300">
                 <Layers className="h-3.5 w-3.5" />
                 <span>指标清单</span>
               </div>
 
-              {graphs.length > 1 ? (
-                <div className="flex items-center gap-1.5">
-                  <select
-                    aria-label="指标图集选择"
-                    value={activeGraph.graphId}
-                    onChange={(e) => {
-                      const found = graphs.find((g) => g.graphId === e.target.value);
-                      if (found) handleSelectGraph(found);
-                    }}
-                    className="h-8 max-w-[210px] truncate rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs font-medium text-emerald-300 focus:border-emerald-500 focus:outline-none cursor-pointer"
-                    title={`当前指标图集：${activeGraph.name} (${activeGraph.graphId})`}
-                  >
-                    {graphs.map((g) => (
-                      <option key={g.graphId} value={g.graphId}>
-                        {g.name} ({g.nodes.length} 项){g.builtin ? ' [官方]' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <span
-                  title={`当前图集：${activeGraph.name} (${activeGraph.graphId})`}
-                  className="rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1 text-xs font-medium text-slate-200"
-                >
-                  {activeGraph.name}
-                </span>
-              )}
-
-              {isLocalDraftMode && (
-                <span className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
-                  本地草案
-                </span>
-              )}
-
               <span
                 className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-slate-300 tabular-nums"
               >
                 {!hasLoadedOnce && loadingInit
                   ? '加载中...'
-                  : filteredSortedNodes.length === activeGraph.nodes.length
-                    ? `共 ${activeGraph.nodes.length} 项`
-                    : `${filteredSortedNodes.length} / ${activeGraph.nodes.length} 项`}
+                  : filteredSortedItems.length === allMetricItems.length
+                    ? `共 ${allMetricItems.length} 项`
+                    : `${filteredSortedItems.length} / ${allMetricItems.length} 项`}
               </span>
 
               <UnifiedAssetSelector
-                value={effectiveFocusNodeId ?? ''}
-                options={metricSelectorOptions}
+                value={effectiveFocusNodeId ? `${activeGraph.graphId}::${effectiveFocusNodeId}` : ''}
+                options={allMetricSelectorOptions}
                 placeholder="定位指标..."
                 searchPlaceholder="搜索名称、ID 或领域..."
                 accent="emerald"
-                onChange={(nodeId) => enterCanvasForNode(nodeId, 'lineage')}
+                onChange={(compositeId) => {
+                  const matched = allMetricItems.find((item) => item.key === compositeId);
+                  if (matched) {
+                    enterCanvasForGraphNode(matched.graph, matched.node.id, 'lineage');
+                  }
+                }}
               />
             </div>
 
@@ -2048,7 +2226,7 @@ export function MetricDagStudioPanel({
                 }
                 className="h-8 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none cursor-pointer"
               >
-                <option value="ALL">全部分域 ({activeGraph.nodes.length})</option>
+                <option value="ALL">全部分域 ({allMetricItems.length})</option>
                 {DOMAIN_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.cnShort} ({domainCounts[opt.value] ?? 0})
@@ -2064,7 +2242,7 @@ export function MetricDagStudioPanel({
                 }
                 className="h-8 rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none cursor-pointer"
               >
-                <option value="ALL">全部层次 ({activeGraph.nodes.length})</option>
+                <option value="ALL">全部层次 ({allMetricItems.length})</option>
                 {MILITARY_LEVELS.map((lvl) => (
                   <option key={lvl} value={lvl}>
                     {lvl} ({levelCounts[lvl] ?? 0})
@@ -2072,7 +2250,7 @@ export function MetricDagStudioPanel({
                 ))}
               </select>
 
-              <div className="relative w-48 sm:w-56">
+              <div className="relative w-48 xl:w-56">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                 <input
                   type="text"
@@ -2094,20 +2272,9 @@ export function MetricDagStudioPanel({
 
               <button
                 type="button"
-                onClick={() => void handleCompareSides()}
-                disabled={comparingSides || executing || activeGraph.nodes.length === 0}
-                title="按红蓝分方对比计算结果"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-cyan-500/50 bg-cyan-500/15 px-2.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50 transition cursor-pointer"
-              >
-                <Scale className="h-3.5 w-3.5 text-cyan-300" />
-                <span>{comparingSides ? '对比中...' : '阵营对比'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleExecuteMetricDag()}
-                disabled={executing || comparingSides || activeGraph.nodes.length === 0}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-400/60 bg-emerald-600 px-3 text-xs font-semibold text-white shadow-lg shadow-emerald-950/50 hover:bg-emerald-500 disabled:opacity-50 transition cursor-pointer"
+                onClick={() => void handleExecuteAllGraphs()}
+                disabled={executing || allMetricItems.length === 0}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/45 bg-emerald-500/15 px-3 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 transition cursor-pointer"
               >
                 <Play className="h-3.5 w-3.5" />
                 <span>{executing ? '计算中...' : '试算'}</span>
@@ -2124,9 +2291,9 @@ export function MetricDagStudioPanel({
                   setNewMetricUnit('');
                   setNewMetricModalOpen(true);
                 }}
-                className="inline-flex h-8 items-center gap-1 rounded-md border border-teal-500/50 bg-teal-500/15 px-2.5 text-xs font-semibold text-teal-200 hover:bg-teal-500/25 transition cursor-pointer"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-400/60 bg-emerald-600 px-3 text-xs font-semibold text-white shadow-lg shadow-emerald-950/60 hover:bg-emerald-500 transition cursor-pointer"
               >
-                <Plus className="h-3.5 w-3.5 text-teal-300" />
+                <Plus className="h-3.5 w-3.5" />
                 <span>新建指标</span>
               </button>
 
@@ -2194,25 +2361,26 @@ export function MetricDagStudioPanel({
           </div>
 
           {hasLoadedOnce &&
+            Object.keys(execResultsByGraph).length === 0 &&
             Object.keys(execResults).length === 0 &&
             !sideComparison &&
-            activeGraph.nodes.length > 0 &&
+            allMetricItems.length > 0 &&
             !coldStartBannerDismissed && (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-[#161b22] to-emerald-950/30 px-3.5 py-2 text-xs text-cyan-200">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 shrink-0 text-cyan-400 animate-pulse" />
                   <span>
-                    指标图集「<strong>{activeGraph.name}</strong>」已就绪（共 {activeGraph.nodes.length} 项）。尚未执行试算，点击右侧
+                    二库指标库已就绪（共 {allMetricItems.length} 项）。点击任意指标进入画布编排，或点击右侧
                     <button
                       type="button"
-                      onClick={() => void handleExecuteMetricDag()}
+                      onClick={() => void handleExecuteAllGraphs()}
                       disabled={executing}
                       className="mx-1.5 inline-flex items-center gap-1 rounded border border-emerald-500/60 bg-emerald-600/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-600/70 transition cursor-pointer"
                     >
                       <Play className="h-2.5 w-2.5" />
                       <span>立即试算</span>
                     </button>
-                    即可基于当前推演日志计算各指标实测值。
+                    基于当前推演日志计算各指标实测值。
                   </span>
                 </div>
                 <button
@@ -2262,19 +2430,19 @@ export function MetricDagStudioPanel({
             onScroll={(e) => {
               savedListScrollTopRef.current = e.currentTarget.scrollTop;
             }}
-            className="max-h-[calc(100dvh-200px)] min-h-[380px] overflow-auto rounded-lg border border-[#30363d] bg-[#0d1117]"
+            className="max-h-[calc(100dvh-200px)] min-h-[380px] overflow-auto rounded-xl border border-[#30363d] bg-[#161b22]"
           >
             <table className="w-full border-collapse text-left text-xs">
-              <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#161b22] text-[11px] text-slate-400">
+              <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#161b22] text-[11px] font-medium text-slate-400">
                 <tr>
-                  <th className="px-3 py-2 font-medium">指标名称</th>
-                  <th className="px-3 py-2 font-medium whitespace-nowrap">层级 / 领域</th>
-                  <th className="px-3 py-2 font-medium">数据来源</th>
-                  <th className="px-3 py-2 font-medium whitespace-nowrap text-right">试算结果</th>
-                  <th className="px-3 py-2 font-medium whitespace-nowrap text-right">操作</th>
+                  <th className="px-3.5 py-2.5 font-medium">指标名称与标识</th>
+                  <th className="px-3.5 py-2.5 font-medium whitespace-nowrap">层级 / 领域</th>
+                  <th className="px-3.5 py-2.5 font-medium">数据来源</th>
+                  <th className="px-3.5 py-2.5 font-medium whitespace-nowrap text-right">试算结果</th>
+                  <th className="px-3.5 py-2.5 font-medium whitespace-nowrap text-right">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#30363d]/60">
+              <tbody className="divide-y divide-[#30363d]/70">
                 {!hasLoadedOnce && loadingInit ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={`metric-skeleton-${i}`} className="animate-pulse">
@@ -2299,12 +2467,12 @@ export function MetricDagStudioPanel({
                       </td>
                     </tr>
                   ))
-                ) : filteredSortedNodes.length === 0 ? (
+                ) : filteredSortedItems.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-12 text-center text-xs text-slate-500">
                       <div className="flex flex-col items-center gap-2">
                         <span>当前过滤条件下无匹配指标节点</span>
-                        {activeGraph.nodes.length === 0 && (
+                        {allMetricItems.length === 0 && (
                           <button
                             type="button"
                             onClick={() => void loadInitialData()}
@@ -2317,7 +2485,7 @@ export function MetricDagStudioPanel({
                     </td>
                   </tr>
                 ) : (
-                  filteredSortedNodes.map((node) => {
+                  filteredSortedItems.map(({ key: itemKey, graph: itemGraph, node, incoming: inLinks, nodeByMetricId }) => {
                     const cfg = node.metricConfig;
                     const level = cfg?.militaryLevel ?? 'MOP';
                     const domainTag = cfg?.domainTag ?? 'firepower';
@@ -2327,24 +2495,22 @@ export function MetricDagStudioPanel({
                       mode === 'from_operator' && cfg?.sourceRef
                         ? operatorMap.get(cfg.sourceRef)
                         : undefined;
-                    const inLinks = lineageByNodeId.incoming.get(node.id) ?? [];
                     const upstreamNode =
                       mode === 'from_metric_agg' && cfg?.sourceRef
-                        ? nodeByMetricIdMap.get(cfg.sourceRef)
+                        ? nodeByMetricId.get(cfg.sourceRef)
                         : undefined;
                     const latestExec =
-                      execResults[node.id] ??
-                      (sideComparison
-                        ? extractNodeResultsFromSlice(sideComparison.overall)[node.id]
-                        : undefined);
+                      execResultsByGraph[itemGraph.graphId]?.[node.id] ??
+                      (itemGraph.graphId === activeGraph.graphId ? execResults[node.id] : undefined);
                     const latestNum = getNumericMetricExecValue(latestExec);
-                    const isSelected = node.id === selectedNodeId;
-                    const hasSideCols = Boolean(sideComparison && sideComparison.sides.length > 0);
+                    const isSelected =
+                      itemGraph.graphId === activeGraph.graphId && node.id === selectedNodeId;
+                    const hasSideCols = false;
 
                     return (
                       <tr
-                        key={node.id}
-                        onClick={() => enterCanvasForNode(node.id, 'lineage')}
+                        key={itemKey}
+                        onClick={() => enterCanvasForGraphNode(itemGraph, node.id, 'lineage')}
                         title="点击进入该指标的链路聚焦画布"
                         className={`cursor-pointer transition hover:bg-[#161b22]/90 ${
                           isSelected ? 'bg-emerald-950/30' : ''
@@ -2505,16 +2671,16 @@ export function MetricDagStudioPanel({
                         </td>
 
                         {/* 列 5：操作 */}
-                        <td className="px-3 py-2.5 align-middle text-right whitespace-nowrap">
+                        <td className="px-3.5 py-2.5 align-middle text-right whitespace-nowrap">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              enterCanvasForNode(node.id, 'lineage');
+                              enterCanvasForGraphNode(itemGraph, node.id, 'lineage');
                             }}
-                            className="inline-flex items-center gap-1 rounded-md border border-emerald-500/45 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/25 transition cursor-pointer"
+                            className="inline-flex items-center gap-1 rounded-md border border-emerald-500/45 bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/30 transition cursor-pointer"
                           >
-                            <GitBranch className="h-3 w-3" />
+                            <GitBranch className="h-3.5 w-3.5" />
                             <span>画布编排</span>
                           </button>
                         </td>
@@ -2525,10 +2691,10 @@ export function MetricDagStudioPanel({
               </tbody>
             </table>
           </div>
-        </div>
+        </>
       ) : (
         <div className="flex flex-1 flex-col gap-2.5 min-h-[640px]">
-          {/* 画布顶栏：← 返回指标列表 + 作用域切换胶囊 | 阵营切片(仅>0) + 阵营对比 + 试算 + 保存 + 更多 ▾ */}
+          {/* 画布顶栏：← 返回指标列表 + 作用域切换胶囊 | 试算 + 保存 + 更多 ▾ */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#30363d] bg-[#161b22] px-3.5 py-2">
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -2594,40 +2760,10 @@ export function MetricDagStudioPanel({
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
-              {discoveredSides.length > 0 && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-300">
-                  <span className="text-[11px] text-slate-400">阵营切片:</span>
-                  <select
-                    value={targetSide}
-                    onChange={(e) => handleChangeTargetSide(e.target.value)}
-                    title="分方列表由阵营对比从推演数据中解析"
-                    className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-1 text-xs text-emerald-300 focus:border-emerald-500 focus:outline-none cursor-pointer"
-                  >
-                    <option value="ALL">全部阵营 ({discoveredSides.length} 方)</option>
-                    {discoveredSides.map((side) => (
-                      <option key={side} value={side}>
-                        {side}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => void handleCompareSides()}
-                disabled={comparingSides || executing || activeGraph.nodes.length === 0}
-                title="按红蓝分方对比计算结果"
-                className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/50 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50 transition cursor-pointer"
-              >
-                <Scale className="h-3.5 w-3.5 text-cyan-300" />
-                <span>{comparingSides ? '对比中...' : '阵营对比'}</span>
-              </button>
-
               <button
                 type="button"
                 onClick={() => void handleExecuteMetricDag()}
-                disabled={executing || comparingSides || activeGraph.nodes.length === 0}
+                disabled={executing || activeGraph.nodes.length === 0}
                 className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/60 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-emerald-950/50 hover:bg-emerald-500 disabled:opacity-50 transition cursor-pointer"
               >
                 <Play className="h-3.5 w-3.5" />
@@ -2682,25 +2818,26 @@ export function MetricDagStudioPanel({
           </div>
 
           {hasLoadedOnce &&
+            Object.keys(execResultsByGraph).length === 0 &&
             Object.keys(execResults).length === 0 &&
             !sideComparison &&
-            activeGraph.nodes.length > 0 &&
+            allMetricItems.length > 0 &&
             !coldStartBannerDismissed && (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-[#161b22] to-emerald-950/30 px-3.5 py-2 text-xs text-cyan-200">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 shrink-0 text-cyan-400 animate-pulse" />
                   <span>
-                    指标图集「<strong>{activeGraph.name}</strong>」已就绪（共 {activeGraph.nodes.length} 项）。尚未执行试算，点击右侧
+                    二库指标库已就绪（共 {allMetricItems.length} 项）。点击任意指标进入画布编排，或点击右侧
                     <button
                       type="button"
-                      onClick={() => void handleExecuteMetricDag()}
+                      onClick={() => void handleExecuteAllGraphs()}
                       disabled={executing}
                       className="mx-1.5 inline-flex items-center gap-1 rounded border border-emerald-500/60 bg-emerald-600/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-600/70 transition cursor-pointer"
                     >
                       <Play className="h-2.5 w-2.5" />
                       <span>立即试算</span>
                     </button>
-                    即可基于当前推演日志计算各指标实测值。
+                    基于当前推演日志计算各指标实测值。
                   </span>
                 </div>
                 <button

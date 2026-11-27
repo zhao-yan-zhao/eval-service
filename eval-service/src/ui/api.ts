@@ -151,6 +151,9 @@ export interface DataSourceStatus {
     scenarioName?: string;
   };
   accessible: boolean;
+  resolvedPath?: string;
+  isArchived?: boolean;
+  dedicatedBackupPath?: string;
   fileCount?: number;
   totalSizeBytes?: number;
   scenarioName?: string;
@@ -163,6 +166,7 @@ export interface DataSourceStatus {
 export interface DataSourceProbeResult {
   accessible: boolean;
   path: string;
+  resolvedPath?: string;
   kind?: 'csv_dir' | 'jsonl_file';
   scenarioName?: string;
   timelineId?: string;
@@ -170,6 +174,27 @@ export interface DataSourceProbeResult {
   totalSizeBytes?: number;
   tablesFound?: string[];
   error?: string;
+}
+
+export interface ImportJobStatus {
+  jobId: string;
+  sourceId: string;
+  sourceName?: string;
+  jobType: 'archive' | 'sqlite_import' | 'delete_run';
+  status: 'running' | 'paused' | 'interrupted' | 'completed' | 'failed' | 'cancelled';
+  totalFiles: number;
+  processedFiles: number;
+  totalBytes: number;
+  processedBytes: number;
+  currentFile?: string;
+  completedFiles: string[];
+  totalEventsImported?: number;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+  percent: number;
+  speedBytesPerSec: number;
+  etaSeconds: number | null;
 }
 
 export interface StoredRunSummary {
@@ -537,7 +562,69 @@ export const evalApi = {
       method: 'DELETE',
     }),
 
+  relocateDataSource: (id: string, newPath: string) =>
+    requestJson<{ dataSource: DataSourceStatus['source']; dataSources: DataSourceStatus[] }>(
+      `/api/data-sources/${encodeURIComponent(id)}/relocate`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ newPath }),
+      },
+    ),
+
+  archiveDataSource: (id: string, resumeJobId?: string) =>
+    requestJson<{ job: ImportJobStatus }>(`/api/data-sources/${encodeURIComponent(id)}/archive`, {
+      method: 'POST',
+      body: JSON.stringify(resumeJobId ? { resumeJobId } : {}),
+    }),
+
+  importDataSourceSqlite: (id: string, resumeJobId?: string) =>
+    requestJson<{ job: ImportJobStatus }>(
+      `/api/data-sources/${encodeURIComponent(id)}/import-sqlite`,
+      {
+        method: 'POST',
+        body: JSON.stringify(resumeJobId ? { resumeJobId } : {}),
+      },
+    ),
+
+  listDataSourceJobs: () =>
+    requestJson<{ jobs: ImportJobStatus[] }>('/api/data-sources/jobs'),
+
+  pauseDataSourceJob: (jobId: string) =>
+    requestJson<{ job: ImportJobStatus }>(
+      `/api/data-sources/jobs/${encodeURIComponent(jobId)}/pause`,
+      { method: 'POST' },
+    ),
+
+  resumeDataSourceJob: (jobId: string) =>
+    requestJson<{ job: ImportJobStatus }>(
+      `/api/data-sources/jobs/${encodeURIComponent(jobId)}/resume`,
+      { method: 'POST' },
+    ),
+
+  deleteDataSourceJob: (jobId: string) =>
+    requestJson<{ deleted: boolean }>(
+      `/api/data-sources/jobs/${encodeURIComponent(jobId)}`,
+      { method: 'DELETE' },
+    ),
+
   listRuns: () => requestJson<{ runs: StoredRunSummary[] }>('/api/runs'),
+
+  deleteRun: (runId: string) =>
+    requestJson<{ deleted: boolean; runId: string }>(`/api/runs/${encodeURIComponent(runId)}`, {
+      method: 'DELETE',
+    }),
+
+  deleteRunAsync: (runId: string) =>
+    requestJson<{ ok: boolean; job: ImportJobStatus }>(
+      `/api/runs/${encodeURIComponent(runId)}?async=true`,
+      { method: 'DELETE' },
+    ),
+
+  deleteDatabaseFile: (filename: string) =>
+    requestJson<{ deleted: boolean; filename: string }>(
+      `/api/db/file?filename=${encodeURIComponent(filename)}`,
+      { method: 'DELETE' },
+    ),
 
   getRunTableData: (
     runId: string,

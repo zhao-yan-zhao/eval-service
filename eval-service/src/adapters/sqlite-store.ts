@@ -120,6 +120,24 @@ export interface StoredEvalSummary {
   createdAt: string;
 }
 
+export interface ImportJobRecord {
+  jobId: string;
+  sourceId: string;
+  sourceName?: string;
+  jobType: 'archive' | 'sqlite_import' | 'delete_run';
+  status: 'running' | 'paused' | 'interrupted' | 'completed' | 'failed' | 'cancelled';
+  totalFiles: number;
+  processedFiles: number;
+  totalBytes: number;
+  processedBytes: number;
+  currentFile?: string;
+  completedFiles: string[];
+  totalEventsImported?: number;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StoredV4EvalSideSummary {
   side: string;
   overallScore: number | null;
@@ -553,12 +571,38 @@ export class EvalSqliteStore {
         updated_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_v4_components_builtin ON v4_components (is_builtin);
+
+      CREATE TABLE IF NOT EXISTS import_jobs (
+        job_id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        source_name TEXT,
+        job_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        total_files INTEGER NOT NULL DEFAULT 0,
+        processed_files INTEGER NOT NULL DEFAULT 0,
+        total_bytes INTEGER NOT NULL DEFAULT 0,
+        processed_bytes INTEGER NOT NULL DEFAULT 0,
+        current_file TEXT,
+        completed_files_json TEXT NOT NULL DEFAULT '[]',
+        total_events_imported INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_import_jobs_source ON import_jobs (source_id, updated_at DESC);
     `);
 
     try {
       this.db.exec('ALTER TABLE v4_eval_results ADD COLUMN metric_snapshots_json TEXT');
     } catch {
       // 列已存在时静默跳过
+    }
+
+    // 服务重启恢复：将异常中止的 running 任务自动标记为 interrupted，保留断点信息供继续
+    try {
+      this.markRunningJobsInterrupted();
+    } catch {
+      // 忽略首次建表或只读容错
     }
   }
 
@@ -852,6 +896,63 @@ export class EvalSqliteStore {
       .get(runId) as { situation_snapshot_json?: string } | undefined;
     if (!row?.situation_snapshot_json) return null;
     return deserializeSituationSnapshot(row.situation_snapshot_json);
+  }
+
+  deleteRun(runId: string, onProgress?: (stage: string, step: number, totalSteps: number) => void): boolean {
+    let deleted = false;
+    const totalSteps = 5;
+    onProgress?.('清理评估快照与研判卡片', 1, totalSteps);
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare('DELETE FROM eval_results WHERE run_id = ?').run(runId);
+      this.db.prepare('DELETE FROM v4_eval_results WHERE run_id = ?').run(runId);
+      this.db.prepare('DELETE FROM realtime_cards WHERE run_id = ?').run(runId);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+
+    onProgress?.('清理作战单元时空航迹 (unit_states)', 2, totalSteps);
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare('DELETE FROM unit_states WHERE run_id = ?').run(runId);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+
+    onProgress?.('清理仿真事件链 (simulation_events)', 3, totalSteps);
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare('DELETE FROM simulation_events WHERE run_id = ?').run(runId);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+
+    onProgress?.('移除场次元数据 (simulation_runs)', 4, totalSteps);
+    this.db.exec('BEGIN');
+    try {
+      const res = this.db.prepare('DELETE FROM simulation_runs WHERE run_id = ?').run(runId);
+      deleted = Number(res.changes ?? 0) > 0;
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+
+    if (deleted) {
+      onProgress?.('压缩数据库空间 (VACUUM)', 5, totalSteps);
+      try {
+        this.db.exec('VACUUM');
+      } catch {
+        // 忽略 VACUUM 占用容错
+      }
+    }
+    return deleted;
   }
 
   queryEvents(
@@ -1924,6 +2025,210 @@ export class EvalSqliteStore {
     }
 
     return { skipped: false, inserted };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 断点续传任务状态表 (import_jobs) 与分批增量入库
+  // ─────────────────────────────────────────────────────────────
+
+  markRunningJobsInterrupted(): number {
+    const now = new Date().toISOString();
+    const res = this.db
+      .prepare(
+        `UPDATE import_jobs
+         SET status = 'interrupted',
+             error = COALESCE(error, '服务重启或意外中断，支持从断点继续'),
+             updated_at = ?
+         WHERE status = 'running'`,
+      )
+      .run(now);
+    return Number(res.changes ?? 0);
+  }
+
+  upsertImportJob(job: ImportJobRecord): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO import_jobs (
+          job_id, source_id, source_name, job_type, status,
+          total_files, processed_files, total_bytes, processed_bytes,
+          current_file, completed_files_json, total_events_imported,
+          error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        job.jobId,
+        job.sourceId,
+        job.sourceName ?? null,
+        job.jobType,
+        job.status,
+        job.totalFiles,
+        job.processedFiles,
+        job.totalBytes,
+        job.processedBytes,
+        job.currentFile ?? null,
+        JSON.stringify(job.completedFiles ?? []),
+        job.totalEventsImported ?? 0,
+        job.error ?? null,
+        job.createdAt,
+        job.updatedAt,
+      );
+  }
+
+  private mapImportJobRow(row: Record<string, unknown>): ImportJobRecord {
+    let completedFiles: string[] = [];
+    try {
+      completedFiles = JSON.parse(String(row.completed_files_json || '[]'));
+    } catch {
+      completedFiles = [];
+    }
+    return {
+      jobId: String(row.job_id),
+      sourceId: String(row.source_id),
+      sourceName: row.source_name ? String(row.source_name) : undefined,
+      jobType: String(row.job_type) as ImportJobRecord['jobType'],
+      status: String(row.status) as ImportJobRecord['status'],
+      totalFiles: Number(row.total_files ?? 0),
+      processedFiles: Number(row.processed_files ?? 0),
+      totalBytes: Number(row.total_bytes ?? 0),
+      processedBytes: Number(row.processed_bytes ?? 0),
+      currentFile: row.current_file ? String(row.current_file) : undefined,
+      completedFiles: Array.isArray(completedFiles) ? completedFiles : [],
+      totalEventsImported: Number(row.total_events_imported ?? 0),
+      error: row.error ? String(row.error) : undefined,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  getImportJob(jobId: string): ImportJobRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM import_jobs WHERE job_id = ?')
+      .get(jobId) as Record<string, unknown> | undefined;
+    return row ? this.mapImportJobRow(row) : null;
+  }
+
+  listImportJobs(limit = 50): ImportJobRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM import_jobs ORDER BY updated_at DESC LIMIT ?')
+      .all(limit) as Array<Record<string, unknown>>;
+    return rows.map((r) => this.mapImportJobRow(r));
+  }
+
+  deleteImportJob(jobId: string): boolean {
+    const res = this.db.prepare('DELETE FROM import_jobs WHERE job_id = ?').run(jobId);
+    return Number(res.changes ?? 0) > 0;
+  }
+
+  clearSituationRunData(runId: string): void {
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare('DELETE FROM simulation_events WHERE run_id = ?').run(runId);
+      this.db.prepare('DELETE FROM unit_states WHERE run_id = ?').run(runId);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  saveSituationRunMetadata(model: SituationModel): void {
+    const now = new Date().toISOString();
+    const snapshot = serializeSituationSnapshot(model);
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO simulation_runs (
+          run_id, scenario_name, source_kind, scenario_path, timeline_id,
+          start_clock, end_clock, total_game_seconds, sides_json, coverage_json,
+          unit_count, event_count, situation_snapshot_json, imported_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        model.runId,
+        model.scenarioName || path.basename(model.scenarioPath) || model.runId,
+        model.coverage.sourceKind,
+        model.scenarioPath,
+        model.timelineId ?? null,
+        model.startGameClock,
+        model.endGameClock,
+        model.totalGameSeconds,
+        JSON.stringify(model.sides),
+        JSON.stringify(model.coverage),
+        model.units.size,
+        model.events.length,
+        snapshot,
+        now,
+      );
+  }
+
+  appendSituationEventsBatch(runId: string, events: StructuredSimEvent[], startSeq: number): void {
+    if (events.length === 0) return;
+    this.db.exec('BEGIN');
+    try {
+      const insEvt = this.db.prepare(
+        `INSERT OR IGNORE INTO simulation_events (
+          run_id, event_id, seq, scenario_seconds, clock_text,
+          side, kind, subject, object, severity, source, ref, detail_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      events.forEach((ev, idx) => {
+        insEvt.run(
+          runId,
+          ev.eventId,
+          startSeq + idx,
+          ev.scenarioSeconds,
+          ev.clockText,
+          ev.side ?? null,
+          ev.kind,
+          ev.subject ?? null,
+          ev.object ?? null,
+          ev.severity,
+          ev.source,
+          String(ev.ref),
+          JSON.stringify(ev.detail ?? {}),
+        );
+      });
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  appendUnitStatesBatch(runId: string, units: SituationUnit[]): void {
+    if (units.length === 0) return;
+    this.db.exec('BEGIN');
+    try {
+      const insTrack = this.db.prepare(
+        `INSERT INTO unit_states (
+          run_id, unit_id, unit_name, side, unit_type, unit_class,
+          scenario_seconds, lon, lat, altitude_m, heading, speed_kts, damage_state, ammo_remaining
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const u of units) {
+        for (const pt of u.trackPoints) {
+          insTrack.run(
+            runId,
+            u.unitId,
+            u.unitName,
+            u.side,
+            u.unitType ?? null,
+            u.unitClass,
+            pt.scenarioSeconds,
+            pt.lon,
+            pt.lat,
+            pt.altitudeM ?? null,
+            pt.heading ?? null,
+            pt.speedKts ?? null,
+            u.damageState,
+            u.ammoRemaining,
+          );
+        }
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
   getStats() {
