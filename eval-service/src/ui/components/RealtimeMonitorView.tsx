@@ -16,21 +16,21 @@ import { useEffect, useRef, useState } from 'react';
 import {
   evalApi,
   type DataSourceStatus,
-  type IndicatorSystem,
+  type EvaluationSystemDag,
   type RealtimeJudgementCard,
   type RealtimeSnapshot,
 } from '../api.ts';
 
 interface RealtimeMonitorViewProps {
-  systems: IndicatorSystem[];
+  systems: EvaluationSystemDag[];
 }
 
 export function RealtimeMonitorView({ systems }: RealtimeMonitorViewProps) {
   const [runId, setRunId] = useState('rt_live_q109');
   const [systemId, setSystemId] = useState(
-    systems.find((s) => s.systemId === 'sys_littoral_swarm_v1')?.systemId ??
+    systems.find((s) => s.systemId === 'sys_v4_metrics_guide_full')?.systemId ??
       systems[0]?.systemId ??
-      'sys_littoral_swarm_v1',
+      'sys_v4_metrics_guide_full',
   );
   const [speed, setSpeed] = useState(2);
   const [snapshot, setSnapshot] = useState<RealtimeSnapshot | null>(null);
@@ -50,7 +50,7 @@ export function RealtimeMonitorView({ systems }: RealtimeMonitorViewProps) {
     evalApi
       .listDataSources()
       .then((res) => {
-        setJsonlSources(res.dataSources.filter((d) => d.sourceKind === 'jsonl_file'));
+        setJsonlSources(res.dataSources.filter((d) => d.source?.kind === 'jsonl_file'));
       })
       .catch(() => {});
   }, []);
@@ -211,7 +211,7 @@ export function RealtimeMonitorView({ systems }: RealtimeMonitorViewProps) {
     ];
     for (const c of snapshot.cards) {
       lines.push(
-        `| ${c.cardId} | ${c.scenarioClock} | ${c.severity} | ${c.title} | ${c.summary.replace(/\|/g, '/')} | ${c.hitlAction ?? 'pending'} | ${(c.hitlNote ?? '-').replace(/\|/g, '/')} |`,
+        `| ${c.cardId} | ${c.scenarioClock} | ${c.severity} | ${c.title} | ${(c.situationSummary ?? '').replace(/\|/g, '/')} | ${c.hitlAction ?? 'pending'} | ${(c.hitlNote ?? '-').replace(/\|/g, '/')} |`,
       );
     }
     download(`realtime-audit-${snapshot.runId}.md`, lines.join('\n'), 'text/markdown;charset=utf-8');
@@ -400,8 +400,8 @@ export function RealtimeMonitorView({ systems }: RealtimeMonitorViewProps) {
               >
                 <option value="builtin_bs">内置示例帧 (bs-frames-sample.jsonl)</option>
                 {jsonlSources.map((ds) => (
-                  <option key={ds.id} value={`ds:${ds.id}`}>
-                    [已注册] {ds.label}
+                  <option key={ds.source.id} value={`ds:${ds.source.id}`}>
+                    [已注册] {ds.source.name}
                   </option>
                 ))}
                 {uploadedLines.length > 0 && (

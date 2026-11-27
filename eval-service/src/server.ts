@@ -7,7 +7,6 @@ import {
   EvalSqliteStore,
   cloneDatabaseFile,
   listAvailableDatabases,
-  type DatabaseInfo,
 } from './adapters/sqlite-store.ts';
 import {
   DataSourceStore,
@@ -15,44 +14,28 @@ import {
   type SimulationDataSource,
 } from './adapters/data-source-store.ts';
 import { locateCsvDirectory } from './adapters/csv-adapter.ts';
-import { defaultEffectStore } from './effects/store.ts';
-import { DagNodeCache } from './engine/dag-executor.ts';
-import { handleV4ApiRequest, type V4RouteDeps } from './engine/v4-routes.ts';
-import { defaultMetricGraphStore } from './indicators/metric-graph-store.ts';
 import {
-  disposeV4OperatorPool,
-  listV4BuiltinComponents,
-  listV4OperatorSummaries,
-  runV4OperatorById,
-} from './operators/v4/index.ts';
-import { defaultSystemDagStore } from './systems/system-dag-store.ts';
-import { sampleScoringCurve } from './core/scoring-functions.ts';
+  buildRunSourceProfile,
+  isSafePreviewQuery,
+  type F1OutputCatalog,
+} from './adapters/source-profiler.ts';
 import { buildSituationModel } from './core/situation-model.ts';
 import type {
-  BuiltinOperatorOverride,
-  CustomOperatorDefinition,
-  IndicatorDefinition,
-  IndicatorSystem,
-  OperatorComparisonRow,
-  ScoringRule,
-  SystemDimensionNode,
-  SystemEvaluationOutput,
-  SystemIndicatorLeaf,
+  AggregationOperatorConfig,
+  FormulaOperatorConfig,
+  TableDataset,
 } from './core/types.ts';
+import { EffectStore } from './effects/store.ts';
+import { DagNodeCache } from './engine/dag-executor.ts';
+import { handleV4ApiRequest, type V4RouteDeps } from './engine/v4-routes.ts';
+import { MetricGraphStore } from './indicators/metric-graph-store.ts';
+import { getOperatorPipelineBlueprint } from './operators/blueprints.ts';
 import {
-  IndicatorStore,
-  extractAtomRefParts,
-  isAlarmThresholdTriggered,
-  resolveIndicatorOutputFromAtoms,
-} from './indicators/store.ts';
-import {
-  getOperatorCategories,
-  handleOperatorPreview,
-  handleValidateFormula,
-} from './engine/api.ts';
-import { draftSystemFromNaturalLanguage } from './nl/intent-mapper.ts';
-import { CustomOperatorStore } from './operators/custom-store.ts';
-import { runPythonMetricsAdapter } from './operators/effectiveness/metrics-py-adapter.ts';
+  ComponentRegistryStore,
+  validateComponentManifest,
+  type ComponentManifest,
+} from './operators/component-store.ts';
+import { evaluateFormulaExpression, validateFormula } from './operators/formula-engine.ts';
 import {
   computeAhpWeights,
   computeEntropyWeights,
@@ -62,39 +45,16 @@ import {
   computeVikorRank,
   runPythonSandboxScript,
 } from './operators/mcda-adapter.ts';
-import { OperatorOverrideStore } from './operators/override-store.ts';
-import { getOperatorPipelineBlueprint } from './operators/blueprints.ts';
+import { executeFormulaOrAggPreview } from './operators/pipeline-engine.ts';
 import { deriveContractFromNodes, extractRunTableDataset } from './operators/pipeline-utils.ts';
 import {
-  defaultComponentStore,
-  validateComponentManifest,
-  type ComponentManifest,
-} from './operators/component-store.ts';
-import {
-  BUILTIN_OPERATOR_IDS,
-  evaluateAllOperators,
-  evaluateOperator,
-  getOperatorMeta,
-  hasOperator,
-  listOperatorMetas,
-  previewCustomFormula,
-  sweepOperatorParameter,
-} from './operators/registry.ts';
-import {
-  buildRunSourceProfile,
-  isSafePreviewQuery,
-  type F1OutputCatalog,
-} from './adapters/source-profiler.ts';
+  disposeV4OperatorPool,
+  listV4OperatorSummaries,
+  runV4OperatorById,
+} from './operators/v4/index.ts';
+import { V4OperatorStore } from './operators/v4/store.ts';
 import { RealtimeMonitor } from './realtime/monitor.ts';
-import { generateTacticalFeedback } from './reports/feedback-generator.ts';
-import { generateEvaluationReportMarkdown } from './reports/report-generator.ts';
-import { evaluateIndicatorSystem } from './systems/evaluator.ts';
-import { SystemStore } from './systems/store.ts';
-import {
-  isDimensionNode,
-  normalizeSystemWeights,
-  validateIndicatorSystem,
-} from './systems/validator.ts';
+import { SystemDagStore } from './systems/system-dag-store.ts';
 
 const EVAL_SERVICE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(EVAL_SERVICE_ROOT, '..');
@@ -191,19 +151,21 @@ export interface EvalServerDeps {
   dbPath?: string;
   operatorDbPath?: string;
   scenarioDbPath?: string;
-  customOperatorsPath?: string;
-  operatorOverridesPath?: string;
   operatorPipelinesPath?: string;
-  customIndicatorsPath?: string;
-  customSystemsPath?: string;
   dataSourcesPath?: string;
   distUiDir?: string;
   autoSeed?: boolean;
   sqliteStore?: EvalSqliteStore;
-  customOperatorStore?: CustomOperatorStore;
-  operatorOverrideStore?: OperatorOverrideStore;
-  indicatorStore?: IndicatorStore;
-  systemStore?: SystemStore;
+  v4OperatorStore?: V4OperatorStore;
+  effectStore?: EffectStore;
+  metricGraphStore?: MetricGraphStore;
+  systemDagStore?: SystemDagStore;
+  componentStore?: ComponentRegistryStore;
+  /** @deprecated legacy V2 options kept optional for transitional test callers */
+  customOperatorsPath?: string;
+  operatorOverridesPath?: string;
+  customIndicatorsPath?: string;
+  customSystemsPath?: string;
 }
 
 export async function createEvalApp(deps?: EvalServerDeps) {
@@ -227,7 +189,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
     operatorSqliteStore = new EvalSqliteStore(deps.dbPath, { autoSeed: deps?.autoSeed });
     scenarioSqliteStore = operatorSqliteStore;
   } else {
-    // 默认优先加载最全的 eval.db 统一数据库（完整承载算子/指标/体系三库资产与推演数据）
+    // 默认优先加载最全的 eval.db 统一数据库（完整承载 V4 三库资产与推演数据）
     const defaultEvalPath = path.join(EVAL_SERVICE_ROOT, 'data', 'eval.db');
     operatorSqliteStore = new EvalSqliteStore(defaultEvalPath, { autoSeed: deps?.autoSeed });
     scenarioSqliteStore = operatorSqliteStore;
@@ -249,27 +211,36 @@ export async function createEvalApp(deps?: EvalServerDeps) {
   } catch {}
 
   const OPERATOR_METHODS = new Set([
-    'listCustomOperators',
-    'getCustomOperator',
-    'saveCustomOperator',
-    'deleteCustomOperator',
-    'listOperatorOverrides',
-    'getOperatorOverride',
-    'saveOperatorOverride',
-    'deleteOperatorOverride',
     'getOperatorPipeline',
     'saveOperatorPipeline',
-    'listIndicators',
-    'getIndicator',
-    'saveIndicator',
-    'deleteIndicator',
-    'listSystems',
-    'getSystem',
-    'saveSystem',
-    'deleteSystem',
-    'listOperatorDefinitions',
-    'getOperatorDefinition',
-    'saveOperatorDefinition',
+    'listOperatorPipelines',
+    'deleteOperatorPipeline',
+    'listV4Operators',
+    'getV4Operator',
+    'upsertV4Operator',
+    'deleteV4Operator',
+    'countV4Operators',
+    'listV4Effects',
+    'getV4Effect',
+    'upsertV4Effect',
+    'deleteV4Effect',
+    'countV4Effects',
+    'listV4MetricGraphs',
+    'getV4MetricGraph',
+    'upsertV4MetricGraph',
+    'deleteV4MetricGraph',
+    'countV4MetricGraphs',
+    'listV4SystemDags',
+    'getV4SystemDag',
+    'upsertV4SystemDag',
+    'deleteV4SystemDag',
+    'countV4SystemDags',
+    'listV4Components',
+    'getV4Component',
+    'upsertV4Component',
+    'deleteV4Component',
+    'countV4Components',
+    'seedV4Libraries',
   ]);
 
   const sqliteStore: any = new Proxy({}, {
@@ -291,14 +262,20 @@ export async function createEvalApp(deps?: EvalServerDeps) {
               events: scStats.counts.events ?? 0,
               unitStates: scStats.counts.unitStates ?? 0,
               evaluations: scStats.counts.evaluations ?? 0,
+              v4Evaluations: scStats.counts.v4Evaluations ?? 0,
               realtimeCards: scStats.counts.realtimeCards ?? 0,
-              builtinOperators: opStats.counts.builtinOperators ?? 0,
-              customOperators: opStats.counts.customOperators ?? 0,
-              totalOperators: opStats.counts.totalOperators ?? 0,
-              operatorOverrides: opStats.counts.operatorOverrides ?? 0,
               operatorPipelines: opStats.counts.operatorPipelines ?? 0,
-              indicators: opStats.counts.indicators ?? 0,
-              systems: opStats.counts.systems ?? 0,
+              v4Operators: opStats.counts.v4Operators ?? 0,
+              v4Effects: opStats.counts.v4Effects ?? 0,
+              v4MetricGraphs: opStats.counts.v4MetricGraphs ?? 0,
+              v4SystemDags: opStats.counts.v4SystemDags ?? 0,
+              v4Components: opStats.counts.v4Components ?? 0,
+              builtinOperators: opStats.counts.v4Operators ?? 0,
+              customOperators: opStats.counts.customOperators ?? 0,
+              totalOperators: opStats.counts.v4Operators ?? 0,
+              operatorOverrides: opStats.counts.operatorOverrides ?? 0,
+              indicators: opStats.counts.v4MetricGraphs ?? 0,
+              systems: opStats.counts.v4SystemDags ?? 0,
             },
           };
         };
@@ -327,20 +304,18 @@ export async function createEvalApp(deps?: EvalServerDeps) {
   });
 
   const dataSourceStore = new DataSourceStore(deps?.dataSourcesPath, BUILTIN_SAMPLES);
-  const customOperatorStore =
-    deps?.customOperatorStore ?? new CustomOperatorStore(deps?.customOperatorsPath, operatorSqliteStore);
-  const operatorOverrideStore =
-    deps?.operatorOverrideStore ?? new OperatorOverrideStore(deps?.operatorOverridesPath, operatorSqliteStore);
-  const indicatorStore =
-    deps?.indicatorStore ??
-    new IndicatorStore(
-      deps?.customIndicatorsPath,
-      (atomId) => hasOperator(atomId, customOperatorStore),
-      operatorSqliteStore,
-    );
-  const systemStore =
-    deps?.systemStore ?? new SystemStore(deps?.customSystemsPath, indicatorStore, operatorSqliteStore);
-  const monitor = new RealtimeMonitor({ sqliteStore: scenarioSqliteStore, indicatorStore });
+  const v4OperatorStore = deps?.v4OperatorStore ?? new V4OperatorStore(operatorSqliteStore);
+  const effectStore = deps?.effectStore ?? new EffectStore(operatorSqliteStore);
+  const metricGraphStore =
+    deps?.metricGraphStore ?? new MetricGraphStore(undefined, { sqliteStore: operatorSqliteStore });
+  const systemDagStore = deps?.systemDagStore ?? new SystemDagStore(operatorSqliteStore, effectStore);
+  const componentStore = deps?.componentStore ?? new ComponentRegistryStore(operatorSqliteStore);
+  const monitor = new RealtimeMonitor({
+    sqliteStore: scenarioSqliteStore,
+    systemDagStore,
+    effectStore,
+    metricGraphStore,
+  });
   const distUiDir = deps?.distUiDir ?? path.join(EVAL_SERVICE_ROOT, 'dist-ui');
 
   // ─── V4 全链路 DAG 中台依赖 ───
@@ -401,12 +376,13 @@ export async function createEvalApp(deps?: EvalServerDeps) {
   };
 
   const v4RouteDeps: V4RouteDeps = {
-    effectStore: defaultEffectStore,
-    metricGraphStore: defaultMetricGraphStore,
-    systemDagStore: defaultSystemDagStore,
+    effectStore,
+    metricGraphStore,
+    systemDagStore,
+    v4OperatorStore,
     cache: v4Cache,
     listOperators: (opts) => listV4OperatorSummaries(opts),
-    listComponents: () => listV4BuiltinComponents(),
+    listComponents: () => componentStore.list(),
     resolveCsvDir: resolveV4CsvDir,
     getEvalStore: () => sqliteStore,
     runOperator: async (operatorId, body) => {
@@ -445,24 +421,6 @@ export async function createEvalApp(deps?: EvalServerDeps) {
         });
         gj11Sit.scenarioName = 'GJ-11 vs HaveRaider BVR实测CSV (双BOM全表)';
         sqliteStore.saveSituationRun(gj11Sit);
-
-        const bvrSys = systemStore.get('sys_corridor_compliance_v1') || systemStore.listAll()[0];
-        if (bvrSys) {
-          const pyRes = await runPythonMetricsAdapter(BUILTIN_SAMPLES.gj11CsvDir).catch(() => null);
-          const out = evaluateIndicatorSystem(
-            bvrSys,
-            {
-              runId: gj11Sit.runId,
-              situation: gj11Sit,
-              csvStats: pyRes?.metrics,
-              customParams: { targetSide: '红方', enemySide: '蓝方' },
-            },
-            { indicatorStore, customOperatorStore, operatorOverrideStore },
-          );
-          const md = generateEvaluationReportMarkdown(out, gj11Sit);
-          const fb = generateTacticalFeedback(out, gj11Sit);
-          sqliteStore.saveEvaluation(out, md, fb);
-        }
       }
 
       if (fs.existsSync(BUILTIN_SAMPLES.bsSampleJsonl) && (!sqliteStore.getRunSituation('bs_sample_swarm_demo') || force)) {
@@ -473,18 +431,6 @@ export async function createEvalApp(deps?: EvalServerDeps) {
         });
         bsSit.scenarioName = 'BS 状态帧基准集群样例 (bs-frames-sample.jsonl)';
         sqliteStore.saveSituationRun(bsSit);
-
-        const swarmSys = systemStore.get('sys_corridor_compliance_v1') || systemStore.listAll()[0];
-        if (swarmSys) {
-          const out = evaluateIndicatorSystem(
-            swarmSys,
-            { runId: bsSit.runId, situation: bsSit },
-            { indicatorStore, customOperatorStore, operatorOverrideStore },
-          );
-          const md = generateEvaluationReportMarkdown(out, bsSit);
-          const fb = generateTacticalFeedback(out, bsSit);
-          sqliteStore.saveEvaluation(out, md, fb);
-        }
       }
     }
 
@@ -523,6 +469,15 @@ export async function createEvalApp(deps?: EvalServerDeps) {
     }
   });
 
+  const rebindV4AssetStores = (newOpStore: EvalSqliteStore) => {
+    v4OperatorStore.rebindSqliteStore(newOpStore);
+    effectStore.rebindSqliteStore(newOpStore);
+    metricGraphStore.rebindSqliteStore(newOpStore);
+    systemDagStore.rebindSqliteStore(newOpStore);
+    componentStore.rebindSqliteStore(newOpStore);
+    v4Cache.clear();
+  };
+
   const switchActiveDatabase = (
     newDbPath: string,
     type: 'operator' | 'scenario' | 'all' = 'scenario',
@@ -535,10 +490,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
         console.warn('[server] 关闭旧算子库连接时异常:', err);
       }
       operatorSqliteStore = new EvalSqliteStore(newDbPath, { autoSeed: false });
-      customOperatorStore.rebindSqliteStore(operatorSqliteStore);
-      operatorOverrideStore.rebindSqliteStore(operatorSqliteStore);
-      indicatorStore.rebindSqliteStore(operatorSqliteStore);
-      systemStore.rebindSqliteStore(operatorSqliteStore);
+      rebindV4AssetStores(operatorSqliteStore);
       return {
         ok: true,
         type: 'operator' as const,
@@ -582,10 +534,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
     operatorSqliteStore = targetStore;
     scenarioSqliteStore = targetStore;
     sourceProfileCache.clear();
-    customOperatorStore.rebindSqliteStore(operatorSqliteStore);
-    operatorOverrideStore.rebindSqliteStore(operatorSqliteStore);
-    indicatorStore.rebindSqliteStore(operatorSqliteStore);
-    systemStore.rebindSqliteStore(operatorSqliteStore);
+    rebindV4AssetStores(operatorSqliteStore);
     monitor.rebindSqliteStore(scenarioSqliteStore);
 
     return {
@@ -665,7 +614,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           current: path.basename(scenarioSqliteStore.dbPath),
           dbPath: scenarioSqliteStore.dbPath,
           stats: sqliteStore.getStats(),
-          builtinOperatorsCount: BUILTIN_OPERATOR_IDS.size,
+          builtinOperatorsCount: v4OperatorStore.list({ builtinOnly: true }).length,
         });
         return;
       }
@@ -793,7 +742,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           if (body.switchNow !== false) {
             newStore.close();
             const switchRes = switchActiveDatabase(targetPath, createType);
-            sendJson(res, 200, { ok: true, created: safeFilename, switched: true, ...switchRes });
+            sendJson(res, 200, { ...switchRes, ok: true, created: safeFilename, switched: true });
           } else {
             const stats = newStore.getStats();
             newStore.close();
@@ -855,7 +804,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
 
           if (body.switchNow !== false) {
             const switchRes = switchActiveDatabase(targetPath, cloneType);
-            sendJson(res, 200, { ok: true, cloned: safeFilename, switched: true, ...switchRes });
+            sendJson(res, 200, { ...switchRes, ok: true, cloned: safeFilename, switched: true });
           } else {
             sendJson(res, 200, { ok: true, cloned: safeFilename, switched: false });
           }
@@ -905,7 +854,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
 
           if (body.switchNow !== false) {
             const switchRes = switchActiveDatabase(targetPath);
-            sendJson(res, 200, { ok: true, uploaded: safeFilename, switched: true, ...switchRes });
+            sendJson(res, 200, { ...switchRes, ok: true, uploaded: safeFilename, switched: true });
           } else {
             sendJson(res, 200, { ok: true, uploaded: safeFilename, switched: false, size: buf.length });
           }
@@ -1040,89 +989,36 @@ export async function createEvalApp(deps?: EvalServerDeps) {
             }
           }
 
-          // 核心自动同步：画布编排即算子真相源 (Single Source of Truth)
-          // 自动将画布中的表输入、字段选择与计算参数同步至算子契约库中
+          // 核心自动同步：画布编排即算子真相源 (Single Source of Truth -> V4OperatorStore)
           const derived = deriveContractFromNodes(body.nodes || []);
-          if (BUILTIN_OPERATOR_IDS.has(body.operatorId)) {
-            const existingOverride = operatorOverrideStore.get(body.operatorId);
-            const existingMeta = getOperatorMeta(body.operatorId, customOperatorStore, operatorOverrideStore);
-            operatorOverrideStore.upsert(
-              {
-                id: body.operatorId,
-                name: existingOverride?.name || existingMeta?.name,
-                unit: derived.unit || existingOverride?.unit || existingMeta?.unit,
-                defaultOptimalDirection:
-                  derived.optimalDirection ||
-                  existingOverride?.defaultOptimalDirection ||
-                  existingMeta?.defaultOptimalDirection,
-                description: existingOverride?.description || existingMeta?.description,
-                f1FieldContract: {
-                  csvTables:
-                    derived.csvTables.length > 0
-                      ? derived.csvTables
-                      : existingOverride?.f1FieldContract?.csvTables || existingMeta?.f1FieldContract?.csvTables,
-                  csvColumns:
-                    derived.csvColumns.length > 0
-                      ? derived.csvColumns
-                      : existingOverride?.f1FieldContract?.csvColumns || existingMeta?.f1FieldContract?.csvColumns,
-                  bsFramePaths:
-                    existingOverride?.f1FieldContract?.bsFramePaths || existingMeta?.f1FieldContract?.bsFramePaths,
-                  discrepancyNotes: [
-                    ...(existingOverride?.f1FieldContract?.discrepancyNotes ||
-                      existingMeta?.f1FieldContract?.discrepancyNotes ||
-                      []),
-                    ...derived.discrepancyNotes,
-                  ].filter((v, i, a) => a.indexOf(v) === i),
-                },
-                defaultParams: {
-                  ...(existingMeta?.defaultParams || {}),
-                  ...(existingOverride?.defaultParams || {}),
-                  ...derived.defaultParams,
-                },
-              },
-              BUILTIN_OPERATOR_IDS,
-            );
-          } else if (customOperatorStore.get(body.operatorId)) {
-            const customDef = customOperatorStore.get(body.operatorId)!;
-            const allKnown = new Set(
-              listOperatorMetas(customOperatorStore, operatorOverrideStore).map((m) => m.id),
-            );
-            customOperatorStore.upsert(
-              {
-                ...customDef,
-                unit: derived.unit || customDef.unit,
-                defaultOptimalDirection: derived.optimalDirection || customDef.defaultOptimalDirection,
-                f1FieldContract: {
-                  csvTables:
-                    derived.csvTables.length > 0
-                      ? derived.csvTables
-                      : customDef.f1FieldContract?.csvTables,
-                  csvColumns:
-                    derived.csvColumns.length > 0
-                      ? derived.csvColumns
-                      : customDef.f1FieldContract?.csvColumns,
-                  bsFramePaths: customDef.f1FieldContract?.bsFramePaths,
-                  discrepancyNotes: [
-                    ...(customDef.f1FieldContract?.discrepancyNotes || []),
-                    ...derived.discrepancyNotes,
-                  ].filter((v, i, a) => a.indexOf(v) === i),
-                },
-                defaultParams: {
-                  ...(customDef.defaultParams || {}),
-                  ...derived.defaultParams,
-                },
-              },
-              BUILTIN_OPERATOR_IDS,
-              allKnown,
-            );
+          const existingV4Op = v4OperatorStore.get(body.operatorId);
+          if (existingV4Op) {
+            const mergedRequiredTables =
+              derived.csvTables.length > 0 ? derived.csvTables : existingV4Op.requiredTables;
+            const updatedPorts = (existingV4Op.parameterPorts ?? []).map((port) => {
+              if (
+                derived.defaultParams &&
+                Object.prototype.hasOwnProperty.call(derived.defaultParams, port.key)
+              ) {
+                return {
+                  ...port,
+                  defaultValue: derived.defaultParams[port.key] as any,
+                };
+              }
+              return port;
+            });
+            v4OperatorStore.update(body.operatorId, {
+              requiredTables: mergedRequiredTables,
+              parameterPorts: updatedPorts,
+            });
           }
 
           sendJson(res, 200, {
             ok: true,
-            message: `算子 [${body.operatorId}] 流水线配置已成功持久化，并已自动同步底层数据契约与参数`,
+            message: `算子 [${body.operatorId}] 流水线配置已成功持久化，并已自动同步底层 V4 算子契约与参数`,
             saved: pipelineRecord,
             derivedContract: derived,
-            updatedMeta: getOperatorMeta(body.operatorId, customOperatorStore, operatorOverrideStore),
+            updatedOperator: v4OperatorStore.get(body.operatorId),
           });
         } catch (err) {
           sendError(res, 400, err instanceof Error ? err.message : String(err));
@@ -1159,18 +1055,34 @@ export async function createEvalApp(deps?: EvalServerDeps) {
         return;
       }
 
-      // ─── 一库：算子库 ───
-      if (req.method === 'GET' && pathname === '/api/operators/categories') {
-        const catData = getOperatorCategories(customOperatorStore, operatorOverrideStore);
-        sendJson(res, 200, catData);
-        return;
-      }
-
+      // ─── 算子画布预览 / 公式校验 / Python 沙箱试算（共享底座接口） ───
       if (req.method === 'POST' && pathname === '/api/operators/preview') {
         try {
-          const body = await readJsonBody(req);
-          const preview = handleOperatorPreview(body);
-          sendJson(res, 200, preview);
+          const body = await readJsonBody<{
+            sampleDataset?: TableDataset;
+            dataset?: TableDataset;
+            nodeConfig?: any;
+            formulaConfig?: FormulaOperatorConfig;
+            aggregationConfig?: AggregationOperatorConfig;
+            type?: 'formula' | 'formula_pipeline' | 'aggregation';
+            maxPreviewRows?: number;
+          }>(req);
+          const rawSample = body.sampleDataset ?? body.dataset ?? { columns: [], rows: [] };
+          const sampleCols = rawSample.columns ?? (rawSample as any).schema ?? [];
+          const sample: TableDataset = {
+            ...rawSample,
+            columns: sampleCols,
+            schema: sampleCols,
+          };
+          const rawNodeConfig =
+            body.nodeConfig ??
+            (body.type === 'aggregation' || body.aggregationConfig
+              ? { type: 'aggregation', aggregationConfig: body.aggregationConfig }
+              : { type: 'formula_pipeline', formulaConfig: body.formulaConfig });
+          const preview = executeFormulaOrAggPreview(sample, rawNodeConfig, {
+            maxPreviewRows: body.maxPreviewRows ?? 100,
+          });
+          sendJson(res, 200, { ok: preview.success, ...preview });
         } catch (err) {
           sendError(res, 400, err instanceof Error ? err.message : String(err));
         }
@@ -1179,9 +1091,45 @@ export async function createEvalApp(deps?: EvalServerDeps) {
 
       if (req.method === 'POST' && pathname === '/api/operators/validate-formula') {
         try {
-          const body = await readJsonBody(req);
-          const valRes = handleValidateFormula(body);
-          sendJson(res, 200, valRes);
+          const body = await readJsonBody<{
+            expression?: string;
+            formula?: string;
+            availableColumns?: string[];
+            columns?: string[];
+          }>(req);
+          const expr = body.expression ?? body.formula ?? '';
+          const cols = body.availableColumns ?? body.columns;
+          const valRes = validateFormula(expr, cols);
+          sendJson(res, 200, {
+            ok: true,
+            valid: valRes.valid,
+            errors: valRes.errors,
+            referencedVariables: valRes.referencedVariables,
+          });
+        } catch (err) {
+          sendError(res, 400, err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/operators/preview-formula') {
+        try {
+          const body = await readJsonBody<{
+            expression?: string;
+            formula?: string;
+            variables?: Record<string, number>;
+          }>(req);
+          const expr = body.expression ?? body.formula ?? '';
+          if (!expr.trim()) {
+            sendError(res, 400, '缺少公式表达式 expression');
+            return;
+          }
+          const evalRes = evaluateFormulaExpression(expr, body.variables ?? {});
+          sendJson(res, 200, {
+            ok: evalRes.ok,
+            value: evalRes.ok ? evalRes.value : null,
+            ...(evalRes.ok ? {} : { error: evalRes.reason }),
+          });
         } catch (err) {
           sendError(res, 400, err instanceof Error ? err.message : String(err));
         }
@@ -1211,7 +1159,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
       if (req.method === 'GET' && pathname === '/api/components') {
         sendJson(res, 200, {
           ok: true,
-          components: defaultComponentStore.list(),
+          components: componentStore.list(),
         });
         return;
       }
@@ -1235,7 +1183,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
         try {
           const body = await readJsonBody<{ manifest: ComponentManifest } | ComponentManifest>(req);
           const manifest = 'manifest' in body ? body.manifest : body;
-          const imported = defaultComponentStore.import(manifest);
+          const imported = componentStore.import(manifest);
           sendJson(res, 200, {
             ok: true,
             component: imported,
@@ -1250,728 +1198,11 @@ export async function createEvalApp(deps?: EvalServerDeps) {
       if (req.method === 'DELETE' && compDelMatch) {
         const compId = compDelMatch[1];
         try {
-          const deleted = defaultComponentStore.delete(compId);
+          const deleted = componentStore.delete(compId);
           sendJson(res, 200, { ok: true, deleted, id: compId });
         } catch (err) {
           sendError(res, 400, err instanceof Error ? err.message : String(err));
         }
-        return;
-      }
-
-      if (req.method === 'GET' && pathname === '/api/operators') {
-        sendJson(res, 200, {
-          ok: true,
-          operators: listOperatorMetas(customOperatorStore, operatorOverrideStore),
-        });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/operators') {
-        const body = await readJsonBody<CustomOperatorDefinition>(req);
-        try {
-          const allKnown = new Set(
-            listOperatorMetas(customOperatorStore, operatorOverrideStore).map((m) => m.id),
-          );
-          const saved = customOperatorStore.upsert(body, BUILTIN_OPERATOR_IDS, allKnown);
-          sendJson(res, 200, {
-            ok: true,
-            operator: saved,
-            meta: getOperatorMeta(saved.id, customOperatorStore, operatorOverrideStore),
-          });
-        } catch (err) {
-          sendError(res, 400, err instanceof Error ? err.message : String(err));
-        }
-        return;
-      }
-
-      const opOverrideDelMatch = pathname.match(/^\/api\/operators\/([^/]+)\/override$/);
-      if (req.method === 'DELETE' && opOverrideDelMatch) {
-        const atomId = opOverrideDelMatch[1];
-        if (!BUILTIN_OPERATOR_IDS.has(atomId)) {
-          sendError(res, 400, `仅内置标准算子支持恢复默认覆写: ${atomId}`);
-          return;
-        }
-        const reset = operatorOverrideStore.delete(atomId);
-        const restored = getOperatorMeta(atomId, customOperatorStore, operatorOverrideStore);
-        sendJson(res, 200, { ok: true, reset, operator: restored });
-        return;
-      }
-
-      const opPutMatch = pathname.match(/^\/api\/operators\/([^/]+)$/);
-      if (req.method === 'PUT' && opPutMatch) {
-        const atomId = opPutMatch[1];
-        try {
-          if (BUILTIN_OPERATOR_IDS.has(atomId)) {
-            const body = await readJsonBody<BuiltinOperatorOverride>(req);
-            const saved = operatorOverrideStore.upsert(
-              { ...body, id: atomId },
-              BUILTIN_OPERATOR_IDS,
-            );
-            const meta = getOperatorMeta(atomId, customOperatorStore, operatorOverrideStore);
-            sendJson(res, 200, { ok: true, operator: meta, override: saved });
-            return;
-          }
-          if (customOperatorStore.get(atomId)) {
-            const body = await readJsonBody<CustomOperatorDefinition>(req);
-            const allKnown = new Set(
-              listOperatorMetas(customOperatorStore, operatorOverrideStore).map((m) => m.id),
-            );
-            const saved = customOperatorStore.upsert(
-              { ...body, id: atomId },
-              BUILTIN_OPERATOR_IDS,
-              allKnown,
-            );
-            const meta = getOperatorMeta(atomId, customOperatorStore, operatorOverrideStore);
-            sendJson(res, 200, { ok: true, operator: meta, customDef: saved });
-            return;
-          }
-          sendError(res, 404, `未找到算子: ${atomId}`);
-        } catch (err) {
-          sendError(res, 400, err instanceof Error ? err.message : String(err));
-        }
-        return;
-      }
-
-      const opDelMatch = pathname.match(/^\/api\/operators\/([^/]+)$/);
-      if (req.method === 'DELETE' && opDelMatch) {
-        const atomId = opDelMatch[1];
-        if (BUILTIN_OPERATOR_IDS.has(atomId)) {
-          sendError(res, 400, `不允许删除内置标准算子: ${atomId}`);
-          return;
-        }
-        const usedByIndicators = indicatorStore
-          .listAll()
-          .filter((i) => i.atomRef === atomId)
-          .map((i) => i.indicatorId);
-        if (usedByIndicators.length > 0) {
-          sendError(
-            res,
-            409,
-            `算子 ${atomId} 正被指标 (${usedByIndicators.join(', ')}) 引用，请先解除绑定后再删除`,
-          );
-          return;
-        }
-        const usedByCustomOps = customOperatorStore
-          .listAll()
-          .filter((c) => c.id !== atomId && c.variables.some((v) => v.atomRef === atomId))
-          .map((c) => c.id);
-        if (usedByCustomOps.length > 0) {
-          sendError(
-            res,
-            409,
-            `算子 ${atomId} 正被衍生算子引用 (${usedByCustomOps.join(', ')})，请先调整衍生公式后再删除`,
-          );
-          return;
-        }
-        const deleted = customOperatorStore.delete(atomId);
-        if (fs.existsSync(OPERATOR_PIPELINES_FILE)) {
-          try {
-            const data = JSON.parse(fs.readFileSync(OPERATOR_PIPELINES_FILE, 'utf-8'));
-            if (data[atomId]) {
-              delete data[atomId];
-              fs.writeFileSync(OPERATOR_PIPELINES_FILE, JSON.stringify(data, null, 2), 'utf-8');
-            }
-          } catch {
-            // ignore
-          }
-        }
-        sendJson(res, 200, { ok: true, deleted });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/operators/preview-formula') {
-        const body = await readJsonBody<{
-          definition: CustomOperatorDefinition;
-          runId: string;
-          customParams?: Record<string, unknown>;
-        }>(req);
-        const sit = sqliteStore.getRunSituation(body.runId);
-        if (!sit) {
-          sendError(res, 404, `未找到运行记录: ${body.runId}`);
-          return;
-        }
-        const preview = previewCustomFormula(
-          body.definition,
-          { runId: body.runId, situation: sit, customParams: body.customParams },
-          customOperatorStore,
-          operatorOverrideStore,
-        );
-        sendJson(res, 200, { ok: true, ...preview });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/operators/compare-runs') {
-        const body = await readJsonBody<{
-          runIdA: string;
-          runIdB: string;
-          customParams?: Record<string, unknown>;
-        }>(req);
-        const sitA = sqliteStore.getRunSituation(body.runIdA);
-        const sitB = sqliteStore.getRunSituation(body.runIdB);
-        if (!sitA || !sitB) {
-          sendError(res, 404, `对比 Run 不存在: ${!sitA ? body.runIdA : body.runIdB}`);
-          return;
-        }
-        const resA = evaluateAllOperators(
-          { runId: body.runIdA, situation: sitA, customParams: body.customParams },
-          customOperatorStore,
-          operatorOverrideStore,
-        );
-        const resB = evaluateAllOperators(
-          { runId: body.runIdB, situation: sitB, customParams: body.customParams },
-          customOperatorStore,
-          operatorOverrideStore,
-        );
-        const metas = listOperatorMetas(customOperatorStore, operatorOverrideStore);
-        const rows: OperatorComparisonRow[] = metas.map((meta) => {
-          const a = resA[meta.id]!;
-          const b = resB[meta.id]!;
-          const deltaNumeric =
-            typeof a?.value === 'number' && typeof b?.value === 'number'
-              ? Math.round((a.value - b.value) * 10000) / 10000
-              : null;
-          return { meta, runA: a, runB: b, deltaNumeric };
-        });
-        sendJson(res, 200, {
-          ok: true,
-          runIdA: body.runIdA,
-          runIdB: body.runIdB,
-          rows,
-        });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/operators/evaluate-all') {
-        const body = await readJsonBody<{ runId: string; customParams?: Record<string, unknown> }>(req);
-        const sit = sqliteStore.getRunSituation(body.runId);
-        if (!sit) {
-          sendError(res, 404, `未找到运行记录: ${body.runId}`);
-          return;
-        }
-        const results = evaluateAllOperators(
-          {
-            runId: body.runId,
-            situation: sit,
-            customParams: body.customParams,
-          },
-          customOperatorStore,
-          operatorOverrideStore,
-        );
-        sendJson(res, 200, { ok: true, runId: body.runId, results });
-        return;
-      }
-
-      const opSweepMatch = pathname.match(/^\/api\/operators\/([^/]+)\/sweep$/);
-      if (req.method === 'POST' && opSweepMatch) {
-        const atomId = opSweepMatch[1];
-        const body = await readJsonBody<{
-          runId: string;
-          paramKey: 'safeRadiusNm' | 'arrivalLineLon' | 'expectedSpacingNm' | 'minRangeNm' | 'waveGapSeconds';
-          min: number;
-          max: number;
-          steps?: number;
-          customParams?: Record<string, unknown>;
-        }>(req);
-        const sit = sqliteStore.getRunSituation(body.runId);
-        if (!sit) {
-          sendError(res, 404, `未找到运行记录: ${body.runId}`);
-          return;
-        }
-        const points = sweepOperatorParameter(
-          atomId,
-          { runId: body.runId, situation: sit, customParams: body.customParams },
-          body.paramKey,
-          Number(body.min),
-          Number(body.max),
-          body.steps ?? 9,
-          customOperatorStore,
-          operatorOverrideStore,
-        );
-        sendJson(res, 200, { ok: true, atomId, paramKey: body.paramKey, points });
-        return;
-      }
-
-      const opEvalMatch = pathname.match(/^\/api\/operators\/([^/]+)\/evaluate$/);
-      if (req.method === 'POST' && opEvalMatch) {
-        const atomId = opEvalMatch[1];
-        const body = await readJsonBody<{ runId: string; customParams?: Record<string, unknown> }>(req);
-        const sit = sqliteStore.getRunSituation(body.runId);
-        if (!sit) {
-          sendError(res, 404, `未找到运行记录: ${body.runId}`);
-          return;
-        }
-        const result = evaluateOperator(
-          atomId,
-          {
-            runId: body.runId,
-            situation: sit,
-            customParams: body.customParams,
-          },
-          customOperatorStore,
-          new Set(),
-          operatorOverrideStore,
-        );
-        sendJson(res, 200, { ok: true, result });
-        return;
-      }
-
-      // ─── 二库：标准指标库 ───
-      if (req.method === 'GET' && pathname === '/api/indicators') {
-        sendJson(res, 200, { ok: true, indicators: indicatorStore.listAll() });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/indicators/preview-curve') {
-        const body = await readJsonBody<{ scoring: ScoringRule; samples?: number }>(req);
-        const points = sampleScoringCurve(body.scoring, body.samples ?? 40);
-        sendJson(res, 200, { ok: true, points });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/indicators/backtest') {
-        const body = await readJsonBody<{
-          indicator: IndicatorDefinition;
-          runIds?: string[];
-          targetSide?: string;
-        }>(req);
-        if (!body?.indicator?.scoring?.type) {
-          sendError(res, 400, '回测请求必须包含有效的 indicator.scoring');
-          return;
-        }
-
-        const isComposite = body.indicator.bindingMode === 'composite';
-        const neededBaseIds: string[] = [];
-
-        if (isComposite) {
-          if (!Array.isArray(body.indicator.sources) || body.indicator.sources.length === 0) {
-            sendError(res, 400, '复合指标回测必须包含至少一个输入源 (sources)');
-            return;
-          }
-          if (!body.indicator.composeFormula?.trim()) {
-            sendError(res, 400, '复合指标回测必须包含复合公式 (composeFormula)');
-            return;
-          }
-          const idSet = new Set<string>();
-          for (const src of body.indicator.sources) {
-            const { baseAtomId } = extractAtomRefParts(src.atomRef, src.targetField);
-            if (!hasOperator(baseAtomId, customOperatorStore)) {
-              sendError(res, 400, `未找到复合输入源算子: ${baseAtomId}`);
-              return;
-            }
-            idSet.add(baseAtomId);
-          }
-          neededBaseIds.push(...idSet);
-        } else {
-          if (!body.indicator.atomRef) {
-            sendError(res, 400, '单算子指标回测必须包含有效的 indicator.atomRef');
-            return;
-          }
-          const { baseAtomId } = extractAtomRefParts(body.indicator.atomRef, body.indicator.targetField);
-          if (!hasOperator(baseAtomId, customOperatorStore)) {
-            sendError(res, 400, `未找到算子: ${baseAtomId}`);
-            return;
-          }
-          neededBaseIds.push(baseAtomId);
-        }
-
-        const allRuns = sqliteStore.listRuns();
-        const targetRuns =
-          Array.isArray(body.runIds) && body.runIds.length > 0
-            ? allRuns.filter((r) => body.runIds!.includes(r.runId))
-            : allRuns;
-
-        const results = targetRuns.map((run) => {
-          const sit = sqliteStore.getRunSituation(run.runId);
-          if (!sit) {
-            return {
-              runId: run.runId,
-              scenarioName: run.scenarioName,
-              sourceKind: run.sourceKind,
-              status: 'unavailable' as const,
-              rawValue: null,
-              displayValue: '运行态缺失',
-              score: null,
-              alarmTriggered: false,
-              missingDataReason: `无法加载场次 ${run.runId} 的态势数据`,
-              evidenceRefs: [],
-            };
-          }
-
-          const atomResultsMap: Record<string, MetricAtomResult> = {};
-          for (const baseId of neededBaseIds) {
-            const atomRes = evaluateOperator(
-              baseId,
-              {
-                runId: run.runId,
-                situation: sit,
-                targetSide: body.targetSide?.trim() || undefined,
-              },
-              customOperatorStore,
-              new Set(),
-              operatorOverrideStore,
-            );
-            atomResultsMap[baseId] = atomRes;
-          }
-
-          if (!isComposite && body.indicator.atomRef) {
-            atomResultsMap[body.indicator.atomRef] = atomResultsMap[neededBaseIds[0]];
-          } else if (isComposite && Array.isArray(body.indicator.sources)) {
-            for (const src of body.indicator.sources) {
-              const { baseAtomId } = extractAtomRefParts(src.atomRef, src.targetField);
-              if (atomResultsMap[baseAtomId]) {
-                atomResultsMap[src.atomRef] = atomResultsMap[baseAtomId];
-              }
-            }
-          }
-
-          const resolved = resolveIndicatorOutputFromAtoms(body.indicator, atomResultsMap);
-          const numVal =
-            typeof resolved.rawResult.value === 'number' && Number.isFinite(resolved.rawResult.value)
-              ? resolved.rawResult.value
-              : typeof resolved.rawResult.value === 'boolean'
-                ? resolved.rawResult.value
-                  ? 1
-                  : 0
-                : null;
-          return {
-            runId: run.runId,
-            scenarioName: run.scenarioName,
-            sourceKind: run.sourceKind,
-            status: resolved.rawResult.status,
-            rawValue: resolved.rawResult.value,
-            numericValue: numVal,
-            displayValue: resolved.rawResult.displayValue,
-            score: resolved.score,
-            alarmTriggered:
-              resolved.rawResult.status !== 'unavailable' &&
-              isAlarmThresholdTriggered(resolved.rawResult.value, body.indicator.alarmThreshold),
-            missingDataReason: resolved.rawResult.missingDataReason,
-            evidenceRefs: resolved.rawResult.evidenceRefs.slice(0, 4),
-            details: (resolved.rawResult.details as Record<string, unknown>) ?? undefined,
-          };
-        });
-
-        const validNumeric = results
-          .map((r) => r.numericValue)
-          .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-        const validScores = results
-          .map((r) => r.score)
-          .filter((s): s is number => typeof s === 'number' && Number.isFinite(s));
-
-        const round2 = (n: number) => Math.round(n * 100) / 100;
-        const summary = {
-          totalRuns: results.length,
-          validCount: validNumeric.length,
-          minValue: validNumeric.length > 0 ? Math.min(...validNumeric) : null,
-          maxValue: validNumeric.length > 0 ? Math.max(...validNumeric) : null,
-          avgValue:
-            validNumeric.length > 0
-              ? round2(validNumeric.reduce((a, b) => a + b, 0) / validNumeric.length)
-              : null,
-          minScore: validScores.length > 0 ? Math.min(...validScores) : null,
-          maxScore: validScores.length > 0 ? Math.max(...validScores) : null,
-          avgScore:
-            validScores.length > 0
-              ? round2(validScores.reduce((a, b) => a + b, 0) / validScores.length)
-              : null,
-        };
-
-        sendJson(res, 200, { ok: true, results, summary });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/indicators/import') {
-        const body = await readJsonBody<{ indicators: IndicatorDefinition[] }>(req);
-        const saved = indicatorStore.upsertBatchCustom(body.indicators);
-        sendJson(res, 200, { ok: true, count: saved.length, indicators: saved });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/indicators') {
-        const body = await readJsonBody<IndicatorDefinition>(req);
-        const saved = indicatorStore.upsertCustom(body);
-        sendJson(res, 200, { ok: true, indicator: saved });
-        return;
-      }
-
-      const indDelMatch = pathname.match(/^\/api\/indicators\/([^/]+)$/);
-      if (req.method === 'DELETE' && indDelMatch) {
-        const indId = decodeURIComponent(indDelMatch[1]);
-
-        // 校验是否有三库评估体系正引用该指标 (级联删除安全保护)
-        const referencingSystems: string[] = [];
-        const scanNode = (n: any, sysName: string) => {
-          if (n?.indicatorRef === indId) {
-            referencingSystems.push(sysName);
-            return;
-          }
-          if (Array.isArray(n?.children)) {
-            for (const ch of n.children) {
-              scanNode(ch, sysName);
-            }
-          }
-        };
-
-        for (const sys of systemStore.listAll()) {
-          scanNode(sys.root, sys.name || sys.systemId);
-        }
-
-        if (referencingSystems.length > 0) {
-          const uniqueSys = Array.from(new Set(referencingSystems));
-          sendJson(res, 409, {
-            ok: false,
-            error: `指标 "${indId}" 正被评估体系 [${uniqueSys.join(', ')}] 引用，禁止直接删除。请先在对应评估体系中解除引用。`,
-            referencingSystems: uniqueSys,
-          });
-          return;
-        }
-
-        const deleted = indicatorStore.deleteCustom(indId);
-        sendJson(res, 200, { ok: true, deleted });
-        return;
-      }
-
-      // ─── 三库：评估体系库 ───
-      if (req.method === 'GET' && pathname === '/api/systems') {
-        sendJson(res, 200, { ok: true, systems: systemStore.listAll() });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/systems/validate') {
-        const body = await readJsonBody<{ system: IndicatorSystem; autoNormalize?: boolean }>(req);
-        const sys = body.autoNormalize ? normalizeSystemWeights(body.system) : body.system;
-        const validation = validateIndicatorSystem(sys, indicatorStore);
-        sendJson(res, 200, { ok: true, system: sys, validation });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/systems') {
-        const body = await readJsonBody<IndicatorSystem>(req);
-        const saved = systemStore.upsertCustom(body);
-        sendJson(res, 200, { ok: true, system: saved });
-        return;
-      }
-
-      const sysDelMatch = pathname.match(/^\/api\/systems\/([^/]+)$/);
-      if (req.method === 'DELETE' && sysDelMatch) {
-        const deleted = systemStore.deleteCustom(sysDelMatch[1]);
-        sendJson(res, 200, { ok: true, deleted });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/systems/draft-nl') {
-        const body = await readJsonBody<{ prompt: string; systemId?: string; name?: string }>(req);
-        if (!body.prompt || !body.prompt.trim()) {
-          sendError(res, 400, '任务需求描述 prompt 不能为空');
-          return;
-        }
-        const draft = await draftSystemFromNaturalLanguage(body.prompt, {
-          systemId: body.systemId,
-          name: body.name,
-          indicatorStore,
-        });
-        sendJson(res, 200, { ok: true, ...draft });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/systems/objective-weights') {
-        const body = await readJsonBody<{
-          systemId?: string;
-          system?: IndicatorSystem;
-          dimensionIds?: string[];
-          runIds?: string[];
-          method?: 'entropy' | 'critic' | 'combined';
-          objectiveMethod?: 'entropy' | 'critic';
-          subjectiveWeights?: number[];
-          alpha?: number;
-        }>(req);
-
-        const sys = body.system ?? (body.systemId ? systemStore.get(body.systemId) : null);
-        if (!sys) {
-          sendError(res, 400, '必须提供有效的 systemId 或完整 system 体系定义');
-          return;
-        }
-
-        const rawRunIds =
-          body.runIds && Array.isArray(body.runIds) && body.runIds.length > 0
-            ? body.runIds
-            : sqliteStore.listRuns().map((r) => r.runId);
-        const candidateRunIds = Array.from(new Set(rawRunIds));
-        if (candidateRunIds.length < 2) {
-          sendError(res, 400, '客观赋权与组合赋权至少需要 2 个有效推演方案（Run）进行横向对比');
-          return;
-        }
-
-        const allNodes: Array<SystemDimensionNode | SystemIndicatorLeaf> = [];
-        const collectNodes = (node: SystemDimensionNode | SystemIndicatorLeaf) => {
-          allNodes.push(node);
-          if (isDimensionNode(node)) {
-            for (const ch of node.children) collectNodes(ch);
-          }
-        };
-        for (const ch of sys.root.children) collectNodes(ch);
-
-        let targetNodes: Array<SystemDimensionNode | SystemIndicatorLeaf> = [];
-        if (body.dimensionIds && body.dimensionIds.length > 0) {
-          for (const tid of body.dimensionIds) {
-            const found = allNodes.find((n) =>
-              isDimensionNode(n) ? n.id === tid : n.indicatorRef === tid,
-            );
-            if (found) targetNodes.push(found);
-          }
-        } else {
-          targetNodes = sys.root.children;
-        }
-
-        if (targetNodes.length < 2) {
-          sendError(res, 400, '赋权目标节点数量必须大于等于 2 项');
-          return;
-        }
-
-        const targetIds = targetNodes.map((n) => (isDimensionNode(n) ? n.id : n.indicatorRef));
-        const targetNames = targetNodes.map((n) =>
-          isDimensionNode(n) ? n.name : n.customLabel || indicatorStore.get(n.indicatorRef)?.name || n.indicatorRef,
-        );
-        const subjectiveWeightsFromSys = targetNodes.map((n) => n.weight);
-
-        const findNodeScore = (evaluated: SystemEvaluationOutput, targetId: string): number | null => {
-          const d = evaluated.dimensions.find((x) => x.id === targetId);
-          if (d && d.score !== null) return d.score;
-          const searchTree = (node: {
-            children?: Array<{ kind: string; id?: string; indicatorRef?: string; name?: string; score: number | null; children?: unknown[] }>;
-          }): number | null => {
-            if (!node.children) return null;
-            for (const c of node.children) {
-              if (c.kind === 'dimension' && c.id === targetId) return c.score;
-              if (c.kind === 'indicator' && (c.indicatorRef === targetId || c.name === targetId)) {
-                return c.score;
-              }
-              if (c.children) {
-                const sub = searchTree(c as { children?: Array<{ kind: string; id?: string; indicatorRef?: string; name?: string; score: number | null; children?: unknown[] }> });
-                if (sub !== null) return sub;
-              }
-            }
-            return null;
-          };
-          return searchTree(evaluated.rootTree as { children?: Array<{ kind: string; id?: string; indicatorRef?: string; name?: string; score: number | null; children?: unknown[] }> });
-        };
-
-        const validRuns: string[] = [];
-        const matrix: number[][] = [];
-        for (const rId of candidateRunIds) {
-          const sit = sqliteStore.getRunSituation(rId);
-          if (!sit) continue;
-
-          let evalOut: SystemEvaluationOutput | null = null;
-          if (!body.system) {
-            const cached = sqliteStore.listEvaluations(rId).find((e) => e.systemId === sys.systemId);
-            if (cached) {
-              const full = sqliteStore.getEvaluation(cached.evalId);
-              if (full) evalOut = full.output;
-            }
-          }
-          if (!evalOut) {
-            evalOut = evaluateIndicatorSystem(
-              sys,
-              { runId: rId, situation: sit },
-              { indicatorStore, customOperatorStore, operatorOverrideStore },
-            );
-          }
-
-          const rowScores = targetIds.map((tid) => {
-            const sc = findNodeScore(evalOut!, tid);
-            return sc !== null && Number.isFinite(sc) ? Number(sc) : 0;
-          });
-          validRuns.push(rId);
-          matrix.push(rowScores);
-        }
-
-        if (validRuns.length < 2) {
-          sendError(res, 400, '所选推演场次中有效可评估的方案少于 2 局，无法执行客观赋权对比');
-          return;
-        }
-
-        const method = body.method ?? 'entropy';
-        const directions = targetNames.map(() => 'larger_is_better' as const);
-        let weights: number[] = [];
-        let objectiveWeights: number[] = [];
-        let diagnostics: Record<string, unknown> = {};
-
-        if (method === 'entropy') {
-          const ew = await computeEntropyWeights(matrix, directions, targetNames);
-          weights = ew.weights;
-          objectiveWeights = ew.weights;
-          diagnostics = {
-            entropies: ew.entropies,
-            namedWeights: ew.namedWeights,
-            note: ew.note,
-          };
-        } else if (method === 'critic') {
-          const cw = await computeCriticWeights(matrix, directions, targetNames);
-          weights = cw.weights;
-          objectiveWeights = cw.weights;
-          diagnostics = {
-            stdDevs: cw.stdDevs,
-            conflictScores: cw.conflictScores,
-            namedWeights: cw.namedWeights,
-            note: cw.note,
-          };
-        } else if (method === 'combined') {
-          const objMethod = body.objectiveMethod ?? 'entropy';
-          let objNote: string | undefined;
-          if (objMethod === 'critic') {
-            const cw = await computeCriticWeights(matrix, directions, targetNames);
-            objectiveWeights = cw.weights;
-            objNote = cw.note;
-          } else {
-            const ew = await computeEntropyWeights(matrix, directions, targetNames);
-            objectiveWeights = ew.weights;
-            objNote = ew.note;
-          }
-
-          const rawSub =
-            body.subjectiveWeights && body.subjectiveWeights.length === targetNodes.length
-              ? body.subjectiveWeights
-              : subjectiveWeightsFromSys;
-          const sumSub = rawSub.reduce((a, b) => a + b, 0) || 1;
-          const subWeights = rawSub.map((w) => w / sumSub);
-          const alpha = typeof body.alpha === 'number' ? Math.max(0, Math.min(1, body.alpha)) : 0.5;
-
-          const comb = await computeCombinedWeights({
-            subjectiveWeights: subWeights,
-            objectiveWeights,
-            alpha,
-            criterionNames: targetNames,
-          });
-          weights = comb.weights;
-          diagnostics = {
-            alphaUsed: comb.alphaUsed,
-            subjectiveUsed: comb.subjectiveUsed,
-            objectiveUsed: comb.objectiveUsed,
-            objectiveMethod: objMethod,
-            namedWeights: comb.namedWeights,
-            note: objNote,
-          };
-        } else {
-          sendError(res, 400, `不支持的赋权方法: ${String(method)}`);
-          return;
-        }
-
-        const sumW = weights.reduce((a, b) => a + b, 0) || 1;
-        const normalizedWeights = weights.map((w) => Math.round((w / sumW) * 10000) / 10000);
-
-        sendJson(res, 200, {
-          ok: true,
-          method,
-          targetIds,
-          targetNames,
-          runs: validRuns,
-          matrix,
-          weights: normalizedWeights,
-          normalizedWeights,
-          objectiveWeights,
-          diagnostics,
-        });
         return;
       }
 
@@ -2046,7 +1277,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
 
       // ─── 仿真数据源与测试目录配置 API ───
       if (req.method === 'GET' && pathname === '/api/data-sources') {
-        const knownRunIds = new Set(sqliteStore.listRuns().map((r) => r.runId));
+        const knownRunIds = new Set<string>((sqliteStore.listRuns() as Array<{ runId: string }>).map((r) => r.runId));
         const activeSourceId = dataSourceStore.getActiveSourceId();
         sendJson(res, 200, {
           ok: true,
@@ -2083,7 +1314,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
             situation.scenarioName = ds.name || ds.scenarioName || situation.scenarioName;
             sqliteStore.saveSituationRun(situation);
           }
-          const knownRunIds = new Set(sqliteStore.listRuns().map((r) => r.runId));
+          const knownRunIds = new Set<string>((sqliteStore.listRuns() as Array<{ runId: string }>).map((r) => r.runId));
           sendJson(res, 200, {
             ok: true,
             activeSourceId: ds.id,
@@ -2215,7 +1446,7 @@ export async function createEvalApp(deps?: EvalServerDeps) {
             criteriaResults: body.criteriaResults,
           });
           situation.scenarioName = body.scenarioName || '55所台海场景实测 (EventExport_CSV)';
-        } else if (body.kind === 'builtin_bs') {
+        } else if ((body.kind as string) === 'builtin_gj11') {
           situation = await buildSituationModel({
             runId,
             csvDir: BUILTIN_SAMPLES.gj11CsvDir,
@@ -2357,7 +1588,21 @@ export async function createEvalApp(deps?: EvalServerDeps) {
         const profile = buildRunSourceProfile({
           situation: sit,
           catalog,
-          operators: listOperatorMetas(customOperatorStore, operatorOverrideStore),
+          operators: v4OperatorStore.list().map((op) => ({
+            id: op.id,
+            name: op.name,
+            category: op.category,
+            description: op.description,
+            readiness: 'batch_a_ready' as const,
+            requiredDataSources: ['csv' as const],
+            outputType: 'score' as const,
+            unit: '',
+            defaultOptimalDirection: 'larger_is_better' as const,
+            f1FieldContract: {
+              csvTables: op.requiredTables,
+              csvColumns: op.outputColumns,
+            },
+          })),
           previewTable: rawPreviewTable,
           previewLimit,
         });
@@ -2392,302 +1637,6 @@ export async function createEvalApp(deps?: EvalServerDeps) {
           scenarioName: sit.scenarioName || sit.runId,
           runId: sit.runId,
         });
-        return;
-      }
-
-      // ─── 事后评估执行与报告/反哺查询 ───
-      if (req.method === 'POST' && pathname === '/api/evaluate') {
-        const body = await readJsonBody<{
-          runId: string;
-          systemId?: string;
-          system?: IndicatorSystem;
-          previewOnly?: boolean;
-          customParams?: Record<string, unknown>;
-          runPythonMetrics?: boolean;
-        }>(req);
-
-        const sit = sqliteStore.getRunSituation(body.runId);
-        if (!sit) {
-          sendError(res, 404, `未找到运行记录: ${body.runId}`);
-          return;
-        }
-
-        let sys: IndicatorSystem | undefined;
-        if (body.system && typeof body.system === 'object') {
-          const valRes = validateIndicatorSystem(body.system, indicatorStore);
-          if (!valRes.valid) {
-            sendError(res, 400, `草稿体系校验失败: ${valRes.errors.join('；')}`);
-            return;
-          }
-          sys = body.system;
-        } else if (body.systemId) {
-          sys = systemStore.get(body.systemId);
-          if (!sys) {
-            sendError(res, 404, `未找到评估体系: ${body.systemId}`);
-            return;
-          }
-        } else {
-          sendError(res, 400, '必须提供 systemId 或 system 草稿对象');
-          return;
-        }
-
-        let pyMetrics: Record<string, unknown> | undefined;
-        let pyStatus: Record<string, unknown> | undefined;
-        if (
-          body.runPythonMetrics !== false &&
-          (sit.coverage.sourceKind === 'event_csv' || sit.coverage.sourceKind === 'hybrid') &&
-          sit.scenarioPath &&
-          fs.existsSync(sit.scenarioPath)
-        ) {
-          const pyRes = await runPythonMetricsAdapter(
-            sit.scenarioPath,
-            (body.customParams?.unitPrices as Record<string, number> | undefined) ?? sit.unitPrices,
-          );
-          if (pyRes.available) pyMetrics = pyRes.metrics;
-          pyStatus = {
-            available: pyRes.available,
-            stagedCount: pyRes.stagedFiles.length,
-            skippedCount: pyRes.skippedFiles.length,
-            warnings: pyRes.warnings,
-            reason: pyRes.reason,
-          };
-        }
-
-        const output = evaluateIndicatorSystem(
-          sys,
-          {
-            runId: body.runId,
-            situation: sit,
-            csvStats: pyMetrics,
-            customParams: body.customParams,
-          },
-          { indicatorStore, customOperatorStore, operatorOverrideStore },
-        );
-        const reportMd = generateEvaluationReportMarkdown(output, sit);
-        const feedback = generateTacticalFeedback(output, sit);
-        if (!body.previewOnly) {
-          sqliteStore.saveEvaluation(output, reportMd, feedback);
-        }
-
-        sendJson(res, 200, {
-          ok: true,
-          evalId: output.evalId,
-          output,
-          reportMd,
-          feedback,
-          pythonMetrics: pyStatus ?? null,
-        });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/evaluate/stream') {
-        const body = await readJsonBody<{
-          runId: string;
-          systemId?: string;
-          system?: IndicatorSystem;
-          previewOnly?: boolean;
-          customParams?: Record<string, unknown>;
-          runPythonMetrics?: boolean;
-        }>(req);
-
-        let sys: IndicatorSystem | undefined;
-        if (body.system && typeof body.system === 'object') {
-          const valRes = validateIndicatorSystem(body.system, indicatorStore);
-          if (!valRes.valid) {
-            sendError(res, 400, `草稿体系校验失败: ${valRes.errors.join('；')}`);
-            return;
-          }
-          sys = body.system;
-        } else if (body.systemId) {
-          sys = systemStore.get(body.systemId);
-          if (!sys) {
-            sendError(res, 404, `未找到评估体系: ${body.systemId}`);
-            return;
-          }
-        } else {
-          sendError(res, 400, '必须提供 systemId 或 system 草稿对象');
-          return;
-        }
-
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          Connection: 'keep-alive',
-          'Access-Control-Allow-Origin': '*',
-          'X-Accel-Buffering': 'no',
-        });
-        (res as any).flushHeaders?.();
-        res.socket?.setNoDelay(true);
-        res.write(': handshake-ok\n\n');
-
-        const startedAt = Date.now();
-        const abortCtrl = new AbortController();
-        res.on('close', () => {
-          if (!res.writableFinished) {
-            abortCtrl.abort();
-          }
-        });
-        const emitEvent = (event: string, payload: Record<string, unknown>) => {
-          if (res.writableEnded || abortCtrl.signal.aborted) return;
-          res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
-        };
-        const emitProgress = (payload: {
-          percent: number;
-          stage: string;
-          message: string;
-          log?: string;
-        }) => {
-          emitEvent('progress', {
-            ...payload,
-            elapsedMs: Date.now() - startedAt,
-          });
-        };
-
-        try {
-          emitProgress({
-            percent: 5,
-            stage: 'db_load',
-            message: `正在从 eval.db 读取推演态势与轨迹快照 (${body.runId})…`,
-            log: `[数据加载] 开始读取推演态势与轨迹快照 (RunId: ${body.runId})...`,
-          });
-          await new Promise<void>((r) => setImmediate(r));
-          if (abortCtrl.signal.aborted) return;
-
-          const sit = sqliteStore.getRunSituation(body.runId);
-          if (!sit) {
-            emitEvent('error', { ok: false, error: `未找到运行记录: ${body.runId}` });
-            return;
-          }
-          if (abortCtrl.signal.aborted) return;
-
-          emitProgress({
-            percent: 16,
-            stage: 'load',
-            message: `已加载推演态势 (${sit.units.size} 单元 · ${sit.events.length} 事件) 与体系「${sys.name}」`,
-            log: `[态势就绪] 已装载 ${sit.units.size} 个推演单元、${sit.events.length} 条推演事件，体系「${sys.name}」初始化完成`,
-          });
-
-          let pyMetrics: Record<string, unknown> | undefined;
-          let pyStatus: Record<string, unknown> | undefined;
-          if (
-            body.runPythonMetrics !== false &&
-            (sit.coverage.sourceKind === 'event_csv' || sit.coverage.sourceKind === 'hybrid') &&
-            sit.scenarioPath &&
-            fs.existsSync(sit.scenarioPath)
-          ) {
-            const pyRes = await runPythonMetricsAdapter(
-              sit.scenarioPath,
-              (body.customParams?.unitPrices as Record<string, number> | undefined) ?? sit.unitPrices,
-              (info) => {
-                emitProgress({
-                  percent: info.percent ?? 45,
-                  stage: info.stage,
-                  message: info.message,
-                  log: info.log,
-                });
-              },
-              abortCtrl.signal,
-            );
-            if (pyRes.available) pyMetrics = pyRes.metrics;
-            pyStatus = {
-              available: pyRes.available,
-              stagedCount: pyRes.stagedFiles.length,
-              skippedCount: pyRes.skippedFiles.length,
-              warnings: pyRes.warnings,
-              reason: pyRes.reason,
-            };
-          }
-          if (abortCtrl.signal.aborted) return;
-
-          emitProgress({
-            percent: 72,
-            stage: 'operators',
-            message: '正在执行物理算子、自定义流水线与指标归一化求值…',
-            log: '[体系求值] 调度多层级算子拓扑、公式衍生与多属性指标打分归一化...',
-          });
-
-          const output = evaluateIndicatorSystem(
-            sys,
-            {
-              runId: body.runId,
-              situation: sit,
-              csvStats: pyMetrics,
-              customParams: body.customParams,
-            },
-            { indicatorStore, customOperatorStore, operatorOverrideStore },
-          );
-
-          emitProgress({
-            percent: 90,
-            stage: 'report',
-            message: '正在生成 Markdown 评估报告与战术反哺指令…',
-            log: '[报告反哺] 计算完成，正在合成实证结论报告、战术指挥建议与物理证据链...',
-          });
-
-          const reportMd = generateEvaluationReportMarkdown(output, sit);
-          const feedback = generateTacticalFeedback(output, sit);
-
-          emitProgress({
-            percent: 96,
-            stage: 'persist',
-            message: '正在将评估结果与证据链写入 eval.db…',
-            log: '[结果落盘] 将综合评分、维度雷达数据与评估版本持久化至 SQLite eval.db...',
-          });
-
-          if (abortCtrl.signal.aborted) return;
-          if (!body.previewOnly) {
-            sqliteStore.saveEvaluation(output, reportMd, feedback);
-          }
-
-          emitEvent('done', {
-            ok: true,
-            evalId: output.evalId,
-            output,
-            reportMd,
-            feedback,
-            pythonMetrics: pyStatus ?? null,
-            elapsedMs: Date.now() - startedAt,
-            log: `[评估完成] 全链路评估顺利完成，总耗时 ${((Date.now() - startedAt) / 1000).toFixed(2)}s`,
-          });
-        } catch (err) {
-          if (abortCtrl.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
-            return;
-          }
-          emitEvent('error', {
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        } finally {
-          if (!res.writableEnded) res.end();
-        }
-        return;
-      }
-
-      if (req.method === 'GET' && pathname === '/api/evaluations') {
-        const runId = reqUrl.searchParams.get('runId') || undefined;
-        sendJson(res, 200, { ok: true, evaluations: sqliteStore.listEvaluations(runId) });
-        return;
-      }
-
-      const evalDetailMatch = pathname.match(/^\/api\/evaluations\/([^/]+)$/);
-      if (req.method === 'GET' && evalDetailMatch) {
-        const found = sqliteStore.getEvaluation(evalDetailMatch[1]);
-        if (!found) {
-          sendError(res, 404, `未找到评估记录: ${evalDetailMatch[1]}`);
-          return;
-        }
-        sendJson(res, 200, { ok: true, ...found });
-        return;
-      }
-
-      if (req.method === 'DELETE' && evalDetailMatch) {
-        const evalId = evalDetailMatch[1];
-        const deleted = sqliteStore.deleteEvaluation(evalId);
-        if (!deleted) {
-          sendError(res, 404, `未找到评估记录: ${evalId}`);
-          return;
-        }
-        sendJson(res, 200, { ok: true, evalId, message: '评估记录已删除' });
         return;
       }
 
@@ -2748,8 +1697,8 @@ export async function createEvalApp(deps?: EvalServerDeps) {
             sendError(res, 404, `未找到已注册数据源: ${body.sourceId}`);
             return;
           }
-          if (ds.sourceKind !== 'jsonl_file') {
-            sendError(res, 400, `数据源 ${ds.id} 类型为 ${ds.sourceKind}，实时伴随流仅支持 jsonl_file 数据源`);
+          if (ds.kind !== 'jsonl_file') {
+            sendError(res, 400, `数据源 ${ds.id} 类型为 ${ds.kind}，实时伴随流仅支持 jsonl_file 数据源`);
             return;
           }
           if (!fs.existsSync(ds.path)) {
@@ -2799,10 +1748,10 @@ export async function createEvalApp(deps?: EvalServerDeps) {
         } else if (body.action === 'pause') {
           monitor.pausePlayback(runId);
         } else if (body.action === 'step') {
-          monitor.stepFrame(runId);
+          await monitor.stepFrame(runId);
         } else if (body.action === 'push_frame') {
           if (!body.frameLine) throw new Error('push_frame 必须提供 frameLine');
-          monitor.stepFrame(runId, body.frameLine);
+          await monitor.stepFrame(runId, body.frameLine);
         } else if (body.action === 'stop') {
           monitor.stopSession(runId);
           sendJson(res, 200, { ok: true, stopped: true });
@@ -2847,10 +1796,11 @@ export async function createEvalApp(deps?: EvalServerDeps) {
     get sqliteStore() {
       return sqliteStore;
     },
-    customOperatorStore,
-    operatorOverrideStore,
-    indicatorStore,
-    systemStore,
+    v4OperatorStore,
+    effectStore,
+    metricGraphStore,
+    systemDagStore,
+    componentStore,
     monitor,
     ensureSeedData,
     switchActiveDatabase,

@@ -17,14 +17,14 @@ import type {
   CatalogEventField,
   CatalogEventSpec,
   F1OutputCatalog,
-  MetricAtomMeta,
+  V4OperatorItem,
 } from '../api.ts';
 import { EChartPanel } from './EChartPanel.tsx';
 import { DataRelationGraphView } from './DataRelationGraphView.tsx';
 
 interface SimulationCatalogPanelProps {
   catalog: F1OutputCatalog | null;
-  operators: MetricAtomMeta[];
+  operators: V4OperatorItem[];
 }
 
 type CatalogEventFilter = 'all' | 'active' | 'db_table' | 'tacview' | 'unused_enum' | 'placeholder';
@@ -51,38 +51,37 @@ const BS_FAMILY_TITLES: Record<string, string> = {
 
 const QUICK_SEARCH_EXAMPLES = ['WeaponID', 'Sensors', 'Longitude', 'DBID', 'DamageState', 'Missions'];
 
-function operatorsForCsvTable(tableName: string, operators: MetricAtomMeta[]): MetricAtomMeta[] {
-  const low = tableName.toLowerCase();
+function normalizeTableKey(name: string): string {
+  return name.trim().replace(/\.csv$/i, '').toLowerCase();
+}
+
+function operatorsForCsvTable(tableName: string, operators: V4OperatorItem[]): V4OperatorItem[] {
+  const low = normalizeTableKey(tableName);
   return operators.filter((op) =>
-    (op.f1FieldContract.csvTables ?? []).some((t) => t.toLowerCase() === low),
+    [...(op.requiredTables ?? []), ...(op.optionalTables ?? [])].some(
+      (t) => normalizeTableKey(t) === low,
+    ),
   );
 }
 
-function operatorsForBsPath(rawPath: string, operators: MetricAtomMeta[]): MetricAtomMeta[] {
+function operatorsForBsPath(rawPath: string, operators: V4OperatorItem[]): V4OperatorItem[] {
   const low = rawPath.toLowerCase();
   return operators.filter((op) => {
-    const fps = op.f1FieldContract.bsFramePaths ?? [];
-    return fps.some((fp) => {
-      const fLow = fp.toLowerCase();
-      if (low.includes('sensors') && fLow.includes('sensors')) return true;
-      if (low.includes('contacts') && fLow.includes('contacts')) return true;
-      if (low.includes('missions') && fLow.includes('missions')) return true;
-      if (low.includes('referencepoints') && fLow.includes('threatzones')) return true;
-      if ((low.includes('mounts') || low.includes('magazines')) && fLow.includes('mounts/weapons')) return true;
-      if (
-        (low.includes('lonlr') || low.includes('latlr') || low.includes('longitude') || low.includes('latitude')) &&
-        fLow.includes('lonlr/latlr')
-      ) {
-        return true;
-      }
-      if (low.includes('damagestate') && (fLow.includes('isdestroyed') || fLow.includes('damagepercent'))) {
-        return true;
-      }
-      if ((low.includes('simevents') || low.includes('eventtriggers')) && fLow.includes('engine_event')) {
-        return true;
-      }
-      return false;
-    });
+    const tables = [...(op.requiredTables ?? []), ...(op.optionalTables ?? [])].map((t) =>
+      t.toLowerCase(),
+    );
+    if (low.includes('sensors') && tables.some((t) => t.includes('sensor'))) return true;
+    if (low.includes('contacts') && tables.some((t) => t.includes('detection'))) return true;
+    if (low.includes('missions') && tables.some((t) => t.includes('mission'))) return true;
+    if (low.includes('damagestate') && tables.some((t) => t.includes('damage') || t.includes('destroyed'))) return true;
+    if ((low.includes('mounts') || low.includes('magazines')) && tables.some((t) => t.includes('weapon'))) return true;
+    if (
+      (low.includes('lonlr') || low.includes('latlr') || low.includes('longitude') || low.includes('latitude')) &&
+      tables.some((t) => t.includes('position'))
+    ) {
+      return true;
+    }
+    return false;
   });
 }
 
@@ -176,7 +175,7 @@ export function SimulationCatalogPanel({ catalog, operators }: SimulationCatalog
       table: CatalogEventSpec;
       field: CatalogEventField;
       isPrefix?: boolean;
-      ops: MetricAtomMeta[];
+      ops: V4OperatorItem[];
     }> = [];
 
     for (const pf of stats.prefix) {
@@ -209,7 +208,7 @@ export function SimulationCatalogPanel({ catalog, operators }: SimulationCatalog
       familyKey: string;
       familyTitle: string;
       pathExpr: string;
-      ops: MetricAtomMeta[];
+      ops: V4OperatorItem[];
     }> = [];
     for (const fam of stats.bsFamilies) {
       for (const p of fam.paths) {
@@ -955,7 +954,7 @@ export function SimulationCatalogPanel({ catalog, operators }: SimulationCatalog
                             <span
                               key={o.id}
                               className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
-                                o.readiness === 'batch_a_ready'
+                                o.layer === 'fact'
                                   ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
                                   : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
                               }`}

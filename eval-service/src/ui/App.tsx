@@ -12,11 +12,12 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import {
   evalApi,
+  type EffectDefinition,
+  type EvaluationSystemDag,
   type F1OutputCatalog,
-  type IndicatorDefinition,
-  type IndicatorSystem,
-  type MetricAtomMeta,
+  type MetricGraphDefinition,
   type StoredRunSummary,
+  type V4OperatorItem,
 } from './api.ts';
 import { CockpitView } from './components/CockpitView.tsx';
 import { DataExplorerView } from './components/DataExplorerView.tsx';
@@ -48,13 +49,13 @@ const TABS: Array<{ key: TabKey; label: string; short: string; icon: typeof Gaug
 
 export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('cockpit');
-  const [operators, setOperators] = useState<MetricAtomMeta[]>([]);
-  const [indicators, setIndicators] = useState<IndicatorDefinition[]>([]);
-  const [systems, setSystems] = useState<IndicatorSystem[]>([]);
+  const [operators, setOperators] = useState<V4OperatorItem[]>([]);
+  const [effects, setEffects] = useState<EffectDefinition[]>([]);
+  const [metricGraphs, setMetricGraphs] = useState<MetricGraphDefinition[]>([]);
+  const [systems, setSystems] = useState<EvaluationSystemDag[]>([]);
   const [runs, setRuns] = useState<StoredRunSummary[]>([]);
   const [catalog, setCatalog] = useState<F1OutputCatalog | null>(null);
   const [selectedRunId, setSelectedRunId] = useState('');
-  const [selectedSystemId, setSelectedSystemId] = useState('');
   const [activeSourceId, setActiveSourceId] = useState('');
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabKey>('datasources');
@@ -64,17 +65,19 @@ export function App() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [opRes, indRes, sysRes, runRes, catRes, dsRes] = await Promise.all([
-        evalApi.listOperators(),
-        evalApi.listIndicators(),
-        evalApi.listSystems(),
+      const [opRes, effRes, mgRes, sysRes, runRes, catRes, dsRes] = await Promise.all([
+        evalApi.listV4Operators({ layer: 'all' }),
+        evalApi.listV4Effects(),
+        evalApi.listV4MetricGraphs(),
+        evalApi.listV4SystemDags(),
         evalApi.listRuns(),
         evalApi.getFieldsCatalog(),
         evalApi.listDataSources().catch(() => null),
       ]);
-      setOperators(opRes.operators);
-      setIndicators(indRes.indicators);
-      setSystems(sysRes.systems);
+      setOperators(opRes.operators ?? []);
+      setEffects(effRes.effects ?? []);
+      setMetricGraphs(mgRes.graphs ?? []);
+      setSystems(sysRes.systems ?? []);
       setRuns(runRes.runs);
       setCatalog(catRes.catalog);
       if (dsRes) {
@@ -87,13 +90,6 @@ export function App() {
         }
         return runRes.runs[0]?.runId ?? '';
       });
-      setSelectedSystemId((prev) =>
-        prev && sysRes.systems.some((s) => s.systemId === prev)
-          ? prev
-          : (sysRes.systems.find((s) => s.systemId === 'sys_bvr_air_combat_v1')?.systemId ??
-            sysRes.systems[0]?.systemId ??
-            ''),
-      );
       setInitError(null);
     } catch (e) {
       setInitError(e instanceof Error ? e.message : String(e));
@@ -125,7 +121,9 @@ export function App() {
                 <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
                   <span>{operators.length} 算子</span>
                   <span className="text-[#30363d]">·</span>
-                  <span>{indicators.length} 指标</span>
+                  <span>{metricGraphs.length} 指标图</span>
+                  <span className="text-[#30363d]">·</span>
+                  <span>{effects.length} 效果</span>
                   <span className="text-[#30363d]">·</span>
                   <span>{systems.length} 体系</span>
                   <span className="text-[#30363d]">·</span>
@@ -261,8 +259,6 @@ export function App() {
                 <OperatorLibraryView
                   loading={loadingInit}
                   operators={operators}
-                  indicators={indicators}
-                  systems={systems}
                   runs={runs}
                   selectedRunId={selectedRunId}
                   activeSourceId={activeSourceId}

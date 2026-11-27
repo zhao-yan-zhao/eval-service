@@ -1,4 +1,4 @@
-import type { MetricAtomMeta } from '../api.ts';
+import type { V4OperatorItem } from '../api.ts';
 
 export type OperatorParamKey =
   | 'targetSide'
@@ -120,12 +120,11 @@ export const PARAM_DEFINITIONS: Record<OperatorParamKey, OperatorParamFieldDef> 
 };
 
 /**
- * 确定指定算子实际支持或消费的特定物理/业务数值参数键名
+ * 确定指定 V4 算子实际支持或消费的特定物理/业务数值参数键名
  */
-export function getOperatorSpecificParamKeys(op: MetricAtomMeta): OperatorParamKey[] {
+export function getOperatorSpecificParamKeys(op: V4OperatorItem): OperatorParamKey[] {
   const keys = new Set<OperatorParamKey>();
 
-  // 1. 根据算子 ID 映射核心物理阈值
   switch (op.id) {
     case 'roe.corridor_spatial_compliance':
     case 'comp.corridor_compliance':
@@ -156,20 +155,9 @@ export function getOperatorSpecificParamKeys(op: MetricAtomMeta): OperatorParamK
       break;
   }
 
-  // 2. 自定义算子：若引用了其他算子，继承其物理参数
-  if (op.isCustom && op.customDef?.variables) {
-    for (const v of op.customDef.variables) {
-      const subKeys = getOperatorSpecificParamKeys({ id: v.atomRef } as MetricAtomMeta);
-      for (const k of subKeys) keys.add(k);
-    }
-  }
-
-  // 3. 若算子元数据中已有已配置的 defaultParams，也纳入展示保证不丢失已保存值
-  if (op.defaultParams) {
-    for (const [k, v] of Object.entries(op.defaultParams)) {
-      if (v !== undefined && v !== null && v !== '' && k in PARAM_DEFINITIONS) {
-        keys.add(k as OperatorParamKey);
-      }
+  for (const port of op.parameterPorts ?? []) {
+    if (port.key in PARAM_DEFINITIONS) {
+      keys.add(port.key as OperatorParamKey);
     }
   }
 
@@ -179,8 +167,7 @@ export function getOperatorSpecificParamKeys(op: MetricAtomMeta): OperatorParamK
 /**
  * 获取算子所有应在界面渲染的参数定义（包含我方/敌方阵营以及专属物理阈值）
  */
-export function getOperatorDisplayParamDefs(op: MetricAtomMeta): OperatorParamFieldDef[] {
-  // 阵营参数适用于绝大部分具备推演视角的算子
+export function getOperatorDisplayParamDefs(op: V4OperatorItem): OperatorParamFieldDef[] {
   const defs: OperatorParamFieldDef[] = [
     PARAM_DEFINITIONS.targetSide,
     PARAM_DEFINITIONS.enemySide,
@@ -194,14 +181,4 @@ export function getOperatorDisplayParamDefs(op: MetricAtomMeta): OperatorParamFi
   }
 
   return defs;
-}
-
-/**
- * 获取算子支持的扫参参数（排除阵营等离散字符串，仅保留当前算子实际消费的有限连续数值）
- */
-export function getOperatorSweepableParamDefs(op: MetricAtomMeta): OperatorParamFieldDef[] {
-  const specificKeys = getOperatorSpecificParamKeys(op);
-  return specificKeys
-    .filter((k) => k !== 'targetSide' && k !== 'enemySide')
-    .map((k) => PARAM_DEFINITIONS[k]);
 }

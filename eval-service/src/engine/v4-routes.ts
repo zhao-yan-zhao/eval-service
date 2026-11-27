@@ -10,6 +10,7 @@ import type {
   EvalSqliteStore,
   StoredV4EvalRecord,
   StoredV4EvalSideSummary,
+  V4StoredOperator,
 } from '../adapters/sqlite-store.ts';
 import type {
   AggregationMetricItem,
@@ -23,8 +24,10 @@ import type {
   EvaluationSystemDag,
   EvidenceRef,
   FieldDataType,
+  MetricDomainTag,
   MetricGraphDefinition,
   OperatorNodeExecutionResult,
+  ScoringRule,
   TableDataset,
   V4MetricSnapshotItem,
   V4MetricTableSlice,
@@ -36,11 +39,22 @@ import {
   type MetricGraphStore,
   type MetricOperatorInput,
 } from '../indicators/metric-graph-store.ts';
+import { sampleScoringCurve } from '../core/scoring-functions.ts';
 import {
   evaluateAggregationDataset,
   validateAggregationConfig,
 } from '../operators/aggregation-engine.ts';
 import { evaluateFormulaDataset } from '../operators/formula-engine.ts';
+import {
+  computeCombinedWeights,
+  computeCriticWeights,
+  computeEntropyWeights,
+} from '../operators/mcda-adapter.ts';
+import {
+  defaultV4OperatorStore,
+  type V4OperatorStore,
+} from '../operators/v4/store.ts';
+import { runV4Operator } from '../operators/v4/v4-operator-runner.ts';
 import {
   collectDagParamOverrides,
   evaluateSystemDag,
@@ -70,6 +84,7 @@ export interface V4RouteDeps {
   effectStore: EffectStore;
   metricGraphStore: MetricGraphStore;
   systemDagStore: SystemDagStore;
+  v4OperatorStore?: V4OperatorStore;
   cache?: DagNodeCache;
   listOperators: (options?: { layer?: 'fact' | 'all' }) => unknown[];
   listComponents?: () => unknown[];
@@ -79,6 +94,343 @@ export interface V4RouteDeps {
   ) => Promise<OperatorNodeExecutionResult>;
   resolveCsvDir?: (runId?: string, dataSourceId?: string) => string | undefined;
   getEvalStore?: () => EvalSqliteStore;
+}
+
+const UNSAFE_PYTHON_PATTERNS = [
+  /\bimport\s+os\b/,
+  /\bfrom\s+os\s+import\b/,
+  /\bimport\s+subprocess\b/,
+  /\bfrom\s+subprocess\s+import\b/,
+  /\bimport\s+sys\b/,
+  /\b__import__\s*\(/,
+  /\beval\s*\(/,
+  /\bexec\s*\(/,
+  /\bopen\s*\(/,
+];
+
+function toV4OperatorSummaryItem(spec: V4StoredOperator) {
+  const outCols = Array.isArray(spec.outputColumns) ? spec.outputColumns : [];
+  return {
+    id: spec.id,
+    name: spec.name,
+    chapter: spec.chapter ?? 0,
+    category: spec.category,
+    militaryLevel: spec.militaryLevel,
+    domainTag: spec.domainTag,
+    description: spec.description ?? '',
+    layer: spec.layer ?? 'fact',
+    engineKind: spec.engineKind ?? 'python_script',
+    isBuiltin: Boolean(spec.isBuiltin),
+    requiredTables: Array.isArray(spec.requiredTables) ? spec.requiredTables : [],
+    optionalTables: Array.isArray(spec.optionalTables) ? spec.optionalTables : [],
+    ...(spec.upstreamOperatorId ? { upstreamOperatorId: spec.upstreamOperatorId } : {}),
+    ...(spec.tableColumns ? { tableColumns: spec.tableColumns } : {}),
+    parameterPorts: Array.isArray(spec.parameterPorts) ? spec.parameterPorts : [],
+    outputColumns: outCols.map((col) =>
+      typeof col === 'string' ? { name: col, type: 'string' } : col,
+    ),
+    outputColumnNames: outCols.map((col) =>
+      typeof col === 'string' ? col : String((col as { name?: string }).name ?? ''),
+    ),
+    pythonCode: spec.pythonCode ?? '',
+    ...(spec.updatedAt ? { updatedAt: spec.updatedAt } : {}),
+  };
+}
+
+function validateV4OperatorSpecInput(raw: Record<string, unknown>): {
+  valid: boolean;
+  errors: string[];
+  spec?: V4StoredOperator;
+} {
+  const errors: string[] = [];
+  const id = asNonEmptyString(raw.id);
+  const name = asNonEmptyString(raw.name);
+  if (!id) {
+    errors.push('缺少必填字段 id');
+  } else if (!/^[a-zA-Z0-9_.-]+$/.test(id)) {
+    errors.push('id 仅允许字母、数字、下划线、点或连字符');
+  }
+  if (!name) {
+    errors.push('缺少必填字段 name');
+  }
+  const category = (asNonEmptyString(raw.category) ?? 'effectiveness') as V4StoredOperator['category'];
+  const militaryLevel = (asNonEmptyString(raw.militaryLevel) ?? 'MOP') as V4StoredOperator['militaryLevel'];
+  const domainTag = (asNonEmptyString(raw.domainTag) ?? 'firepower') as V4StoredOperator['domainTag'];
+  const engineKind = (asNonEmptyString(raw.engineKind) ?? 'python_script') as NonNullable<
+    V4StoredOperator['engineKind']
+  >;
+  const layer = (asNonEmptyString(raw.layer) ?? 'fact') as NonNullable<V4StoredOperator['layer']>;
+  const pythonCode = typeof raw.pythonCode === 'string' ? raw.pythonCode : '';
+  if (engineKind === 'python_script' && !pythonCode.trim()) {
+    errors.push('python_script 类型算子必须提供 pythonCode');
+  }
+  for (const pat of UNSAFE_PYTHON_PATTERNS) {
+    if (pat.test(pythonCode)) {
+      errors.push(`pythonCode 包含受限危险调用: ${pat.source}`);
+      break;
+    }
+  }
+  const requiredTables = Array.isArray(raw.requiredTables)
+    ? raw.requiredTables.map((t) => String(t).trim()).filter(Boolean)
+    : [];
+  const optionalTables = Array.isArray(raw.optionalTables)
+    ? raw.optionalTables.map((t) => String(t).trim()).filter(Boolean)
+    : [];
+  const outputColumns = Array.isArray(raw.outputColumns)
+    ? raw.outputColumns
+        .map((c) => (typeof c === 'string' ? c : String((c as { name?: string })?.name ?? '')))
+        .filter(Boolean)
+    : [];
+
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
+
+  return {
+    valid: true,
+    errors: [],
+    spec: {
+      id: id!,
+      name: name!,
+      chapter: typeof raw.chapter === 'number' && Number.isFinite(raw.chapter) ? raw.chapter : 99,
+      category,
+      militaryLevel,
+      domainTag,
+      description: typeof raw.description === 'string' ? raw.description : '',
+      layer,
+      engineKind,
+      requiredTables,
+      optionalTables,
+      ...(asNonEmptyString(raw.upstreamOperatorId)
+        ? { upstreamOperatorId: asNonEmptyString(raw.upstreamOperatorId) }
+        : {}),
+      ...(asPlainRecord(raw.tableColumns)
+        ? { tableColumns: raw.tableColumns as Record<string, string[]> }
+        : {}),
+      parameterPorts: Array.isArray(raw.parameterPorts)
+        ? (raw.parameterPorts as V4StoredOperator['parameterPorts'])
+        : [],
+      outputColumns,
+      pythonCode,
+      isBuiltin: false,
+    },
+  };
+}
+
+const V4_NL_DOMAIN_KEYWORDS: Array<{
+  domain: MetricDomainTag;
+  label: string;
+  keywords: string[];
+}> = [
+  {
+    domain: 'firepower',
+    label: '火力打击与防空拦截',
+    keywords: ['突击', '打击', '火力', '命中', '防空', '反导', '拦截', '突防', '武器', 'bvr', 'strike', 'weapon'],
+  },
+  {
+    domain: 'isr',
+    label: '侦察预警与雷达探测',
+    keywords: ['侦察', '预警', '探测', '雷达', '发现', 'isr', 'radar', 'sensor'],
+  },
+  {
+    domain: 'c2',
+    label: '指挥控制与态势协同',
+    keywords: ['指挥', '指控', '态势', '决策', 'c2', '走廊', '空域'],
+  },
+  {
+    domain: 'synergy',
+    label: '杀伤链协同与支援保障',
+    keywords: ['协同', '杀伤链', '闭环', 'ooda', '时效', '快速', '支援', '集群', '蜂群', 'swarm'],
+  },
+  {
+    domain: 'survivability',
+    label: '机动生存与电磁对抗',
+    keywords: ['生存', '巡逻', '掩护', '电子战', '干扰', '压制', '战损', '防护', 'ew', 'patrol'],
+  },
+  {
+    domain: 'cost',
+    label: '作战效费与经济交换比',
+    keywords: ['成本', '效费', '经济', '交换比', '损耗', '省弹', 'cost', 'exchange'],
+  },
+];
+
+function draftV4SystemDagFromPrompt(
+  prompt: string,
+  effectStore: EffectStore,
+  opts?: { systemId?: string; name?: string; metricGraphId?: string },
+): {
+  system: EvaluationSystemDag & { metricGraphId?: string };
+  matchedDomains: string[];
+  rationale: string[];
+} {
+  const lower = prompt.toLowerCase();
+  const domainScores = new Map<MetricDomainTag, number>();
+  const matchedLabels: string[] = [];
+
+  for (const rule of V4_NL_DOMAIN_KEYWORDS) {
+    let hits = 0;
+    for (const kw of rule.keywords) {
+      if (lower.includes(kw.toLowerCase())) hits += 1;
+    }
+    if (hits > 0) {
+      domainScores.set(rule.domain, hits);
+      matchedLabels.push(rule.label);
+    }
+  }
+
+  const wantsGate = /红线|误伤|走廊|合规|安全|门控|roe|fratricide|corridor|gate/i.test(prompt);
+  const allEffects = effectStore.listAll().filter((e) => Boolean(e.metricBinding?.metricId));
+  const leafEffects = allEffects.filter((e) => e.role === 'effect');
+  const gateEffects = allEffects.filter((e) => e.role === 'gate');
+
+  let selectedEffects =
+    domainScores.size > 0
+      ? leafEffects.filter((e) => e.domainTag && domainScores.has(e.domainTag))
+      : leafEffects.slice(0, 6);
+  if (selectedEffects.length === 0) {
+    selectedEffects = leafEffects.slice(0, 6);
+  }
+  selectedEffects = selectedEffects.slice(0, 8);
+
+  const selectedGates = wantsGate
+    ? gateEffects.slice(0, 2)
+    : gateEffects.filter((g) => g.effectId === 'gate_fratricide_zero' || g.effectId === 'gate_excessive_attrition').slice(0, 1);
+
+  const systemId =
+    opts?.systemId?.trim() ||
+    `sys_v4_nl_${crypto.randomUUID().slice(0, 8)}`;
+  const name =
+    opts?.name?.trim() ||
+    (matchedLabels.length > 0
+      ? `${matchedLabels.slice(0, 2).join('与')}评估体系草案`
+      : '智能生成 V4 综合评估体系草案');
+
+  const nodes: EvaluationSystemDag['nodes'] = [];
+  const edges: EvaluationSystemDag['edges'] = [];
+  const metricProxyIds = new Map<string, string>();
+  let rowIdx = 0;
+
+  const ensureProxy = (metricId: string, label: string): string => {
+    const existing = metricProxyIds.get(metricId);
+    if (existing) return existing;
+    const pxId = `px_nl_${rowIdx + 1}`;
+    metricProxyIds.set(metricId, pxId);
+    nodes.push({
+      id: pxId,
+      kind: 'metric_proxy',
+      label,
+      refId: metricId,
+      position: { x: 60, y: 60 + rowIdx * 130 },
+    });
+    return pxId;
+  };
+
+  const terminalNodeId = 'ef_nl_terminal_overall';
+  const rawWeights: Array<{ edgeId: string; sourceNodeId: string; rawW: number }> = [];
+
+  for (const eff of selectedEffects) {
+    const metricId = eff.metricBinding!.metricId;
+    const pxId = ensureProxy(metricId, eff.name);
+    const efNodeId = `ef_nl_${rowIdx + 1}`;
+    nodes.push({
+      id: efNodeId,
+      kind: 'effect',
+      label: eff.name,
+      refId: eff.effectId,
+      position: { x: 420, y: 60 + rowIdx * 130 },
+    });
+    edges.push({
+      id: `se_nl_px_${rowIdx + 1}`,
+      sourceNodeId: pxId,
+      targetNodeId: efNodeId,
+    });
+    const boost = eff.domainTag ? (domainScores.get(eff.domainTag) ?? 1) : 1;
+    rawWeights.push({
+      edgeId: `se_nl_term_${rowIdx + 1}`,
+      sourceNodeId: efNodeId,
+      rawW: 1 + boost * 0.5,
+    });
+    rowIdx += 1;
+  }
+
+  for (const gate of selectedGates) {
+    const metricId = gate.metricBinding!.metricId;
+    const pxId = ensureProxy(metricId, gate.name);
+    const gtNodeId = `gt_nl_${rowIdx + 1}`;
+    nodes.push({
+      id: gtNodeId,
+      kind: 'gate',
+      label: gate.name,
+      refId: gate.effectId,
+      position: { x: 420, y: 60 + rowIdx * 130 },
+    });
+    edges.push({
+      id: `se_nl_gt_${rowIdx + 1}`,
+      sourceNodeId: pxId,
+      targetNodeId: gtNodeId,
+    });
+    rowIdx += 1;
+  }
+
+  nodes.push({
+    id: terminalNodeId,
+    kind: 'effect',
+    label: name,
+    position: { x: 820, y: Math.max(120, Math.round((rowIdx * 130) / 2)) },
+    inlineEffect: {
+      effectId: `${systemId}_terminal_inline`,
+      name,
+      description: `基于自然语言任务需求自动生成的 V4 综合评估终态节点：${prompt.slice(0, 120)}`,
+      domainTag: 'synergy',
+      role: 'effect',
+      aggregation: {
+        strategy: 'weighted_sum',
+        missingPolicy: 'skip_renormalize',
+      },
+    },
+  });
+
+  const weightSum = rawWeights.reduce((acc, item) => acc + item.rawW, 0) || 1;
+  for (const item of rawWeights) {
+    edges.push({
+      id: item.edgeId,
+      sourceNodeId: item.sourceNodeId,
+      targetNodeId: terminalNodeId,
+      weight: item.rawW / weightSum,
+    });
+  }
+
+  const rawDag: EvaluationSystemDag & { metricGraphId?: string } = {
+    systemId,
+    name,
+    version: '4.0.0',
+    description: `自然语言草案需求：${prompt}`,
+    metricGraphId: opts?.metricGraphId ?? 'mg_v4_metrics_guide_full',
+    terminalEffectNodeId: terminalNodeId,
+    globalParams: {
+      targetSide: '红方',
+      enemySide: '蓝方',
+    },
+    nodes,
+    edges,
+  };
+
+  const normalized = normalizeIncomingWeights(rawDag, effectStore) as EvaluationSystemDag & {
+    metricGraphId?: string;
+  };
+  const rationale = [
+    matchedLabels.length > 0
+      ? `识别到核心作战域：${matchedLabels.join('、')}`
+      : '未命中特定领域关键词，已采用全域基线平衡模板',
+    `自动挂载 ${selectedEffects.length} 项 V4 效果节点与 ${selectedGates.length} 项安全红线门控节点`,
+    '终态节点入边权重已自动归一化至 Σ=1.0000',
+  ];
+
+  return {
+    system: normalized,
+    matchedDomains: matchedLabels,
+    rationale,
+  };
 }
 
 const CANONICAL_SIDE_COLUMNS = [
@@ -1422,14 +1774,50 @@ export async function handleV4ApiRequest(
 
   try {
     // ── 1. 一库算子 & 混合内核算子 DAG ──
+    const opStore = deps.v4OperatorStore ?? defaultV4OperatorStore;
+
     if (method === 'GET' && pathname === '/api/v4/operators') {
       const reqUrl = new URL(req.url || pathname, 'http://127.0.0.1');
       const rawLayer = reqUrl.searchParams.get('layer');
+      const domainParam = reqUrl.searchParams.get('domain')?.trim() || undefined;
+      const searchParam = reqUrl.searchParams.get('search')?.trim().toLowerCase() || undefined;
       const layerOpt: { layer?: 'fact' | 'all' } | undefined =
         rawLayer === 'all' || rawLayer === 'fact' ? { layer: rawLayer } : undefined;
+
+      let operators: unknown[];
+      if (deps.v4OperatorStore) {
+        const storedList = deps.v4OperatorStore.list({
+          ...(rawLayer === 'fact' ? { layer: 'fact' } : {}),
+          ...(domainParam ? { domainTag: domainParam } : {}),
+        });
+        const filtered = searchParam
+          ? storedList.filter(
+              (op) =>
+                op.id.toLowerCase().includes(searchParam) ||
+                op.name.toLowerCase().includes(searchParam) ||
+                (op.description ?? '').toLowerCase().includes(searchParam),
+            )
+          : storedList;
+        operators = filtered.map((op) => toV4OperatorSummaryItem(op));
+      } else {
+        let fallbackList = deps.listOperators(layerOpt);
+        if (domainParam || searchParam) {
+          fallbackList = fallbackList.filter((item) => {
+            const rec = item as Record<string, unknown>;
+            if (domainParam && rec.domainTag !== domainParam) return false;
+            if (searchParam) {
+              const hay = `${String(rec.id ?? '')} ${String(rec.name ?? '')} ${String(rec.description ?? '')}`.toLowerCase();
+              if (!hay.includes(searchParam)) return false;
+            }
+            return true;
+          });
+        }
+        operators = fallbackList;
+      }
+
       sendJson(res, 200, {
         ok: true,
-        operators: deps.listOperators(layerOpt),
+        operators,
         components: deps.listComponents?.() ?? [],
       });
       return true;
@@ -1442,17 +1830,118 @@ export async function handleV4ApiRequest(
         sendError(sendJson, res, 400, '缺少必填参数 operatorId');
         return true;
       }
-      const runId = asNonEmptyString(body.runId);
+      const runId = asNonEmptyString(body.runId) ?? 'default_v4_run';
       const dataSourceId = asNonEmptyString(body.dataSourceId);
       const csvDir =
         asNonEmptyString(body.csvDir) ?? deps.resolveCsvDir?.(runId, dataSourceId);
-      const result = await deps.runOperator(operatorId, {
-        ...body,
-        operatorId,
-        ...(csvDir ? { csvDir } : {}),
-      });
+
+      // 若注入了 V4OperatorStore 且命中自定义或已覆写算子，直接按库中最新定义执行
+      const storedSpec = deps.v4OperatorStore?.get(operatorId);
+      let result: OperatorNodeExecutionResult;
+      if (storedSpec && deps.v4OperatorStore) {
+        const rawParams = asPlainRecord(body.params);
+        const inputDfDict = asPlainRecord(body.inputDfDict) as
+          | Record<string, PythonTableInput>
+          | undefined;
+        result = await runV4Operator(storedSpec, deps.v4OperatorStore.list(), {
+          runId,
+          ...(csvDir ? { csvDir } : {}),
+          ...(inputDfDict ? { inputDfDict } : {}),
+          ...(rawParams ? { paramOverrides: rawParams } : {}),
+          cache: deps.cache,
+        });
+      } else {
+        result = await deps.runOperator(operatorId, {
+          ...body,
+          operatorId,
+          ...(csvDir ? { csvDir } : {}),
+        });
+      }
       sendJson(res, 200, { ok: true, result });
       return true;
+    }
+
+    if (method === 'POST' && pathname === '/api/v4/operators/reset-all-overrides') {
+      const resetCount = opStore.seedBuiltins();
+      sendJson(res, 200, { ok: true, resetCount });
+      return true;
+    }
+
+    if (method === 'POST' && pathname === '/api/v4/operators') {
+      const body = await readJsonBody(req);
+      const rawSpec = asPlainRecord(body.operator) ?? body;
+      const check = validateV4OperatorSpecInput(rawSpec);
+      if (!check.valid || !check.spec) {
+        sendError(sendJson, res, 400, `V4 算子定义校验失败: ${check.errors.join('; ')}`, {
+          errors: check.errors,
+        });
+        return true;
+      }
+      const saved = opStore.upsert(check.spec, false);
+      sendJson(res, 200, { ok: true, operator: toV4OperatorSummaryItem(saved) });
+      return true;
+    }
+
+    const opOverrideMatch = pathname.match(/^\/api\/v4\/operators\/([^/]+)\/override$/);
+    if (method === 'DELETE' && opOverrideMatch) {
+      const operatorId = decodeURIComponent(opOverrideMatch[1]);
+      try {
+        const restored = opStore.resetOverride(operatorId);
+        sendJson(res, 200, {
+          ok: true,
+          operatorId,
+          operator: toV4OperatorSummaryItem(restored),
+        });
+      } catch (err) {
+        sendError(sendJson, res, 404, err instanceof Error ? err.message : String(err));
+      }
+      return true;
+    }
+
+    const opIdMatch = pathname.match(/^\/api\/v4\/operators\/([^/]+)$/);
+    if (opIdMatch) {
+      const operatorId = decodeURIComponent(opIdMatch[1]);
+      if (method === 'GET') {
+        const found = opStore.get(operatorId);
+        if (!found) {
+          sendError(sendJson, res, 404, `未找到 V4 算子: ${operatorId}`);
+          return true;
+        }
+        sendJson(res, 200, { ok: true, operator: toV4OperatorSummaryItem(found) });
+        return true;
+      }
+      if (method === 'PUT') {
+        const body = await readJsonBody(req);
+        const patch = (asPlainRecord(body.operator) ?? body) as Partial<V4StoredOperator>;
+        if (typeof patch.pythonCode === 'string') {
+          for (const pat of UNSAFE_PYTHON_PATTERNS) {
+            if (pat.test(patch.pythonCode)) {
+              sendError(sendJson, res, 400, `pythonCode 包含受限危险调用: ${pat.source}`);
+              return true;
+            }
+          }
+        }
+        try {
+          const updated = opStore.update(operatorId, patch);
+          sendJson(res, 200, { ok: true, operator: toV4OperatorSummaryItem(updated) });
+        } catch (err) {
+          sendError(sendJson, res, 404, err instanceof Error ? err.message : String(err));
+        }
+        return true;
+      }
+      if (method === 'DELETE') {
+        try {
+          const deleted = opStore.delete(operatorId);
+          if (!deleted) {
+            sendError(sendJson, res, 404, `未找到自定义 V4 算子: ${operatorId}`);
+            return true;
+          }
+          sendJson(res, 200, { ok: true, operatorId, deleted: true });
+        } catch (err) {
+          sendError(sendJson, res, 403, err instanceof Error ? err.message : String(err));
+        }
+        return true;
+      }
     }
 
     if (method === 'POST' && pathname === '/api/v4/operator-graphs/execute') {
@@ -1831,6 +2320,24 @@ export async function handleV4ApiRequest(
     // ── 2. 独立效果组件库 (EffectStore) ──
     if (method === 'GET' && pathname === '/api/v4/effects') {
       sendJson(res, 200, { ok: true, effects: deps.effectStore.listAll() });
+      return true;
+    }
+
+    if (method === 'POST' && pathname === '/api/v4/effects/preview-curve') {
+      const body = await readJsonBody(req);
+      const scoringRule = (asPlainRecord(body.scoringRule) ??
+        asPlainRecord(body.scoring)) as unknown as ScoringRule | undefined;
+      if (!scoringRule || !scoringRule.type) {
+        sendError(sendJson, res, 400, '缺少必填参数 scoringRule（或 scoring）');
+        return true;
+      }
+      const rawSamples = Number(body.samples);
+      const samples =
+        Number.isFinite(rawSamples) && rawSamples >= 2
+          ? Math.min(200, Math.floor(rawSamples))
+          : 40;
+      const points = sampleScoringCurve(scoringRule, samples);
+      sendJson(res, 200, { ok: true, points });
       return true;
     }
 
@@ -2481,6 +2988,211 @@ function buildV4MetricSnapshots(
         overall,
         bySide,
         metricSnapshots,
+      });
+      return true;
+    }
+
+    if (method === 'POST' && pathname === '/api/v4/system-dags/draft-nl') {
+      const body = await readJsonBody(req);
+      const prompt = asNonEmptyString(body.prompt);
+      if (!prompt) {
+        sendError(sendJson, res, 400, '任务需求描述 prompt 不能为空');
+        return true;
+      }
+      const drafted = draftV4SystemDagFromPrompt(prompt, deps.effectStore, {
+        systemId: asNonEmptyString(body.systemId),
+        name: asNonEmptyString(body.name),
+        metricGraphId: asNonEmptyString(body.metricGraphId),
+      });
+      const validation = deps.systemDagStore.validate(drafted.system);
+      sendJson(res, 200, {
+        ok: true,
+        system: drafted.system,
+        validation,
+        matchedDomains: drafted.matchedDomains,
+        rationale: drafted.rationale,
+      });
+      return true;
+    }
+
+    if (method === 'POST' && pathname === '/api/v4/system-dags/objective-weights') {
+      const body = await readJsonBody(req);
+      const weightMethod = (asNonEmptyString(body.method) ?? 'entropy') as
+        | 'entropy'
+        | 'critic'
+        | 'combined';
+      const objectiveMethod = (asNonEmptyString(body.objectiveMethod) ?? 'entropy') as
+        | 'entropy'
+        | 'critic';
+      const systemId = asNonEmptyString(body.systemId);
+      const rawSys = asPlainRecord(body.system) as unknown as EvaluationSystemDag | undefined;
+      const dag = rawSys ?? (systemId ? deps.systemDagStore.get(systemId) : undefined);
+
+      let targetNodeId = asNonEmptyString(body.targetNodeId) ?? dag?.terminalEffectNodeId ?? '';
+      let sourceNodeIds: string[] = [];
+      let targetNames: string[] = [];
+      let subjectiveFromDag: number[] = [];
+      let matrix: number[][] = [];
+      let validRuns: string[] = [];
+
+      if (Array.isArray(body.matrix) && body.matrix.length >= 2) {
+        matrix = body.matrix as number[][];
+        const colCount = Array.isArray(matrix[0]) ? matrix[0].length : 0;
+        if (colCount < 2) {
+          sendError(sendJson, res, 400, '决策矩阵列数（指标/效果数）必须大于等于 2');
+          return true;
+        }
+        sourceNodeIds = Array.isArray(body.sourceNodeIds)
+          ? (body.sourceNodeIds as string[])
+          : Array.from({ length: colCount }, (_, i) => `node_${i + 1}`);
+        targetNames = Array.isArray(body.criterionNames)
+          ? (body.criterionNames as string[])
+          : sourceNodeIds;
+        subjectiveFromDag = Array.from({ length: colCount }, () => 1 / colCount);
+        validRuns = Array.from({ length: matrix.length }, (_, i) => `sample_${i + 1}`);
+      } else {
+        if (!dag) {
+          sendError(sendJson, res, 400, '必须提供有效的 systemId / system 或直接提供 matrix 决策矩阵');
+          return true;
+        }
+        if (!targetNodeId) targetNodeId = dag.terminalEffectNodeId;
+        const incomingEdges = dag.edges.filter((e) => e.targetNodeId === targetNodeId);
+        if (incomingEdges.length < 2) {
+          sendError(sendJson, res, 400, `节点 ${targetNodeId} 的入边数量少于 2，无法执行客观赋权`);
+          return true;
+        }
+        const nodeLabelMap = new Map(dag.nodes.map((n) => [n.id, n.label || n.id]));
+        sourceNodeIds = incomingEdges.map((e) => e.sourceNodeId);
+        targetNames = sourceNodeIds.map((id) => nodeLabelMap.get(id) ?? id);
+        subjectiveFromDag = incomingEdges.map((e) =>
+          typeof e.weight === 'number' && Number.isFinite(e.weight) && e.weight > 0
+            ? e.weight
+            : 1 / incomingEdges.length,
+        );
+
+        const evalStore = deps.getEvalStore?.();
+        if (!evalStore) {
+          sendError(sendJson, res, 503, 'V4 评估历史存储未初始化，无法读取历史评估矩阵');
+          return true;
+        }
+        const evalIdFilter = Array.isArray(body.evalIds)
+          ? new Set((body.evalIds as unknown[]).map(String))
+          : null;
+        const runIdFilter = Array.isArray(body.runIds)
+          ? new Set((body.runIds as unknown[]).map(String))
+          : null;
+        const summaries = evalStore
+          .listV4Evaluations(undefined, 200)
+          .filter((s) => (!dag.systemId || s.systemId === dag.systemId))
+          .filter((s) => (!evalIdFilter || evalIdFilter.has(s.evalId)))
+          .filter((s) => (!runIdFilter || runIdFilter.has(s.runId)));
+
+        for (const s of summaries) {
+          const rec = evalStore.getV4Evaluation(s.evalId);
+          if (!rec?.overall?.nodeResults) continue;
+          const row: number[] = [];
+          let okRow = true;
+          for (const srcId of sourceNodeIds) {
+            const nr = rec.overall.nodeResults[srcId];
+            if (typeof nr?.score !== 'number' || !Number.isFinite(nr.score)) {
+              okRow = false;
+              break;
+            }
+            row.push(nr.score);
+          }
+          if (okRow) {
+            matrix.push(row);
+            validRuns.push(rec.runId);
+          }
+        }
+
+        if (matrix.length < 2) {
+          sendError(
+            sendJson,
+            res,
+            400,
+            '所选评估历史中有效可对比的 V4 方案少于 2 条，无法执行客观赋权（或请直接传入 matrix）',
+          );
+          return true;
+        }
+      }
+
+      const directions = targetNames.map(() => 'larger_is_better' as const);
+      let weights: number[] = [];
+      let objectiveWeights: number[] = [];
+      let diagnostics: Record<string, unknown> = {};
+
+      if (weightMethod === 'entropy') {
+        const ew = await computeEntropyWeights(matrix, directions, targetNames);
+        weights = ew.weights;
+        objectiveWeights = ew.weights;
+        diagnostics = { entropies: ew.entropies, namedWeights: ew.namedWeights, note: ew.note };
+      } else if (weightMethod === 'critic') {
+        const cw = await computeCriticWeights(matrix, directions, targetNames);
+        weights = cw.weights;
+        objectiveWeights = cw.weights;
+        diagnostics = {
+          stdDevs: cw.stdDevs,
+          conflictScores: cw.conflictScores,
+          namedWeights: cw.namedWeights,
+          note: cw.note,
+        };
+      } else if (weightMethod === 'combined') {
+        let objNote: string | undefined;
+        if (objectiveMethod === 'critic') {
+          const cw = await computeCriticWeights(matrix, directions, targetNames);
+          objectiveWeights = cw.weights;
+          objNote = cw.note;
+        } else {
+          const ew = await computeEntropyWeights(matrix, directions, targetNames);
+          objectiveWeights = ew.weights;
+          objNote = ew.note;
+        }
+        const rawSub =
+          Array.isArray(body.subjectiveWeights) &&
+          body.subjectiveWeights.length === sourceNodeIds.length
+            ? (body.subjectiveWeights as number[])
+            : subjectiveFromDag;
+        const sumSub = rawSub.reduce((a, b) => a + b, 0) || 1;
+        const subWeights = rawSub.map((w) => w / sumSub);
+        const alpha =
+          typeof body.alpha === 'number' && Number.isFinite(body.alpha)
+            ? Math.max(0, Math.min(1, body.alpha))
+            : 0.5;
+        const comb = await computeCombinedWeights({
+          subjectiveWeights: subWeights,
+          objectiveWeights,
+          alpha,
+          criterionNames: targetNames,
+        });
+        weights = comb.weights;
+        diagnostics = {
+          alphaUsed: comb.alphaUsed,
+          subjectiveUsed: comb.subjectiveUsed,
+          objectiveUsed: comb.objectiveUsed,
+          objectiveMethod,
+          namedWeights: comb.namedWeights,
+          note: objNote,
+        };
+      } else {
+        sendError(sendJson, res, 400, `不支持的赋权方法: ${String(weightMethod)}`);
+        return true;
+      }
+
+      const sumW = weights.reduce((a, b) => a + b, 0) || 1;
+      const normalizedWeights = weights.map((w) => Math.round((w / sumW) * 10000) / 10000);
+      sendJson(res, 200, {
+        ok: true,
+        method: weightMethod,
+        targetNodeId,
+        sourceNodeIds,
+        targetNames,
+        runs: validRuns,
+        matrix,
+        weights: normalizedWeights,
+        normalizedWeights,
+        objectiveWeights,
+        diagnostics,
       });
       return true;
     }

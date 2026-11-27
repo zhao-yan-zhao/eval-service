@@ -40,12 +40,16 @@ describe('Wave 3 Milestone Acceptance: Full 8-Chapter Plan A Three-Library Integ
     assert.strictEqual(validation.errors.length, 0);
 
     // 验证一库分流与 5 个原生组件注册
-    assert.strictEqual(ALL_V4_OPERATOR_SCRIPTS.length, 40);
-    assert.strictEqual(V4_FACT_OPERATORS.length, 28, '一库应精确导出 28 个 layer=fact 事实算子');
+    assert.strictEqual(ALL_V4_OPERATOR_SCRIPTS.length, 42);
+    assert.strictEqual(V4_FACT_OPERATORS.length, 30, '一库应精确导出 30 个 layer=fact 事实算子');
     assert.strictEqual(V4_BUILTIN_COMPONENTS.length, 5, '一库应导出 5 个原生画布组件');
     const factSummaries = listV4OperatorSummaries({ layer: 'fact' });
-    assert.strictEqual(factSummaries.length, 28);
-    assert.ok(factSummaries.every((s) => s.layer === 'fact' && s.engineKind === 'python_script'));
+    assert.strictEqual(factSummaries.length, 30);
+    assert.ok(
+      factSummaries.every(
+        (s) => s.layer === 'fact' && (s.engineKind === 'python_script' || s.engineKind === 'spatial'),
+      ),
+    );
 
     // 结构零漂移守卫：每个 from_operator 节点必须引用 layer === 'fact' 算子，且 targetField 精确存在于 outputColumns
     const l0Nodes = mgDef.nodes.filter((n) => n.metricConfig?.mode === 'from_operator');

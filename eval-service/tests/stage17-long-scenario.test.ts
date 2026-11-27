@@ -4,9 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { parseCsvDirectoryToSituation } from '../src/adapters/csv-adapter.ts';
-import { runPythonMetricsAdapter } from '../src/operators/effectiveness/metrics-py-adapter.ts';
+import { ALL_V4_OPERATOR_SCRIPTS, V4OperatorRunner } from '../src/operators/v4/index.ts';
 
-test('Stage 17：跨天长推演 C# TimeSpan 无损桥接 metrics.py 零降级兼容与秒数精算', async () => {
+test('Stage 17 (V4)：跨天长推演 C# TimeSpan 精确秒数解析与 V4 算子零降级兼容', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'f1-stage17-'));
   try {
     // 构造含跨天 TimeSpan (1.00:03:04.1000000 = 86584.1s, 2.14:59:59.5000000 = 226799.5s) 的规范 CSV 目录
@@ -66,17 +66,18 @@ test('Stage 17：跨天长推演 C# TimeSpan 无损桥接 metrics.py 零降级�
       `总推演时长应为 226799.5s，实际=${sit.totalGameSeconds}`,
     );
 
-    // 2. 验证 metrics-py-adapter 在跨天 TimeSpan 下零降级正常执行
-    const pyRes = await runPythonMetricsAdapter(tmpDir);
-    assert.equal(
-      pyRes.available,
-      true,
-      `跨天 TimeSpan 不应触发 metrics.py 降级，reason=${pyRes.reason ?? 'none'}`,
-    );
-    assert.ok(
-      pyRes.warnings.some((w) => w.includes('跨天 TimeSpan')),
-      'warnings 中应记录跨天 TimeSpan 锚定转换提示',
-    );
+    // 2. 验证 V4 算子在跨天 TimeSpan CSV 上零降级正常执行
+    const runner = new V4OperatorRunner(ALL_V4_OPERATOR_SCRIPTS);
+    try {
+      const v4Res = await runner.runOperator('cost.side_attrition_metrics', {
+        runId: 'stage17-long-run',
+        csvDir: tmpDir,
+      });
+      assert.equal(v4Res.status, 'valid', `跨天 TimeSpan 下 V4 算子应正常产出，reason=${v4Res.missingDataReason ?? 'none'}`);
+      assert.ok(v4Res.dataset && v4Res.dataset.rows.length >= 2);
+    } finally {
+      await runner.dispose();
+    }
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

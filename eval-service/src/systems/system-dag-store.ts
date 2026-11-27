@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { EvalSqliteStore } from '../adapters/sqlite-store.ts';
 import type { EvaluationSystemDag } from '../core/types.ts';
 import { defaultEffectStore, type EffectStore } from '../effects/store.ts';
 import {
@@ -7,6 +8,15 @@ import {
   validateSystemDag,
   type SystemDagValidationResult,
 } from './dag-evaluator.ts';
+
+function isSqliteStoreLike(v: unknown): v is EvalSqliteStore {
+  return (
+    Boolean(v) &&
+    typeof v === 'object' &&
+    typeof (v as EvalSqliteStore).listV4SystemDags === 'function' &&
+    typeof (v as EvalSqliteStore).getMeta === 'function'
+  );
+}
 
 const DEFAULT_SYSTEM_DAGS_PATH = path.resolve(
   import.meta.dirname,
@@ -25,7 +35,7 @@ export type StoredEvaluationSystemDag = EvaluationSystemDag & {
 
 // ──────────────────── 内置多层级体系 DAG 示范预设 ────────────────────
 
-const BUILTIN_SYSTEM_DAGS: StoredEvaluationSystemDag[] = [
+export const BUILTIN_SYSTEM_DAGS: StoredEvaluationSystemDag[] = [
   {
     systemId: 'sys_v4_metrics_guide_full',
     name: '作战效能综合评估体系 (全域基线)',
@@ -617,23 +627,80 @@ const BUILTIN_SYSTEM_DAGS: StoredEvaluationSystemDag[] = [
 export class SystemDagStore {
   private readonly filePath: string;
   private readonly effectStore: EffectStore;
+  private readonly includeBuiltins: boolean;
+  private sqliteStore?: EvalSqliteStore;
   private builtins: StoredEvaluationSystemDag[] = [];
   private custom: Map<string, StoredEvaluationSystemDag> = new Map();
 
   constructor(
-    filePath = DEFAULT_SYSTEM_DAGS_PATH,
+    filePathOrStore: string | EvalSqliteStore = DEFAULT_SYSTEM_DAGS_PATH,
     effectStore: EffectStore = defaultEffectStore,
-    options?: { includeBuiltins?: boolean },
+    options?: { includeBuiltins?: boolean; sqliteStore?: EvalSqliteStore },
   ) {
-    this.filePath = filePath;
-    this.effectStore = effectStore;
-    if (options?.includeBuiltins !== false) {
-      this.builtins = BUILTIN_SYSTEM_DAGS.map((d) => structuredClone(d));
+    if (isSqliteStoreLike(filePathOrStore)) {
+      this.filePath = DEFAULT_SYSTEM_DAGS_PATH;
+      this.sqliteStore = filePathOrStore;
+    } else {
+      this.filePath = filePathOrStore;
+      this.sqliteStore = options?.sqliteStore;
     }
+    this.effectStore = effectStore;
+    this.includeBuiltins = options?.includeBuiltins !== false;
     this.load();
   }
 
+  getSqliteStore(): EvalSqliteStore | undefined {
+    return this.sqliteStore;
+  }
+
+  rebindSqliteStore(newStore: EvalSqliteStore): void {
+    this.sqliteStore = newStore;
+    this.load();
+  }
+
+  private loadFromSqlite(): void {
+    if (!this.sqliteStore) return;
+    const isBlank = this.sqliteStore.getMeta('is_blank') === '1';
+
+    if (!isBlank && this.sqliteStore.countV4SystemDags() === 0) {
+      if (this.includeBuiltins) {
+        for (const item of BUILTIN_SYSTEM_DAGS) {
+          this.sqliteStore.upsertV4SystemDag({ ...structuredClone(item), builtin: true }, true);
+        }
+      }
+      if (this.filePath && fs.existsSync(this.filePath)) {
+        try {
+          const raw = fs.readFileSync(this.filePath, 'utf-8');
+          const parsed = JSON.parse(raw) as StoredEvaluationSystemDag[];
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (item && item.systemId) {
+                this.sqliteStore.upsertV4SystemDag({ ...item, builtin: false }, false);
+              }
+            }
+          }
+        } catch {
+          // 忽略格式异常的旧 JSON 文件
+        }
+      }
+    }
+
+    this.builtins = this.sqliteStore.listV4SystemDags({ builtinOnly: true });
+    this.custom.clear();
+    for (const item of this.sqliteStore.listV4SystemDags({ customOnly: true })) {
+      if (item?.systemId) {
+        this.custom.set(item.systemId, { ...item, builtin: false });
+      }
+    }
+  }
+
   private load(): void {
+    if (this.sqliteStore) {
+      this.loadFromSqlite();
+      return;
+    }
+
+    this.builtins = this.includeBuiltins ? BUILTIN_SYSTEM_DAGS.map((d) => structuredClone(d)) : [];
     this.custom.clear();
     if (!this.filePath || !fs.existsSync(this.filePath)) return;
     try {
@@ -652,6 +719,7 @@ export class SystemDagStore {
   }
 
   private persist(): void {
+    if (this.sqliteStore) return;
     if (!this.filePath) return;
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
@@ -703,7 +771,11 @@ export class SystemDagStore {
     };
 
     this.custom.set(clean.systemId, clean);
-    this.persist();
+    if (this.sqliteStore) {
+      this.sqliteStore.upsertV4SystemDag(clean, false);
+    } else {
+      this.persist();
+    }
     return structuredClone(clean);
   }
 
@@ -715,7 +787,11 @@ export class SystemDagStore {
     }
     const deleted = this.custom.delete(systemId);
     if (deleted) {
-      this.persist();
+      if (this.sqliteStore) {
+        this.sqliteStore.deleteV4SystemDag(systemId);
+      } else {
+        this.persist();
+      }
     }
     return deleted;
   }

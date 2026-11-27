@@ -82,12 +82,12 @@ test('dag-layout: sys_v4_metrics_guide_full aligns 1:1 input proxy edges horizon
 
   const canvasNodes: DagCanvasNode[] = sys.nodes.map((n) => ({
     id: n.id,
-    type: n.kind,
+    kind: n.kind as DagCanvasNode['kind'],
     label: n.label,
     position: n.position,
     width: 260,
     height: 100,
-    data: n,
+    status: 'idle',
   }));
 
   const canvasEdges: DagCanvasEdge[] = sys.edges.map((e) => ({

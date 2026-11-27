@@ -120,14 +120,17 @@ export function CockpitView({
 
   const systemSelectorOptions = useMemo<UnifiedAssetOption[]>(
     () =>
-      v4Systems.map((s) => ({
-        id: s.systemId,
-        label: s.name || s.systemId,
-        subLabel: s.systemId,
-        group: s.builtin ? '内置评估体系' : '自定义体系',
-        badge: `v${s.version || '1.0.0'}`,
-        badgeTone: s.builtin ? 'indigo' : 'cyan',
-      })),
+      v4Systems.map((s) => {
+        const isBuiltin = Boolean((s as EvaluationSystemDag & { builtin?: boolean }).builtin);
+        return {
+          id: s.systemId,
+          label: s.name || s.systemId,
+          subLabel: s.systemId,
+          group: isBuiltin ? '内置评估体系' : '自定义体系',
+          badge: `v${s.version || '1.0.0'}`,
+          badgeTone: isBuiltin ? 'indigo' : 'cyan',
+        };
+      }),
     [v4Systems],
   );
 

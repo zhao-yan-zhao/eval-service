@@ -1173,8 +1173,9 @@ export function evaluateFormulaDataset(
         finalVal = rawVal !== null && rawVal !== undefined ? coerceToBoolean(rawVal) : null;
       }
 
-      rowScope[colCfg.columnName] = finalVal;
-      if (colCfg.overwriteColumn && colCfg.overwriteColumn !== colCfg.columnName) {
+      const colName = colCfg.columnName ?? colCfg.name ?? '';
+      rowScope[colName] = finalVal;
+      if (colCfg.overwriteColumn && colCfg.overwriteColumn !== colName) {
         rowScope[colCfg.overwriteColumn] = finalVal;
       }
     }
@@ -1193,14 +1194,16 @@ export function evaluateFormulaDataset(
   }
 
   for (const c of sortedCols) {
-    colMap.set(c.columnName, {
-      type: c.dataType,
+    const colName = c.columnName ?? c.name ?? '';
+    const colType: FieldDataType = c.dataType ?? 'number';
+    colMap.set(colName, {
+      type: colType,
       isDerived: true,
       description: c.description ?? `公式衍生列: ${c.expression}`,
     });
     if (c.overwriteColumn) {
       colMap.set(c.overwriteColumn, {
-        type: c.dataType,
+        type: colType,
         isDerived: true,
         description: `由衍生列覆盖: ${c.expression}`,
       });

@@ -207,7 +207,7 @@ def evaluate(context):
   assert.ok(secCallRes.stderr?.includes('open'));
 });
 
-test('Stage 14.5 - 全部 40 个算子 Python 脚本契约 (input_df_dict / prev_output_df / output_df) 全真机通过', async () => {
+test('Stage 14.5 - 全部 41 个算子 Python 脚本契约 (input_df_dict / prev_output_df / output_df) 全真机通过', async () => {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const pipelinesPath = path.resolve(__dirname, '../data/operator-pipelines.json');
   const pipelines = JSON.parse(fs.readFileSync(pipelinesPath, 'utf-8')) as Record<string, any>;
@@ -220,7 +220,7 @@ test('Stage 14.5 - 全部 40 个算子 Python 脚本契约 (input_df_dict / prev
     }
   }
 
-  assert.equal(pyEntries.length, 40, '应包含 40 个 Python 核心算法算子');
+  assert.equal(pyEntries.length, 41, '应包含 41 个 Python 核心算法算子');
 
   const emptyOps: string[] = [];
   for (const { opId, code } of pyEntries) {

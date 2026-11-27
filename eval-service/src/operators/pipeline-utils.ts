@@ -314,7 +314,7 @@ export function extractRunTableDataset(
 
         const rowObj: Record<string, unknown> = {
           Time: ev.clockText || ev.scenarioSeconds,
-          EventID: ev.id,
+          EventID: ev.eventId,
           Side: ev.side || '',
           Kind: ev.kind,
           Subject: ev.subject || '',

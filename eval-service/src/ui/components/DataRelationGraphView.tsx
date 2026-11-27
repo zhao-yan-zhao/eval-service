@@ -23,11 +23,11 @@ import {
   Link2,
   X
 } from 'lucide-react';
-import type { F1OutputCatalog, MetricAtomMeta } from '../api.ts';
+import type { F1OutputCatalog, V4OperatorItem } from '../api.ts';
 
 export interface DataRelationGraphViewProps {
   catalog: F1OutputCatalog | null;
-  operators?: MetricAtomMeta[];
+  operators?: V4OperatorItem[];
 }
 
 export type { FieldDef, TableNode, RelationLink } from './relation-graph-catalog.ts';
@@ -994,16 +994,14 @@ print(f"关联对齐样本行数: {len(merged_df)} 行")`;
                             {/* 字段名与键图标 */}
                             <div className="flex items-center gap-1.5 truncate pr-2">
                               {field.isKey && (
-                                <Key
-                                  className="w-3 h-3 text-amber-400 shrink-0"
-                                  title="主键 (Primary Key)"
-                                />
+                                <span title="主键 (Primary Key)" className="inline-flex shrink-0">
+                                  <Key className="w-3 h-3 text-amber-400" />
+                                </span>
                               )}
                               {field.isForeignKey && (
-                                <Link2
-                                  className="w-3 h-3 text-cyan-400 shrink-0"
-                                  title="外键 (Foreign Key)"
-                                />
+                                <span title="外键 (Foreign Key)" className="inline-flex shrink-0">
+                                  <Link2 className="w-3 h-3 text-cyan-400" />
+                                </span>
                               )}
                               <span
                                 className={`truncate ${

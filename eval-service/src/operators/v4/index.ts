@@ -1,5 +1,5 @@
 /**
- * F1 V4 一库实证算子总注册表与执行入口（共 40 项实证算子，覆盖 第 1~7 章）
+ * F1 V4 一库实证算子总注册表与执行入口（共 42 项实证算子，覆盖 第 1~8 章）
  */
 
 import type { OperatorNodeExecutionResult } from '../../core/types.ts';
@@ -10,6 +10,7 @@ import type {
 } from './types.ts';
 import { V4_OPERATORS_PART1 } from './scripts-part1.ts';
 import { V4_OPERATORS_PART2 } from './scripts-part2.ts';
+import { V4_OPERATORS_PART3 } from './scripts-part3.ts';
 import {
   V4OperatorRunner,
   type V4OperatorRunContext,
@@ -30,6 +31,7 @@ export { V4OperatorRunner, runV4Operator, runV4OperatorDag };
 export const ALL_V4_OPERATOR_SCRIPTS: V4OperatorScriptSpec[] = [
   ...V4_OPERATORS_PART1,
   ...(V4_OPERATORS_PART2 as unknown as V4OperatorScriptSpec[]),
+  ...V4_OPERATORS_PART3,
 ];
 
 export const V4_FACT_OPERATORS: V4OperatorScriptSpec[] = ALL_V4_OPERATOR_SCRIPTS.filter(

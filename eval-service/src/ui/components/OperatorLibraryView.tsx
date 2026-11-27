@@ -1,23 +1,18 @@
-import React, { useId, useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
 import {
   ArrowUpDown,
   BarChart3,
   Calculator,
   Code2,
   Compass,
-  CopyPlus,
   Cpu,
   Database,
   Eye,
-  ExternalLink,
   Layers,
   Lock,
-  Pencil,
   Play,
   Plus,
-  RotateCcw,
   Search,
-  Settings,
   Settings2,
   Sparkles,
   Target,
@@ -25,36 +20,18 @@ import {
   Workflow,
   X,
 } from 'lucide-react';
-import type {
-  CustomOperatorDefinition,
-  F1OutputCatalog,
-  IndicatorDefinition,
-  IndicatorSystem,
-  MetricAtomMeta,
-  StoredRunSummary,
+import {
+  evalApi,
+  type F1OutputCatalog,
+  type StoredRunSummary,
+  type TableDataset,
+  type V4OperatorItem,
 } from '../api.ts';
 import { PipelineCanvasStudio } from './pipeline-canvas/index.ts';
 import { OperatorInlineEditor } from './OperatorInlineEditor.tsx';
 import { CreateOperatorModal } from './CreateOperatorModal.tsx';
-import { evalApi } from '../api.ts';
 import { V4TablePivotPreview } from './v4/index.ts';
-import type { TableDataset } from '../../core/types.ts';
 
-interface V4OperatorDetailInfo {
-  id: string;
-  name: string;
-  chapter: number;
-  layer?: 'fact' | 'legacy_aggregate';
-  requiredTables?: string[];
-  optionalTables?: string[];
-  outputColumnNames?: string[];
-  parameterPorts?: Array<{ key: string; label: string; defaultValue: unknown; description?: string }>;
-  pythonCode?: string;
-}
-
-/**
- * 业务领域分类定义（一库算子库的核心业务分类）
- */
 export const DOMAIN_CATEGORIES = [
   { id: 'all' as const, label: '全部算子' },
   { id: 'time' as const, label: '时效域' },
@@ -84,9 +61,6 @@ export function getDomainBadge(category: string): { label: string; badgeBg: stri
   }
 }
 
-/**
- * 基础算法库条目接口
- */
 export interface RegisteredAlgorithm {
   id: string;
   seq: number;
@@ -181,107 +155,30 @@ export function getAlgoIcon(name: string) {
   }
 }
 
-/**
- * 统计引用某基础算法的具体算子清单
- */
-export function getAlgoReferencedOps(algo: RegisteredAlgorithm, operators: MetricAtomMeta[]): MetricAtomMeta[] {
-  switch (algo.id) {
-    case 'algo_table_input':
-      return operators;
-    case 'algo_result_output':
-      return operators;
-    case 'algo_spatial_geom':
-      return operators.filter(
-        (op) =>
-          op.id.includes('corridor') ||
-          op.id.includes('spatial') ||
-          op.id.includes('range') ||
-          op.id.includes('containment'),
-      );
-    case 'algo_python_script':
-      return operators.filter(
-        (op) =>
-          op.id.includes('dynamic') ||
-          op.id.includes('envelope') ||
-          op.id.includes('bvr') ||
-          op.id.includes('flight'),
-      );
-    case 'algo_group_agg':
-      return operators.filter(
-        (op) =>
-          op.customDef?.mode === 'aggregation' ||
-          op.id.includes('total') ||
-          op.id.includes('sum') ||
-          op.id.includes('count') ||
-          op.id.includes('avg'),
-      );
-    case 'algo_lib_formula':
-    default:
-      return operators.filter(
-        (op) =>
-          op.customDef?.mode === 'formula_pipeline' ||
-          (!op.id.includes('total') && !op.id.includes('sum')),
-      );
-  }
-}
-
-/**
- * 基础算法/流水线实现类型（表输入、行内公式、跨行聚合、结果输出、空间几何、Python脚本）
- */
-export function getOperatorPipelineCategory(op: MetricAtomMeta): {
+export function getOperatorPipelineCategory(op: V4OperatorItem): {
   id: 'data_input' | 'inline_calc' | 'group_agg' | 'result_output' | 'spatial' | 'python_script';
   label: string;
   badgeBg: string;
 } {
-  const pCat = (op as any).pipelineCategory || op.customDef?.pipelineCategory;
-  if (pCat === 'spatial') return { id: 'spatial', label: '空间几何', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
-  if (pCat === 'python_script') return { id: 'python_script', label: 'Python 脚本', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' };
-  if (pCat === 'data_input') return { id: 'data_input', label: '数据抽取', badgeBg: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
-  if (pCat === 'inline_calc') return { id: 'inline_calc', label: '行内公式', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
-  if (pCat === 'group_agg') return { id: 'group_agg', label: '跨行聚合', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
-  if (pCat === 'result_output') return { id: 'result_output', label: '二维表输出', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
-
-  if (
-    op.id.includes('corridor') ||
-    op.id.includes('centroid') ||
-    op.id.includes('scatter') ||
-    op.id.includes('hull') ||
-    op.id.includes('area_coverage')
-  ) {
-    return { id: 'spatial', label: '空间几何', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
+  switch (op.engineKind) {
+    case 'spatial':
+      return { id: 'spatial', label: '空间几何', badgeBg: 'bg-violet-500/15 text-violet-400 border-violet-500/30' };
+    case 'python_script':
+      return { id: 'python_script', label: 'Python 脚本', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' };
+    case 'data_input':
+      return { id: 'data_input', label: '数据抽取', badgeBg: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
+    case 'inline_calc':
+      return { id: 'inline_calc', label: '行内公式', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
+    case 'group_agg':
+      return { id: 'group_agg', label: '跨行聚合', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
+    default:
+      return { id: 'python_script', label: 'Python 脚本', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' };
   }
-
-  if (op.id.includes('saturation') || op.id.includes('mcda') || op.id.includes('python')) {
-    return { id: 'python_script', label: 'Python 脚本', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' };
-  }
-
-  if (
-    op.mode === 'aggregation' ||
-    op.customDef?.mode === 'aggregation' ||
-    op.customDef?.aggregationConfig ||
-    op.id.includes('total') ||
-    op.id.includes('count') ||
-    op.id.includes('avg') ||
-    op.id.includes('interval') ||
-    op.id.includes('hit_rate') ||
-    op.id.includes('emcon') ||
-    op.id.includes('detection')
-  ) {
-    return { id: 'group_agg', label: '跨行聚合', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
-  }
-
-  if (op.id.includes('mission_success') || op.outputType === 'score') {
-    return { id: 'result_output', label: '二维表输出', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
-  }
-
-  return { id: 'inline_calc', label: '公式 (行内计算)', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
 }
 
 export interface OperatorLibraryViewProps {
   loading?: boolean;
-  operators: MetricAtomMeta[];
-  indicators?: IndicatorDefinition[];
-  systems?: IndicatorSystem[];
+  operators: V4OperatorItem[];
   runs: StoredRunSummary[];
   selectedRunId: string;
   activeSourceId?: string;
@@ -292,14 +189,12 @@ export interface OperatorLibraryViewProps {
   onOpenSettings?: (tab?: string) => void;
 }
 
-type SortField = 'id' | 'category' | 'readiness' | 'outputType';
+type SortField = 'id' | 'category' | 'layer' | 'militaryLevel';
 type SortDir = 'asc' | 'desc';
 
 export function OperatorLibraryView({
   loading = false,
   operators,
-  indicators = [],
-  systems = [],
   runs,
   selectedRunId,
   activeSourceId,
@@ -309,12 +204,9 @@ export function OperatorLibraryView({
   onRefresh = async () => {},
   onOpenSettings,
 }: OperatorLibraryViewProps) {
-  // 视图模式：默认直接呈现算子列表；点击操作进入内部结构画布 (PipelineCanvasStudio)
   const [viewMode, setViewMode] = useState<'list' | 'canvas'>('list');
-  const [selectedCanvasOp, setSelectedCanvasOp] = useState<MetricAtomMeta | null>(null);
+  const [selectedCanvasOp, setSelectedCanvasOp] = useState<V4OperatorItem | null>(null);
 
-  // V4 实证算子内部源码与实时二维表试算缓存
-  const [v4SpecMap, setV4SpecMap] = useState<Record<string, V4OperatorDetailInfo>>({});
   const [v4RunLoading, setV4RunLoading] = useState(false);
   const [v4RunResult, setV4RunResult] = useState<{
     operatorId: string;
@@ -324,30 +216,9 @@ export function OperatorLibraryView({
     latencyMs?: number;
   } | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    fetch('/api/v4/operators?layer=all')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        if (!active || !json?.operators || !Array.isArray(json.operators)) return;
-        const map: Record<string, V4OperatorDetailInfo> = {};
-        for (const item of json.operators) {
-          if (item?.id) map[item.id] = item;
-        }
-        setV4SpecMap(map);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // 新增自定义算子弹窗状态
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-
-  // 原生 <dialog> 详情与行内配置状态
-  const [detailOp, setDetailOp] = useState<MetricAtomMeta | null>(null);
-  const [editingOp, setEditingOp] = useState<MetricAtomMeta | null>(null);
+  const [detailOp, setDetailOp] = useState<V4OperatorItem | null>(null);
+  const [editingOp, setEditingOp] = useState<V4OperatorItem | null>(null);
   const editorDialogRef = useRef<HTMLDialogElement | null>(null);
   const detailDialogRef = useRef<HTMLDialogElement | null>(null);
   const editorHeadingId = useId();
@@ -362,9 +233,7 @@ export function OperatorLibraryView({
     }
   }, [viewMode]);
 
-  // 算子业务领域分类筛选（时效域、效能域、态势域、合规域、成本域）
   const [domainFilter, setDomainFilter] = useState<DomainFilterKey>('all');
-  // 辅助过滤：底层算法实现方式（全部 / 行内公式 / 跨行聚合 / 数据输入 / 结果输出）
   const [algoFilter, setAlgoFilter] = useState<AlgorithmFilterKey>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('category');
@@ -387,7 +256,6 @@ export function OperatorLibraryView({
     }
   }, [focusedOperatorTarget, operators]);
 
-  // 领域分类统计（一库业务分类）
   const domainCounts = useMemo(() => {
     const counts: Record<string, number> = {
       all: operators.length,
@@ -405,7 +273,6 @@ export function OperatorLibraryView({
     return counts;
   }, [operators]);
 
-  // 算法实现方式统计
   const algoCounts = useMemo(() => {
     const counts: Record<string, number> = {
       all: operators.length,
@@ -423,21 +290,17 @@ export function OperatorLibraryView({
     return counts;
   }, [operators]);
 
-  // 排序与筛选算子
   const filteredOperators = useMemo(() => {
     let list = operators.filter((op) => {
-      // 1. 业务领域分类筛选（时效域、效能域、态势域、合规域、成本域）
       if (domainFilter !== 'all' && op.category !== domainFilter) {
         return false;
       }
-      // 2. 算法实现辅助筛选
       if (algoFilter !== 'all') {
         const cat = getOperatorPipelineCategory(op);
         if (cat.id !== algoFilter) {
           return false;
         }
       }
-      // 3. 文本搜索
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchId = op.id.toLowerCase().includes(q);
@@ -454,12 +317,10 @@ export function OperatorLibraryView({
         cmp = a.id.localeCompare(b.id);
       } else if (sortField === 'category') {
         cmp = a.category.localeCompare(b.category);
-      } else if (sortField === 'readiness') {
-        const rA = a.readiness || '';
-        const rB = b.readiness || '';
-        cmp = rA.localeCompare(rB);
-      } else if (sortField === 'outputType') {
-        cmp = a.outputType.localeCompare(b.outputType);
+      } else if (sortField === 'layer') {
+        cmp = (a.layer ?? '').localeCompare(b.layer ?? '');
+      } else if (sortField === 'militaryLevel') {
+        cmp = (a.militaryLevel ?? '').localeCompare(b.militaryLevel ?? '');
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
@@ -476,19 +337,18 @@ export function OperatorLibraryView({
     }
   };
 
-  // 删除自定义算子
-  const handleDeleteOperator = async (op: MetricAtomMeta) => {
-    if (!op.isCustom) {
-      alert('内置标准算子受保护，无法删除；可通过[配置]修改默认参数或恢复默认。');
+  const handleDeleteOperator = async (op: V4OperatorItem) => {
+    if (op.isBuiltin) {
+      alert('内置标准 V4 算子受保护，无法删除；可通过[配置]修改默认参数或恢复默认。');
       return;
     }
     const confirmed = window.confirm(
-      `确定要彻底删除自定义算子 [${op.name} (${op.id})] 吗？\n删除后该算子的算法流水线将被移除，请确保未被二库指标引用。`
+      `确定要彻底删除自定义 V4 算子 [${op.name} (${op.id})] 吗？\n删除后该算子的算法流水线将被移除，请确保未被二库指标图引用。`,
     );
     if (!confirmed) return;
 
     try {
-      const res = await evalApi.deleteOperator(op.id);
+      const res = await evalApi.deleteV4Operator(op.id);
       if (res?.deleted) {
         alert(`已成功删除算子 [${op.name}]！`);
         await onRefresh();
@@ -500,7 +360,6 @@ export function OperatorLibraryView({
     }
   };
 
-  // 控制原生 dialog 弹窗开启
   useEffect(() => {
     const dialog = editorDialogRef.current;
     if (!dialog) return;
@@ -541,12 +400,11 @@ export function OperatorLibraryView({
         </div>
       ) : (
         <>
-          {/* ═════════════════ 1. 统一单行紧凑顶栏（下拉直切 + 筛选 + 操作） ═════════════════ */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#30363d] bg-[#161b22] px-3.5 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1.5 rounded-md border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-1 text-xs font-semibold text-cyan-300">
                 <Cpu className="h-3.5 w-3.5" />
-                <span>算子资产</span>
+                <span>V4 算子资产</span>
               </div>
 
               <span className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono text-[11px] text-slate-300 tabular-nums">
@@ -582,7 +440,6 @@ export function OperatorLibraryView({
                 <option value="inline_calc">行内公式 ({algoCounts.inline_calc ?? 0})</option>
                 <option value="group_agg">跨行聚合 ({algoCounts.group_agg ?? 0})</option>
                 <option value="data_input">数据抽取 ({algoCounts.data_input ?? 0})</option>
-                <option value="result_output">二维表输出 ({algoCounts.result_output ?? 0})</option>
               </select>
 
               <div className="relative w-44 xl:w-52">
@@ -627,19 +484,17 @@ export function OperatorLibraryView({
             </div>
           </div>
 
-          {/* 冷启动 / 场次关联就绪引导 */}
           {operators.length > 0 && !selectedRunId && (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-[#161b22] to-blue-950/30 px-3.5 py-2 text-xs text-cyan-200">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 shrink-0 text-cyan-400" />
                 <span>
-                  一库算子库已就绪（共 {operators.length} 个算子）。各算子的数据源投影与就绪门控依赖真实推演事件日志，请在右上角选择推演场次进行完整门控验证。
+                  一库 V4 算子库已就绪（共 {operators.length} 个算子）。请在右上角选择推演场次进行实时二维表试算与门控验证。
                 </span>
               </div>
             </div>
           )}
 
-          {/* ═════════════════ 2. 响应式限高内滚动算子列表 ═════════════════ */}
           <section
             id="op-panel-catalog"
             role="tabpanel"
@@ -660,12 +515,12 @@ export function OperatorLibraryView({
                     <th className="px-2.5 py-2.5 whitespace-nowrap">标识与名称</th>
                     <th className="px-2.5 py-2.5 whitespace-nowrap">领域</th>
                     <th className="px-2.5 py-2.5 whitespace-nowrap">实现方式</th>
-                    <th className="px-2.5 py-2.5 whitespace-nowrap">类型</th>
+                    <th className="px-2.5 py-2.5 whitespace-nowrap">层级</th>
                     <th className="px-2.5 py-2.5">算法说明</th>
                     <th className="px-2.5 py-2.5 whitespace-nowrap">
                       <button
                         type="button"
-                        onClick={() => toggleSort('readiness')}
+                        onClick={() => toggleSort('layer')}
                         className="inline-flex items-center gap-1 font-semibold text-slate-300 hover:text-white whitespace-nowrap"
                       >
                         <span>就绪门控</span>
@@ -675,405 +530,364 @@ export function OperatorLibraryView({
                     <th className="px-2.5 py-2.5 text-right whitespace-nowrap">操作</th>
                   </tr>
                 </thead>
-            <tbody className="divide-y divide-slate-800/60 font-sans">
-              {loading && operators.length === 0 ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <tr key={`op-skeleton-${i}`} className="animate-pulse">
-                    <td className="px-4 py-3 text-center">
-                      <div className="mx-auto h-3 w-5 rounded bg-slate-800" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="h-3 w-32 rounded bg-slate-700/60 mb-1.5" />
-                      <div className="h-3.5 w-48 rounded bg-slate-800/80" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="h-4 w-14 rounded bg-slate-800" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="h-4 w-16 rounded bg-slate-800" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="h-4 w-12 rounded bg-slate-800" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="h-3.5 w-64 rounded bg-slate-800/70" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="h-4 w-20 rounded bg-slate-800" />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-block h-6 w-16 rounded bg-slate-800" />
-                    </td>
-                  </tr>
-                ))
-              ) : filteredOperators.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500">
-                    <div className="flex flex-col items-center gap-2">
-                      <span>未检索到符合条件的算子</span>
-                      {operators.length === 0 && (
-                        <button
-                          type="button"
-                          onClick={() => void onRefresh()}
-                          className="mt-1 rounded-md border border-cyan-500/40 bg-cyan-500/15 px-3 py-1 text-xs text-cyan-200 hover:bg-cyan-500/25 cursor-pointer"
-                        >
-                          刷新算子库
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredOperators.map((op, idx) => {
-                  const domainInfo = getDomainBadge(op.category);
-                  const pCat = getOperatorPipelineCategory(op);
-                  const isLastVisited = selectedCanvasOp?.id === op.id;
-                  return (
-                    <tr
-                      key={op.id}
-                      className={`transition ${isLastVisited ? 'bg-cyan-500/10 hover:bg-cyan-500/15' : 'hover:bg-slate-800/30'}`}
-                    >
-                      <td className="px-4 py-3 text-center font-mono text-slate-500 text-[11px]">
-                        {idx + 1}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11px] text-cyan-400/90 font-medium">{op.id}</span>
-                          {v4SpecMap[op.id] && (
-                            <span
-                              className={`rounded px-1.5 py-0.2 text-[9px] font-semibold border ${
-                                v4SpecMap[op.id].layer === 'fact'
-                                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                                  : 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                              }`}
+                <tbody className="divide-y divide-slate-800/60 font-sans">
+                  {loading && operators.length === 0 ? (
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <tr key={`op-skeleton-${i}`} className="animate-pulse">
+                        <td className="px-4 py-3 text-center">
+                          <div className="mx-auto h-3 w-5 rounded bg-slate-800" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-3 w-32 rounded bg-slate-700/60 mb-1.5" />
+                          <div className="h-3.5 w-48 rounded bg-slate-800/80" />
+                        </td>
+                        <td className="px-4 py-3"><div className="h-4 w-14 rounded bg-slate-800" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-16 rounded bg-slate-800" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-12 rounded bg-slate-800" /></td>
+                        <td className="px-4 py-3"><div className="h-3.5 w-64 rounded bg-slate-800/70" /></td>
+                        <td className="px-4 py-3"><div className="h-4 w-20 rounded bg-slate-800" /></td>
+                        <td className="px-4 py-3 text-right"><div className="inline-block h-6 w-16 rounded bg-slate-800" /></td>
+                      </tr>
+                    ))
+                  ) : filteredOperators.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                        <div className="flex flex-col items-center gap-2">
+                          <span>未检索到符合条件的算子</span>
+                          {operators.length === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => void onRefresh()}
+                              className="mt-1 rounded-md border border-cyan-500/40 bg-cyan-500/15 px-3 py-1 text-xs text-cyan-200 hover:bg-cyan-500/25 cursor-pointer"
                             >
-                              {v4SpecMap[op.id].layer === 'fact' ? 'V4 事实' : 'V4 汇总'}
-                            </span>
+                              刷新算子库
+                            </button>
                           )}
                         </div>
-                        <div className="font-bold text-xs text-slate-100 mt-0.5">{op.name}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-block whitespace-nowrap rounded-md border px-2 py-0.5 text-[10px] font-semibold ${domainInfo.badgeBg}`}>
-                          {domainInfo.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-medium ${pCat.badgeBg}`}>
-                          {pCat.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-slate-300 text-[11px]">
-                        {op.outputType}
-                      </td>
-                      <td className="px-4 py-3 text-slate-300 text-xs leading-relaxed max-w-md">
-                        <div>{op.description}</div>
-                        {op.customDef?.formulaConfig?.derivedColumns?.[0] && (
-                          <div className="mt-1 font-mono text-[10px] text-cyan-300/80 bg-slate-900/80 rounded px-1.5 py-0.5 inline-block">
-                            公式: {op.customDef.formulaConfig.derivedColumns[0].expression}
-                          </div>
-                        )}
-                        {(op.customDef?.aggregationConfig?.metrics?.[0] || (op.customDef?.aggregationConfig as any)?.aggregations?.[0]) && (
-                          <div className="mt-1 font-mono text-[10px] text-amber-300/80 bg-slate-900/80 rounded px-1.5 py-0.5 inline-block">
-                            聚合: {op.customDef?.aggregationConfig?.metrics?.[0]?.method ?? (op.customDef?.aggregationConfig as any)?.aggregations?.[0]?.op}({op.customDef?.aggregationConfig?.metrics?.[0]?.sourceColumn ?? (op.customDef?.aggregationConfig as any)?.aggregations?.[0]?.sourceField})
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {op.readiness === "batch_b_pending" ? (
-                          <span
-                            className="inline-block rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-300"
-                            title="batch_b_pending: 待后续批次仿真数据补齐"
-                          >
-                            Batch B 待补全
-                          </span>
-                        ) : (
-                          <span
-                            className="inline-block rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400"
-                            title="batch_a_ready: 基础批次实证就绪"
-                          >
-                            Batch A 就绪
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5 pr-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCanvasOp(op);
-                            setViewMode('canvas');
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/50 bg-cyan-500/20 px-2.5 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30 shadow-sm transition"
-                          title="在可视化画布中编辑此算子流水线"
-                        >
-                          <Workflow className="h-3.5 w-3.5" />
-                          <span>画布编排</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setEditingOp(op)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1 text-xs text-slate-200 hover:text-white hover:bg-slate-700 transition"
-                          title="配置参数与计算规则"
-                        >
-                          <Settings2 className="h-3.5 w-3.5 text-slate-400" />
-                          <span>配置</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDetailOp(op)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1 text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-700 transition"
-                          title="查看底层数据来源与字段映射"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          <span>详情</span>
-                        </button>
-
-                        {op.isCustom ? (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteOperator(op)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2 py-1 text-xs font-medium text-rose-300 hover:bg-rose-500/30 hover:text-rose-100 transition shadow-sm"
-                            title="删除此自定义算子"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-rose-400" />
-                            <span>删除</span>
-                          </button>
-                        ) : (
-                          <span
-                            className="inline-flex items-center gap-0.5 px-1.5 py-1 text-[11px] text-slate-600 select-none"
-                            title="内置标准算子受保护，不可删除；支持参数修改与恢复默认"
-                          >
-                            <Lock className="h-3 w-3" />
-                            <span>内置</span>
-                          </span>
-                        )}
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                  ) : (
+                    filteredOperators.map((op, idx) => {
+                      const domainInfo = getDomainBadge(op.category);
+                      const pCat = getOperatorPipelineCategory(op);
+                      const isLastVisited = selectedCanvasOp?.id === op.id;
+                      return (
+                        <tr
+                          key={op.id}
+                          className={`transition ${isLastVisited ? 'bg-cyan-500/10 hover:bg-cyan-500/15' : 'hover:bg-slate-800/30'}`}
+                        >
+                          <td className="px-4 py-3 text-center font-mono text-slate-500 text-[11px]">
+                            {idx + 1}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-[11px] text-cyan-400/90 font-medium">{op.id}</span>
+                              <span
+                                className={`rounded px-1.5 py-0.2 text-[9px] font-semibold border ${
+                                  op.layer === 'fact'
+                                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                                    : 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                }`}
+                              >
+                                {op.layer === 'fact' ? 'V4 事实' : 'V4 汇总'}
+                              </span>
+                            </div>
+                            <div className="font-bold text-xs text-slate-100 mt-0.5">{op.name}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-block whitespace-nowrap rounded-md border px-2 py-0.5 text-[10px] font-semibold ${domainInfo.badgeBg}`}>
+                              {domainInfo.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-medium ${pCat.badgeBg}`}>
+                              {pCat.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-slate-300 text-[11px]">
+                            {op.militaryLevel}
+                          </td>
+                          <td className="px-4 py-3 text-slate-300 text-xs leading-relaxed max-w-md">
+                            <div>{op.description}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span
+                              className="inline-block rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400"
+                              title={`必需底表: ${(op.requiredTables ?? []).join(', ') || '通用'}`}
+                            >
+                              V4 实证就绪
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5 pr-4">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCanvasOp(op);
+                                setViewMode('canvas');
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/50 bg-cyan-500/20 px-2.5 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30 shadow-sm transition"
+                              title="在可视化画布中编辑此算子流水线"
+                            >
+                              <Workflow className="h-3.5 w-3.5" />
+                              <span>画布编排</span>
+                            </button>
 
-        {/* 原生 HTML <dialog> 算子底层数据映射与内部算法详情弹窗 */}
-        <dialog
-          ref={detailDialogRef}
-          aria-labelledby={detailHeadingId}
-          onClose={(e) => {
-            e.currentTarget.returnValue = '';
-            setDetailOp(null);
-            setV4RunResult(null);
-          }}
-          className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-[#0d1424] p-0 text-slate-100 backdrop:bg-black/60 shadow-2xl"
-        >
-          {detailOp && (
-            <div className="flex max-h-[88vh] flex-col">
-              <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3.5">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 id={detailHeadingId} className="text-sm font-bold text-slate-100">
-                      {detailOp.name}
-                    </h3>
-                    {v4SpecMap[detailOp.id] && (
-                      <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                        {v4SpecMap[detailOp.id].layer === 'fact' ? 'V4 客观事实算子' : 'V4 汇总算子'} · 第 {v4SpecMap[detailOp.id].chapter} 章
-                      </span>
-                    )}
-                  </div>
-                  <div className="font-mono text-xs text-slate-400">{detailOp.id}</div>
-                </div>
-                <button
-                  type="button"
-                  autoFocus
-                  onClick={() => detailDialogRef.current?.close()}
-                  aria-label="关闭算子详情弹窗"
-                  className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-700"
-                >
-                  关闭
-                </button>
-              </div>
+                            <button
+                              type="button"
+                              onClick={() => setEditingOp(op)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1 text-xs text-slate-200 hover:text-white hover:bg-slate-700 transition"
+                              title="配置参数与计算规则"
+                            >
+                              <Settings2 className="h-3.5 w-3.5 text-slate-400" />
+                              <span>配置</span>
+                            </button>
 
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3.5 text-xs">
-                <p className="text-xs leading-relaxed text-slate-300">{detailOp.description}</p>
+                            <button
+                              type="button"
+                              onClick={() => setDetailOp(op)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1 text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-700 transition"
+                              title="查看底层数据来源与字段映射"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              <span>详情</span>
+                            </button>
 
-                <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-xs">
-                  <div className="flex items-center gap-1.5 font-medium text-slate-200">
-                    <Database className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>底层数据来源与字段映射 (sim-output-fields)</span>
-                  </div>
-                  {(v4SpecMap[detailOp.id]?.requiredTables || detailOp.f1FieldContract?.csvTables) && (
-                    <div>
-                      <span className="text-slate-400">必需底表：</span>
-                      <span className="font-mono text-emerald-300">
-                        {(v4SpecMap[detailOp.id]?.requiredTables ?? detailOp.f1FieldContract?.csvTables ?? []).join(', ')}
-                      </span>
-                    </div>
+                            {!op.isBuiltin ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteOperator(op)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2 py-1 text-xs font-medium text-rose-300 hover:bg-rose-500/30 hover:text-rose-100 transition shadow-sm"
+                                title="删除此自定义算子"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                                <span>删除</span>
+                              </button>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-0.5 px-1.5 py-1 text-[11px] text-slate-600 select-none"
+                                title="内置标准 V4 算子受保护，不可删除；支持参数修改与恢复默认"
+                              >
+                                <Lock className="h-3 w-3" />
+                                <span>内置</span>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
-                  {v4SpecMap[detailOp.id]?.optionalTables && v4SpecMap[detailOp.id].optionalTables!.length > 0 && (
-                    <div>
-                      <span className="text-slate-400">可选底表：</span>
-                      <span className="font-mono text-slate-300">
-                        {v4SpecMap[detailOp.id].optionalTables!.join(', ')}
-                      </span>
-                    </div>
-                  )}
-                  {(v4SpecMap[detailOp.id]?.outputColumnNames || detailOp.f1FieldContract?.csvColumns) && (
-                    <div>
-                      <span className="text-slate-400">输出二维表列：</span>
-                      <span className="font-mono text-slate-200">
-                        {(v4SpecMap[detailOp.id]?.outputColumnNames ?? detailOp.f1FieldContract?.csvColumns ?? []).join(', ')}
-                      </span>
-                    </div>
-                  )}
-                </div>
+                </tbody>
+              </table>
+            </div>
 
-                {v4SpecMap[detailOp.id]?.pythonCode && (
-                  <div className="space-y-2 rounded-xl border border-slate-800 bg-[#070b14] p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 font-medium text-fuchsia-300">
-                        <Code2 className="h-3.5 w-3.5" />
-                        <span>内部算法实现 (Python 沙箱科学计算源码)</span>
+            {/* 原生 HTML <dialog> 算子底层数据映射与内部算法详情弹窗 */}
+            <dialog
+              ref={detailDialogRef}
+              aria-labelledby={detailHeadingId}
+              onClose={(e) => {
+                e.currentTarget.returnValue = '';
+                setDetailOp(null);
+                setV4RunResult(null);
+              }}
+              className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-[#0d1424] p-0 text-slate-100 backdrop:bg-black/60 shadow-2xl"
+            >
+              {detailOp && (
+                <div className="flex max-h-[88vh] flex-col">
+                  <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3.5">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 id={detailHeadingId} className="text-sm font-bold text-slate-100">
+                          {detailOp.name}
+                        </h3>
+                        <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                          {detailOp.layer === 'fact' ? 'V4 客观事实算子' : 'V4 汇总算子'} · 第 {detailOp.chapter} 章
+                        </span>
                       </div>
+                      <div className="font-mono text-xs text-slate-400">{detailOp.id}</div>
+                    </div>
+                    <button
+                      type="button"
+                      autoFocus
+                      onClick={() => detailDialogRef.current?.close()}
+                      aria-label="关闭算子详情弹窗"
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-700"
+                    >
+                      关闭
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3.5 text-xs">
+                    <p className="text-xs leading-relaxed text-slate-300">{detailOp.description}</p>
+
+                    <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-xs">
+                      <div className="flex items-center gap-1.5 font-medium text-slate-200">
+                        <Database className="h-3.5 w-3.5 text-cyan-400" />
+                        <span>底层数据来源与字段映射 (sim-output-fields)</span>
+                      </div>
+                      {detailOp.requiredTables && detailOp.requiredTables.length > 0 && (
+                        <div>
+                          <span className="text-slate-400">必需底表：</span>
+                          <span className="font-mono text-emerald-300">
+                            {detailOp.requiredTables.join(', ')}
+                          </span>
+                        </div>
+                      )}
+                      {detailOp.optionalTables && detailOp.optionalTables.length > 0 && (
+                        <div>
+                          <span className="text-slate-400">可选底表：</span>
+                          <span className="font-mono text-slate-300">
+                            {detailOp.optionalTables.join(', ')}
+                          </span>
+                        </div>
+                      )}
+                      {detailOp.outputColumnNames && detailOp.outputColumnNames.length > 0 && (
+                        <div>
+                          <span className="text-slate-400">输出二维表列：</span>
+                          <span className="font-mono text-slate-200">
+                            {detailOp.outputColumnNames.join(', ')}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {detailOp.pythonCode && (
+                      <div className="space-y-2 rounded-xl border border-slate-800 bg-[#070b14] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 font-medium text-fuchsia-300">
+                            <Code2 className="h-3.5 w-3.5" />
+                            <span>内部算法实现 (Python 沙箱科学计算源码)</span>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={v4RunLoading}
+                            onClick={async () => {
+                              setV4RunLoading(true);
+                              setV4RunResult(null);
+                              try {
+                                const json = await evalApi.runV4Operator({
+                                  operatorId: detailOp.id,
+                                  runId: selectedRunId || '55th_taihai_csv',
+                                  dataSourceId: activeSourceId || undefined,
+                                });
+                                const r = json.result;
+                                setV4RunResult({
+                                  operatorId: detailOp.id,
+                                  status: r?.status ?? 'valid',
+                                  dataset: r?.dataset,
+                                  missingDataReason: r?.missingDataReason,
+                                  latencyMs: r?.latencyMs,
+                                });
+                              } catch (err) {
+                                setV4RunResult({
+                                  operatorId: detailOp.id,
+                                  status: 'unavailable',
+                                  missingDataReason: err instanceof Error ? err.message : String(err),
+                                });
+                              } finally {
+                                setV4RunLoading(false);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/50 bg-emerald-600/25 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-600/40 disabled:opacity-50"
+                          >
+                            <Play className="h-3 w-3" />
+                            <span>{v4RunLoading ? '真机计算中...' : 'V4 真机试算 (二维表)'}</span>
+                          </button>
+                        </div>
+                        <pre className="max-h-60 overflow-auto rounded-lg border border-slate-800/80 bg-[#0b101b] p-3 font-mono text-[11px] leading-relaxed text-slate-200">
+                          <code>{detailOp.pythonCode}</code>
+                        </pre>
+                      </div>
+                    )}
+
+                    {v4RunResult && v4RunResult.operatorId === detailOp.id && (
+                      <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-200">
+                            实测输出状态：
+                            <span className={v4RunResult.status === 'valid' ? 'text-emerald-400' : 'text-amber-400'}>
+                              {v4RunResult.status}
+                            </span>
+                            {typeof v4RunResult.latencyMs === 'number' ? ` · ${v4RunResult.latencyMs.toFixed(1)} ms` : ''}
+                          </span>
+                        </div>
+                        {v4RunResult.missingDataReason && (
+                          <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-200">
+                            {v4RunResult.missingDataReason}
+                          </div>
+                        )}
+                        {v4RunResult.dataset && (
+                          <V4TablePivotPreview dataset={v4RunResult.dataset} maxRows={50} />
+                        )}
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex items-center gap-2.5">
                       <button
                         type="button"
-                        disabled={v4RunLoading}
-                        onClick={async () => {
-                          setV4RunLoading(true);
-                          setV4RunResult(null);
-                          try {
-                            const resp = await fetch('/api/v4/operators/run', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                operatorId: detailOp.id,
-                                runId: selectedRunId || '55th_taihai_csv',
-                                dataSourceId: activeSourceId || undefined,
-                              }),
-                            });
-                            const json = await resp.json();
-                            const r = json?.result ?? json;
-                            setV4RunResult({
-                              operatorId: detailOp.id,
-                              status: r?.status ?? (json?.ok ? 'valid' : 'unavailable'),
-                              dataset: r?.dataset,
-                              missingDataReason: r?.missingDataReason ?? json?.error,
-                              latencyMs: r?.latencyMs,
-                            });
-                          } catch (err) {
-                            setV4RunResult({
-                              operatorId: detailOp.id,
-                              status: 'unavailable',
-                              missingDataReason: err instanceof Error ? err.message : String(err),
-                            });
-                          } finally {
-                            setV4RunLoading(false);
-                          }
+                        onClick={() => {
+                          const target = detailOp;
+                          detailDialogRef.current?.close();
+                          setSelectedCanvasOp(target);
+                          setViewMode('canvas');
                         }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/50 bg-emerald-600/25 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-600/40 disabled:opacity-50"
+                        className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-cyan-500/50 bg-cyan-600/30 px-4 py-2.5 text-xs font-bold text-cyan-200 hover:bg-cyan-600/50 transition shadow-md"
                       >
-                        <Play className="h-3 w-3" />
-                        <span>{v4RunLoading ? '真机计算中...' : 'V4 真机试算 (二维表)'}</span>
+                        <Workflow className="h-4 w-4" />
+                        <span>在一体化画布中查看/编排内部结构</span>
                       </button>
                     </div>
-                    <pre className="max-h-60 overflow-auto rounded-lg border border-slate-800/80 bg-[#0b101b] p-3 font-mono text-[11px] leading-relaxed text-slate-200">
-                      <code>{v4SpecMap[detailOp.id].pythonCode}</code>
-                    </pre>
                   </div>
-                )}
-
-                {v4RunResult && v4RunResult.operatorId === detailOp.id && (
-                  <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-semibold text-slate-200">
-                        实测输出状态：
-                        <span className={v4RunResult.status === 'valid' ? 'text-emerald-400' : 'text-amber-400'}>
-                          {v4RunResult.status}
-                        </span>
-                        {typeof v4RunResult.latencyMs === 'number' ? ` · ${v4RunResult.latencyMs.toFixed(1)} ms` : ''}
-                      </span>
-                    </div>
-                    {v4RunResult.missingDataReason && (
-                      <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-200">
-                        {v4RunResult.missingDataReason}
-                      </div>
-                    )}
-                    {v4RunResult.dataset && (
-                      <V4TablePivotPreview dataset={v4RunResult.dataset} maxRows={50} />
-                    )}
-                  </div>
-                )}
-
-                <div className="pt-2 flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const target = detailOp;
-                      detailDialogRef.current?.close();
-                      setSelectedCanvasOp(target);
-                      setViewMode('canvas');
-                    }}
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-cyan-500/50 bg-cyan-600/30 px-4 py-2.5 text-xs font-bold text-cyan-200 hover:bg-cyan-600/50 transition shadow-md"
-                  >
-                    <Workflow className="h-4 w-4" />
-                    <span>在一体化画布中查看/编排内部结构</span>
-                  </button>
                 </div>
-              </div>
-            </div>
-          )}
-        </dialog>
+              )}
+            </dialog>
 
-        {/* 原生 HTML <dialog> 独立算子配置弹窗 */}
-        <dialog
-          ref={editorDialogRef}
-          aria-labelledby={editorHeadingId}
-          onClose={(e) => {
-            e.currentTarget.returnValue = '';
-            setEditingOp(null);
-          }}
-          className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-[#0d1424] p-0 text-slate-100 backdrop:bg-black/60 shadow-2xl"
-        >
-          {editingOp && (
-            <OperatorInlineEditor
-              operator={editingOp}
-              allOperators={operators}
-              catalog={catalog}
-              headingId={editorHeadingId}
-              onCancel={() => editorDialogRef.current?.close()}
-              onOpenPipeline={(targetOp) => {
-                editorDialogRef.current?.close();
-                setSelectedCanvasOp(targetOp);
+            {/* 原生 HTML <dialog> 独立算子配置弹窗 */}
+            <dialog
+              ref={editorDialogRef}
+              aria-labelledby={editorHeadingId}
+              onClose={(e) => {
+                e.currentTarget.returnValue = '';
+                setEditingOp(null);
+              }}
+              className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-[#0d1424] p-0 text-slate-100 backdrop:bg-black/60 shadow-2xl"
+            >
+              {editingOp && (
+                <OperatorInlineEditor
+                  operator={editingOp}
+                  allOperators={operators}
+                  catalog={catalog}
+                  headingId={editorHeadingId}
+                  onCancel={() => editorDialogRef.current?.close()}
+                  onOpenPipeline={(targetOp) => {
+                    editorDialogRef.current?.close();
+                    setSelectedCanvasOp(targetOp);
+                    setViewMode('canvas');
+                  }}
+                  onSaved={async () => {
+                    editorDialogRef.current?.close();
+                    await onRefresh();
+                  }}
+                  onDeleted={async () => {
+                    editorDialogRef.current?.close();
+                    await onRefresh();
+                  }}
+                />
+              )}
+            </dialog>
+          </section>
+
+          <CreateOperatorModal
+            isOpen={isCreateModalOpen}
+            onClose={() => setIsCreateModalOpen(false)}
+            existingOperators={operators}
+            onCreated={async (newOp, openCanvas) => {
+              await onRefresh();
+              if (openCanvas) {
+                setSelectedCanvasOp(newOp);
                 setViewMode('canvas');
-              }}
-              onSaved={async () => {
-                editorDialogRef.current?.close();
-                await onRefresh();
-              }}
-              onDeleted={async () => {
-                editorDialogRef.current?.close();
-                await onRefresh();
-              }}
-            />
-          )}
-        </dialog>
-      </section>
-
-      {/* ═════════════════ 3. 新建自定义算子全功能弹窗 ═════════════════ */}
-      <CreateOperatorModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        existingOperators={operators}
-        onCreated={async (newOp, openCanvas) => {
-          await onRefresh();
-          if (openCanvas) {
-            setSelectedCanvasOp(newOp);
-            setViewMode('canvas');
-          }
-        }}
-      />
+              }
+            }}
+          />
         </>
       )}
     </div>

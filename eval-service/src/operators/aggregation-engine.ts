@@ -251,7 +251,8 @@ export function evaluateAggregationDataset(
       }
       const metricAccs = new Map<string, MetricAccumulator>();
       for (const m of metrics) {
-        metricAccs.set(m.targetField, createMetricAccumulator());
+        const tf = m.targetField ?? m.outputField ?? '';
+        metricAccs.set(tf, createMetricAccumulator());
       }
       bucket = { keyValues, metricAccs };
       bucketMap.set(key, bucket);
@@ -263,8 +264,10 @@ export function evaluateAggregationDataset(
   for (const row of dataset.rows) {
     const bucket = getOrCreateBucket(row);
     for (const m of metrics) {
-      const acc = bucket.metricAccs.get(m.targetField)!;
-      const rawVal = m.method === 'COUNT_ALL' ? 1 : row[m.sourceColumn];
+      const tf = m.targetField ?? m.outputField ?? '';
+      const sc = m.sourceColumn ?? m.sourceField ?? '';
+      const acc = bucket.metricAccs.get(tf)!;
+      const rawVal = m.method === 'COUNT_ALL' ? 1 : row[sc];
       updateMetricAccumulator(acc, rawVal);
     }
   }
@@ -274,7 +277,8 @@ export function evaluateAggregationDataset(
     const emptyRow: Record<string, unknown> = {};
     const metricAccs = new Map<string, MetricAccumulator>();
     for (const m of metrics) {
-      metricAccs.set(m.targetField, createMetricAccumulator());
+      const tf = m.targetField ?? m.outputField ?? '';
+      metricAccs.set(tf, createMetricAccumulator());
     }
     bucketMap.set('__GLOBAL_AGGREGATION__', { keyValues: emptyRow, metricAccs });
   }
@@ -284,8 +288,9 @@ export function evaluateAggregationDataset(
   for (const bucket of bucketMap.values()) {
     const outRow: Record<string, unknown> = { ...bucket.keyValues };
     for (const m of metrics) {
-      const acc = bucket.metricAccs.get(m.targetField)!;
-      outRow[m.targetField] = finalizeMetric(m.method, acc);
+      const tf = m.targetField ?? m.outputField ?? '';
+      const acc = bucket.metricAccs.get(tf)!;
+      outRow[tf] = finalizeMetric(m.method, acc);
     }
     outputRows.push(outRow);
   }
@@ -312,19 +317,21 @@ export function evaluateAggregationDataset(
 
   // 再排聚合度量输出列
   for (const m of metrics) {
+    const tf = m.targetField ?? m.outputField ?? '';
+    const sc = m.sourceColumn ?? m.sourceField ?? '';
     let inferredType: FieldDataType = 'number';
     if (m.dataType) {
       inferredType = m.dataType;
     } else if (m.method === 'FIRST' || m.method === 'LAST') {
-      const sourceCol = upstreamColMap.get(m.sourceColumn);
+      const sourceCol = upstreamColMap.get(sc);
       inferredType = sourceCol?.type ?? 'string';
     }
 
     outputColumns.push({
-      name: m.targetField,
+      name: tf,
       type: inferredType,
       isDerived: true,
-      description: m.description ?? `${m.method}(${m.sourceColumn || '*'}) 聚合度量`,
+      description: m.description ?? `${m.method}(${sc || '*'}) 聚合度量`,
     });
   }
 

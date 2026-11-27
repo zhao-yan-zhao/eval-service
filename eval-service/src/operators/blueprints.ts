@@ -5,8 +5,13 @@
 
 import persistentPipelines from '../../data/operator-pipelines.json' with { type: 'json' };
 import type { CanvasNodeRuntimeState, PipelineNodeType } from '../ui/components/pipeline-canvas/canvas-types.ts';
-import type { TableDataset } from '../core/types.ts';
-import { OPERATORS_V2 } from './v2/index.ts';
+import type { DatasetColumn, TableDataset } from '../core/types.ts';
+import { ALL_V4_OPERATOR_SCRIPTS } from './v4/index.ts';
+
+type BlueprintTableDataset = Omit<TableDataset, 'columns' | 'schema'> & {
+  columns?: DatasetColumn[];
+  schema: DatasetColumn[];
+};
 
 export interface CanvasNodeBlueprint {
   id: string;
@@ -16,7 +21,9 @@ export interface CanvasNodeBlueprint {
   x: number;
   y: number;
   config: Record<string, any>;
-  runtime?: CanvasNodeRuntimeState;
+  runtime?: Omit<CanvasNodeRuntimeState, 'outputDataset'> & {
+    outputDataset?: BlueprintTableDataset;
+  };
 }
 
 export interface CanvasEdgeBlueprint {
@@ -33,7 +40,7 @@ export interface OperatorPipelineBlueprint {
   primaryAlgorithm: PipelineNodeType;
   algorithmLabel: string;
   algorithmSummary: string;
-  defaultDataset?: TableDataset;
+  defaultDataset?: BlueprintTableDataset;
   nodes: CanvasNodeBlueprint[];
   edges: CanvasEdgeBlueprint[];
 }
@@ -45,7 +52,7 @@ export interface OperatorPipelineBlueprint {
 // 1.1 任务走廊 4 表契约输入与多级下钻数据集
 
 // (1) 任务定义与状态流 (MissionChanged)
-const CORRIDOR_MISSION_CHANGED_DATASET: TableDataset = {
+const CORRIDOR_MISSION_CHANGED_DATASET: BlueprintTableDataset = {
   id: 'dataset_mission_changed',
   schema: [
     { name: 'MissionID', displayName: '任务编号', type: 'string' },
@@ -63,7 +70,7 @@ const CORRIDOR_MISSION_CHANGED_DATASET: TableDataset = {
 };
 
 // (2) 任务关联空间几何多参考点序列 (MissionRefPointRelationChanged)
-const CORRIDOR_REFPOINTS_DATASET: TableDataset = {
+const CORRIDOR_REFPOINTS_DATASET: BlueprintTableDataset = {
   id: 'dataset_mission_refpoints',
   schema: [
     { name: 'Time', displayName: '时标', type: 'string' },
@@ -87,7 +94,7 @@ const CORRIDOR_REFPOINTS_DATASET: TableDataset = {
 };
 
 // (3) 单元-任务生命周期关系流 (MissionUnitRelationChanged)
-const CORRIDOR_UNIT_RELATION_DATASET: TableDataset = {
+const CORRIDOR_UNIT_RELATION_DATASET: BlueprintTableDataset = {
   id: 'dataset_mission_unit_relation',
   schema: [
     { name: 'Time', displayName: '时标', type: 'string' },
@@ -107,7 +114,7 @@ const CORRIDOR_UNIT_RELATION_DATASET: TableDataset = {
 };
 
 // (4) 作战单元航迹时序点流 (UnitPositions)
-const CORRIDOR_POSITIONS_DATASET: TableDataset = {
+const CORRIDOR_POSITIONS_DATASET: BlueprintTableDataset = {
   id: 'dataset_unit_positions_corridor',
   schema: [
     { name: 'Time', displayName: '采样时标', type: 'string' },
@@ -148,7 +155,7 @@ const CORRIDOR_SPATIAL_SOLVER_SCHEMA = [
   { name: 'ComplianceStatus', displayName: '空间合规状态判定', type: 'string' as const },
 ];
 
-const CORRIDOR_SPATIAL_SOLVER_DATASET: TableDataset = {
+const CORRIDOR_SPATIAL_SOLVER_DATASET: BlueprintTableDataset = {
   id: 'dataset_spatial_solver_corridor',
   schema: CORRIDOR_SPATIAL_SOLVER_SCHEMA,
   columns: CORRIDOR_SPATIAL_SOLVER_SCHEMA,
@@ -171,7 +178,7 @@ const CORRIDOR_MISSION_AGG_SCHEMA = [
   { name: 'TotalInCorridorSec', displayName: '总走廊在勤时间 (s)', type: 'number' as const },
 ];
 
-const CORRIDOR_MISSION_AGG_DATASET: TableDataset = {
+const CORRIDOR_MISSION_AGG_DATASET: BlueprintTableDataset = {
   id: 'dataset_mission_agg_corridor',
   schema: CORRIDOR_MISSION_AGG_SCHEMA,
   columns: CORRIDOR_MISSION_AGG_SCHEMA,
@@ -194,7 +201,7 @@ const CORRIDOR_OUTPUT_SCHEMA = [
   { name: 'ThresholdStatus', displayName: '阈值准则达成状态', type: 'string' as const },
 ];
 
-const CORRIDOR_OUTPUT_DATASET: TableDataset = {
+const CORRIDOR_OUTPUT_DATASET: BlueprintTableDataset = {
   id: 'dataset_res_corridor',
   schema: CORRIDOR_OUTPUT_SCHEMA,
   columns: CORRIDOR_OUTPUT_SCHEMA,
@@ -214,7 +221,7 @@ const CORRIDOR_OUTPUT_DATASET: TableDataset = {
 };
 
 // 1.2 WRA 开火准则数据集
-const WRA_WEAPON_FIRED_DATASET: TableDataset = {
+const WRA_WEAPON_FIRED_DATASET: BlueprintTableDataset = {
   id: 'dataset_weapon_fired_wra',
   schema: [
     { name: 'WeaponID', displayName: '弹药编号', type: 'string' },
@@ -236,7 +243,7 @@ const WRA_WEAPON_FIRED_DATASET: TableDataset = {
 };
 
 // 1.3 电磁辐射状态流
-const EMCON_STATUS_DATASET: TableDataset = {
+const EMCON_STATUS_DATASET: BlueprintTableDataset = {
   id: 'dataset_emcon_status',
   schema: [
     { name: 'UnitID', displayName: '载机编号', type: 'string' },
@@ -259,7 +266,7 @@ const EMCON_STATUS_DATASET: TableDataset = {
 };
 
 // 1.4 武器终局误伤判定数据集
-const WEAPON_ENDGAME_DATASET: TableDataset = {
+const WEAPON_ENDGAME_DATASET: BlueprintTableDataset = {
   id: 'dataset_weapon_endgame_safety',
   schema: [
     { name: 'WeaponID', displayName: '弹药编号', type: 'string' },
@@ -883,7 +890,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
             ],
             rows: WRA_WEAPON_FIRED_DATASET.rows.map((r) => ({
               ...r,
-              is_range_disciplined: r.FiringRange_nm >= 10.0 ? 1 : 0,
+              is_range_disciplined: Number(r.FiringRange_nm) >= 10.0 ? 1 : 0,
             })),
           },
         },
@@ -2495,7 +2502,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.mission_success_rate': {
     operatorId: 'eff.mission_success_rate',
     name: "eff.mission_success_rate",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "python_script",
     algorithmLabel: "Python 算法沙箱：各阵营 Wilson 95% CI 概率精算",
     algorithmSummary: "全量提取各方战损，严禁在源头过滤任何一方",
@@ -2569,7 +2576,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.hit_rate': {
     operatorId: 'eff.hit_rate',
     name: "武器直接命中率",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：武器命中率统计 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 TargetSide 维度），严禁在源头过滤任意一方",
@@ -2671,7 +2678,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.kill_efficiency': {
     operatorId: 'eff.kill_efficiency',
     name: "对敌平台毁伤效率",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：真实毁敌数统计 (Sum by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -2772,7 +2779,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.attrition_balance': {
     operatorId: 'eff.attrition_balance',
     name: "平台战损交换比",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：战损交换比 (Ratio by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -2873,7 +2880,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.engagement_cycles_count': {
     operatorId: 'eff.engagement_cycles_count',
     name: "OODA 交战波次计数",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：交战波次统计 (Count by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 FiringUnitSide 维度），严禁在源头过滤任意一方",
@@ -2974,7 +2981,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.target_penetration_rate': {
     operatorId: 'eff.target_penetration_rate',
     name: "末端突防成功率",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：突防成功率统计 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 TargetSide 维度），严禁在源头过滤任意一方",
@@ -3075,7 +3082,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.weapon_loss_ratio': {
     operatorId: 'eff.weapon_loss_ratio',
     name: "弹药途中损耗/失效率",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：弹药失效率统计 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -3176,7 +3183,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.damage_severity_index': {
     operatorId: 'eff.damage_severity_index',
     name: "受创单元平均毁伤烈度",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：受创烈度均值 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -3278,7 +3285,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.salvo_efficiency': {
     operatorId: 'eff.salvo_efficiency',
     name: "单有效战果平均耗弹量",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：耗弹能效统计 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -3379,7 +3386,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'eff.air_ops_sortie_completion': {
     operatorId: 'eff.air_ops_sortie_completion',
     name: "航空出动回收闭环率",
-    category: "eff",
+    category: "effectiveness",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：出动回收闭环率 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -3481,7 +3488,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'sit.standoff_advantage': {
     operatorId: 'sit.standoff_advantage',
     name: "防区外发射安全度",
-    category: "sit",
+    category: "situation",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：防区外安全倍率 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 FiringUnitSide 维度），严禁在源头过滤任意一方",
@@ -3583,7 +3590,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'sit.formation_dispersion': {
     operatorId: 'sit.formation_dispersion',
     name: "编队航行离散度",
-    category: "sit",
+    category: "situation",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：编队空间离散度 (STDEV by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -3686,7 +3693,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'sit.geometry_arrival_delta': {
     operatorId: 'sit.geometry_arrival_delta',
     name: "多路突击交会时间差",
-    category: "sit",
+    category: "situation",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：导弹交会时差 (Max - Min by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 FiringUnitSide 维度），严禁在源头过滤任意一方",
@@ -3789,7 +3796,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'sit.area_coverage_ratio': {
     operatorId: 'sit.area_coverage_ratio',
     name: "任务海空域扫描率",
-    category: "sit",
+    category: "situation",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：网格空域扫描覆盖率 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -3892,7 +3899,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'sit.kinematic_speed_avg': {
     operatorId: 'sit.kinematic_speed_avg',
     name: "作战平台平均巡航航速",
-    category: "sit",
+    category: "situation",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：巡航航速均值 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -3994,7 +4001,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'sit.altitude_envelope_advantage': {
     operatorId: 'sit.altitude_envelope_advantage',
     name: "红蓝空域高度势能优势",
-    category: "sit",
+    category: "situation",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：比能量高度势能 (Avg by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -4097,7 +4104,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'sit.centroid_separation_nm': {
     operatorId: 'sit.centroid_separation_nm',
     name: "红蓝兵力几何质心间距",
-    category: "sit",
+    category: "situation",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：双阵营空间质心测距 (Turf.js) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -4200,7 +4207,7 @@ export const OPERATOR_PIPELINE_BLUEPRINTS: Record<string, OperatorPipelineBluepr
   'sit.hull_containment_area': {
     operatorId: 'sit.hull_containment_area',
     name: "己方编队凸包控制空域面积",
-    category: "sit",
+    category: "situation",
     primaryAlgorithm: "inline_calc",
     algorithmLabel: "行内计算：编队凸包控制面积 (Graham Scan by Side) (LibFormula)",
     algorithmSummary: "无偏抽取全部阵营数据（保留 Side 维度），严禁在源头过滤任意一方",
@@ -4723,19 +4730,18 @@ export function getOperatorPipelineBlueprint(operatorId: string, opName?: string
   if (OPERATOR_PIPELINE_BLUEPRINTS[operatorId]) {
     return OPERATOR_PIPELINE_BLUEPRINTS[operatorId];
   }
-  const v2Spec = OPERATORS_V2.find((s) => s.meta.id === operatorId);
-  if (v2Spec) {
-    const meta = v2Spec.meta;
-    const primaryTable = meta.f1FieldContract.csvTables?.[0] ?? 'UnitPositions';
-    const csvCols = meta.f1FieldContract.csvColumns ?? ['Time', 'UnitID'];
+  const v4Spec = ALL_V4_OPERATOR_SCRIPTS.find((s) => s.id === operatorId);
+  if (v4Spec) {
+    const primaryTable = v4Spec.requiredTables[0] ?? 'UnitPositions';
+    const csvCols = v4Spec.outputColumns.length > 0 ? v4Spec.outputColumns : ['Time', 'UnitID'];
     const safeId = operatorId.replace(/[^a-zA-Z0-9]/g, '_');
     return {
       operatorId,
-      name: opName || meta.name,
-      category: meta.category,
-      primaryAlgorithm: (meta.pipelineCategory as PipelineNodeType) || 'group_agg',
-      algorithmLabel: `${meta.evalRole ?? 'MOP'} · ${meta.doctrineRef ?? 'Operators v2 标准算法'}`,
-      algorithmSummary: meta.description,
+      name: opName || v4Spec.name,
+      category: v4Spec.category,
+      primaryAlgorithm: (v4Spec.engineKind as PipelineNodeType) || 'python_script',
+      algorithmLabel: `${v4Spec.militaryLevel} · V4 Ch.${v4Spec.chapter} 标准算法`,
+      algorithmSummary: v4Spec.description,
       nodes: [
         {
           id: `node_in_${safeId}`,
@@ -4751,14 +4757,14 @@ export function getOperatorPipelineBlueprint(operatorId: string, opName?: string
         },
         {
           id: `node_calc_${safeId}`,
-          type: meta.mode === 'spatial' ? 'spatial' : meta.mode === 'python_script' ? 'python_script' : 'inline_calc',
-          title: `核心计算：${meta.name}`,
+          type: v4Spec.engineKind === 'spatial' ? 'spatial' : 'python_script',
+          title: `核心计算：${v4Spec.name}`,
           x: 420,
           y: 120,
           config: {
-            doctrineRef: meta.doctrineRef,
-            evalRole: meta.evalRole,
-            defaultParams: meta.defaultParams ?? {},
+            militaryLevel: v4Spec.militaryLevel,
+            domainTag: v4Spec.domainTag,
+            outputColumns: v4Spec.outputColumns,
           },
           runtime: { status: 'idle' },
         },
@@ -4779,13 +4785,13 @@ export function getOperatorPipelineBlueprint(operatorId: string, opName?: string
         {
           id: `node_out_${safeId}`,
           type: 'result_output',
-          title: `指标输出：${opName || meta.name}`,
+          title: `指标输出：${opName || v4Spec.name}`,
           x: 1140,
           y: 120,
           config: {
             targetField: 'metric_value',
-            indicatorName: opName || meta.name,
-            evalRole: meta.evalRole,
+            indicatorName: opName || v4Spec.name,
+            evalRole: v4Spec.militaryLevel,
           },
           runtime: { status: 'idle' },
         },
@@ -4898,11 +4904,11 @@ try {
   }
 } catch {}
 
-// 自动填充 Operators v2/v3 算子蓝图，确保 OPERATOR_PIPELINE_BLUEPRINTS 索引完备
-for (const spec of OPERATORS_V2) {
-  if (!OPERATOR_PIPELINE_BLUEPRINTS[spec.meta.id]) {
-    const bp = getOperatorPipelineBlueprint(spec.meta.id);
-    if (bp) OPERATOR_PIPELINE_BLUEPRINTS[spec.meta.id] = bp;
+// 自动填充 Operators v4 算子蓝图，确保 OPERATOR_PIPELINE_BLUEPRINTS 索引完备
+for (const spec of ALL_V4_OPERATOR_SCRIPTS) {
+  if (!OPERATOR_PIPELINE_BLUEPRINTS[spec.id]) {
+    const bp = getOperatorPipelineBlueprint(spec.id);
+    if (bp) OPERATOR_PIPELINE_BLUEPRINTS[spec.id] = bp;
   }
 }
 

@@ -6,7 +6,6 @@ import type {
   TacticalFeedbackPayload,
 } from '../core/types.ts';
 import { resolveSides } from '../operators/helpers.ts';
-import { OPERATORS_V2 } from '../operators/v2/index.ts';
 
 function flattenLeavesWithDimension(
   nodes: Array<EvaluatedDimensionNode | EvaluatedLeafNode>,
@@ -41,6 +40,15 @@ export const ATOM_DIRECTIVES_REGISTRY: Record<
     ],
     patches: {
       navigation: { enforce_corridor_boundary: true, deviation_tolerance_nm: 2.0 },
+    },
+  },
+  'roe.fratricide_count': {
+    directives: [
+      '强化敌我识别（IFF）与开火前明确识别（PID）门控，杜绝友军误伤事件',
+      '在混战空域限制自主寻的武器扇区与齐射解脱边界',
+    ],
+    patches: {
+      roe: { require_pid_before_fire: true, zero_tolerance_fratricide: true },
     },
   },
 

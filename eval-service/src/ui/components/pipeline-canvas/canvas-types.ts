@@ -25,6 +25,7 @@ export interface CanvasNodeConfig {
   // 节点一：数据输入
   sourceType?: 'csv' | 'bs_jsonl';
   csvTable?: string;
+  selectedColumns?: string[];
   filterField?: string;
   filterEquals?: string;
 
@@ -35,10 +36,14 @@ export interface CanvasNodeConfig {
   // 节点三：跨行聚合汇总
   aggregationConfig?: AggregationOperatorConfig;
   groupKeys?: string[];
+  groupBy?: string[];
   aggregations?: AggregationMetricItem[];
+  metrics?: AggregationMetricItem[];
+  metricConfig?: Record<string, unknown>;
 
   // 节点四：结果输出 (二库指标与三库体系)
   targetField?: string;
+  outputScoreField?: string;
   indicatorId?: string;
   indicatorName?: string;
   indicatorUnit?: string;
@@ -49,13 +54,35 @@ export interface CanvasNodeConfig {
   targetDimensionId?: string;
 
   // 节点五：空间几何算法
-  spatialRule?: 'corridor_check' | 'threat_distance' | 'containment_polygon';
+  spatialRule?: string;
+  geomSourceMode?: string;
+  geomTable?: string;
+  geomLonField?: string;
+  geomLatField?: string;
+  geomGroupField?: string;
+  geomOrderField?: string;
   corridorBounds?: number[][];
   minSafeMarginKm?: number;
+  rangeMinKm?: number;
+  rangeMaxKm?: number;
+  threatCenterLon?: number;
+  threatCenterLat?: number;
+  threatRadiusKm?: number;
+  stationAlignmentMode?: string;
+  outputContainmentCol?: string;
+  outputMarginCol?: string;
+  lonField?: string;
+  latField?: string;
+  altField?: string;
+  missionIdField?: string;
+  unitIdField?: string;
 
   // 节点六：Python 脚本执行器
   pythonScriptCode?: string;
+  pythonCode?: string;
   pythonTimeoutMs?: number;
+  timeoutMs?: number;
+  outputColumns?: Array<string | { name: string; type?: string }>;
 }
 
 export interface CanvasNodeRuntimeState {
@@ -72,6 +99,7 @@ export interface CanvasNode {
   id: string;
   type: PipelineNodeType;
   title: string;
+  label?: string;
   description?: string;
   x: number;
   y: number;

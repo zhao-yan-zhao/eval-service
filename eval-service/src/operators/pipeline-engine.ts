@@ -10,7 +10,9 @@
  */
 
 import type {
+  AggregationMetricItem,
   AggregationOperatorConfig,
+  DatasetColumn,
   DerivedColumnConfig,
   FormulaOperatorConfig,
   PipelinePreviewResult,
@@ -185,7 +187,9 @@ export function executeFormulaOrAggPreview(
           errors: valErrs,
         };
       }
-      diffCols = aggConfig.metrics.map((m) => m.targetField);
+      diffCols = aggConfig.metrics
+        .map((m) => m.targetField ?? m.outputField)
+        .filter((f): f is string => typeof f === 'string' && f.length > 0);
       resultDataset = evaluateAggregationDataset(normalizedSample, aggConfig);
     } else {
       const formulaConfig = extractFormulaConfig(nodeConfig);

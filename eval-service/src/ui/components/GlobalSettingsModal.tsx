@@ -276,8 +276,7 @@ export function GlobalSettingsModal({
     try {
       const res = await evalApi.cloneDatabase({
         type,
-        targetName: cleanName.endsWith('.db') ? cleanName : `${cleanName}.db`,
-        sourceDb: type === 'operator' ? activeOperatorDbName : activeScenarioDbName,
+        targetDbName: cleanName.endsWith('.db') ? cleanName : `${cleanName}.db`,
       });
       if (res.ok) {
         setMsg({ kind: 'ok', text: `成功克隆并激活${type === 'operator' ? '三库标准库' : '想定库'}「${res.cloned}」！` });
@@ -391,31 +390,34 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
   const handleExportAllAssets = async () => {
     setExportingAssets(true);
     try {
-      const [opRes, indRes, sysRes] = await Promise.all([
-        evalApi.listOperators(),
-        evalApi.listIndicators(),
-        evalApi.listSystems(),
+      const [opRes, effRes, mgRes, sysRes] = await Promise.all([
+        evalApi.listV4Operators({ layer: 'all' }),
+        evalApi.listV4Effects(),
+        evalApi.listV4MetricGraphs(),
+        evalApi.listV4SystemDags(),
       ]);
       const bundle = {
         exportedAt: new Date().toISOString(),
-        version: '1.0.0',
+        version: '4.0.0',
         metadata: {
           operatorCount: opRes.operators.length,
-          indicatorCount: indRes.indicators.length,
-          systemCount: sysRes.systems.length,
+          effectCount: effRes.effects.length,
+          metricGraphCount: mgRes.graphs.length,
+          systemDagCount: sysRes.systems.length,
         },
         operators: opRes.operators,
-        indicators: indRes.indicators,
-        systems: sysRes.systems,
+        effects: effRes.effects,
+        metricGraphs: mgRes.graphs,
+        systemDags: sysRes.systems,
       };
       const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `f1-eval-assets-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `f1-eval-v4-assets-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setMsg({ kind: 'ok', text: '全部资产包导出成功！已保存到本地 JSON' });
+      setMsg({ kind: 'ok', text: '全部 V4 资产包导出成功！已保存到本地 JSON' });
     } catch (err) {
       setMsg({ kind: 'err', text: '导出资产包失败: ' + String(err) });
     } finally {
@@ -424,18 +426,11 @@ result = {"status": "ok", "max_eigen": float(np.max(eigenvalues))}
   };
 
   const handleResetOverrides = async () => {
-    if (!confirm('确定要重置所有内置算子的自定义覆盖参数吗？此操作将恢复出厂默认值。')) return;
+    if (!confirm('确定要重置所有内置 V4 算子的自定义覆盖参数吗？此操作将恢复出厂默认值。')) return;
     setResettingOverrides(true);
     try {
-      const opRes = await evalApi.listOperators();
-      let count = 0;
-      for (const op of opRes.operators) {
-        if (op.isBuiltin && op.isOverridden) {
-          await evalApi.resetOperatorOverride(op.id);
-          count++;
-        }
-      }
-      setMsg({ kind: 'ok', text: `已成功将 ${count} 个内置算子重置为出厂默认参数` });
+      const res = await evalApi.resetAllV4OperatorOverrides();
+      setMsg({ kind: 'ok', text: `已成功将 ${res.resetCount} 个内置 V4 算子重置为出厂默认定义` });
       if (onRefreshAll) await onRefreshAll();
     } catch (err) {
       setMsg({ kind: 'err', text: '重置算子参数失败: ' + String(err) });

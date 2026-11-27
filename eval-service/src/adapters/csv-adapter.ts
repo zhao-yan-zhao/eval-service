@@ -1209,7 +1209,11 @@ export function parseCsvDirectoryToSituation(
         });
       }
     }
-    model.fuelRecords = [...fuelMap.values()];
+    model.fuelRecords = [...fuelMap.values()].map((r) => ({
+      ...r,
+      side: r.side ?? 'Unknown',
+      sourceRef: r.sourceRef ?? 'CSV:FuelConsumed',
+    }));
   }
 
   const airOpsRows = tables.get('AirOps') ?? [];

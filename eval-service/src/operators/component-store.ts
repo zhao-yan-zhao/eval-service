@@ -1,5 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { EvalSqliteStore } from '../adapters/sqlite-store.ts';
+
+function isSqliteStoreLike(v: unknown): v is EvalSqliteStore {
+  return (
+    Boolean(v) &&
+    typeof v === 'object' &&
+    typeof (v as EvalSqliteStore).listV4Components === 'function' &&
+    typeof (v as EvalSqliteStore).getMeta === 'function'
+  );
+}
 
 export interface ComponentIOItem {
   name: string;
@@ -302,20 +312,80 @@ export function validateComponentManifest(manifest: any): { valid: boolean; erro
 
 export class ComponentRegistryStore {
   private readonly filePath: string;
+  private sqliteStore?: EvalSqliteStore;
+  private builtinItems: ComponentManifest[] = [];
   private customItems: Map<string, ComponentManifest> = new Map();
 
-  constructor(filePath?: string) {
-    this.filePath = filePath || path.join(process.cwd(), 'data', 'custom-components.json');
+  constructor(filePathOrStore?: string | EvalSqliteStore, sqliteStore?: EvalSqliteStore) {
+    if (isSqliteStoreLike(filePathOrStore)) {
+      this.filePath = path.join(process.cwd(), 'data', 'custom-components.json');
+      this.sqliteStore = filePathOrStore;
+    } else {
+      this.filePath = filePathOrStore || path.join(process.cwd(), 'data', 'custom-components.json');
+      this.sqliteStore = sqliteStore;
+    }
     this.load();
   }
 
+  getSqliteStore(): EvalSqliteStore | undefined {
+    return this.sqliteStore;
+  }
+
+  rebindSqliteStore(newStore: EvalSqliteStore): void {
+    this.sqliteStore = newStore;
+    this.load();
+  }
+
+  private loadFromSqlite(): void {
+    if (!this.sqliteStore) return;
+    const isBlank = this.sqliteStore.getMeta('is_blank') === '1';
+
+    if (!isBlank && this.sqliteStore.countV4Components() === 0) {
+      for (const comp of BUILTIN_COMPONENTS) {
+        this.sqliteStore.upsertV4Component({ ...comp, isBuiltin: true, isCustom: false }, true);
+      }
+      if (this.filePath && fs.existsSync(this.filePath)) {
+        try {
+          const raw = fs.readFileSync(this.filePath, 'utf-8');
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            for (const item of list) {
+              if (item && item.id && !BUILTIN_COMPONENTS.some((b) => b.id === item.id)) {
+                this.sqliteStore.upsertV4Component(
+                  { ...item, isCustom: true, isBuiltin: false },
+                  false,
+                );
+              }
+            }
+          }
+        } catch {
+          // 容错降级
+        }
+      }
+    }
+
+    this.builtinItems = this.sqliteStore.listV4Components({ builtinOnly: true });
+    this.customItems.clear();
+    for (const item of this.sqliteStore.listV4Components({ customOnly: true })) {
+      if (item?.id) {
+        this.customItems.set(item.id, { ...item, isCustom: true, isBuiltin: false });
+      }
+    }
+  }
+
   private load(): void {
+    if (this.sqliteStore) {
+      this.loadFromSqlite();
+      return;
+    }
+
+    this.builtinItems = [...BUILTIN_COMPONENTS];
+    this.customItems.clear();
     if (!fs.existsSync(this.filePath)) return;
     try {
       const raw = fs.readFileSync(this.filePath, 'utf-8');
       const list = JSON.parse(raw);
       if (Array.isArray(list)) {
-        this.customItems.clear();
         for (const item of list) {
           if (item && item.id) {
             this.customItems.set(item.id, { ...item, isCustom: true, isBuiltin: false });
@@ -328,6 +398,7 @@ export class ComponentRegistryStore {
   }
 
   private save(): void {
+    if (this.sqliteStore) return;
     try {
       const dir = path.dirname(this.filePath);
       if (!fs.existsSync(dir)) {
@@ -341,7 +412,7 @@ export class ComponentRegistryStore {
   }
 
   list(): ComponentManifest[] {
-    const list: ComponentManifest[] = [...BUILTIN_COMPONENTS];
+    const list: ComponentManifest[] = [...this.builtinItems];
     for (const custom of this.customItems.values()) {
       list.push(custom);
     }
@@ -349,7 +420,7 @@ export class ComponentRegistryStore {
   }
 
   get(id: string): ComponentManifest | null {
-    const builtin = BUILTIN_COMPONENTS.find((c) => c.id === id);
+    const builtin = this.builtinItems.find((c) => c.id === id);
     if (builtin) return builtin;
     return this.customItems.get(id) || null;
   }
@@ -360,7 +431,7 @@ export class ComponentRegistryStore {
       throw new Error(`组件导入校验失败: ${val.errors.join('; ')}`);
     }
 
-    if (BUILTIN_COMPONENTS.some((c) => c.id === manifest.id)) {
+    if (this.builtinItems.some((c) => c.id === manifest.id)) {
       throw new Error(`禁止覆盖内置核心组件 "${manifest.id}"`);
     }
 
@@ -374,17 +445,25 @@ export class ComponentRegistryStore {
     };
 
     this.customItems.set(item.id, item);
-    this.save();
+    if (this.sqliteStore) {
+      this.sqliteStore.upsertV4Component(item, false);
+    } else {
+      this.save();
+    }
     return item;
   }
 
   delete(id: string): boolean {
-    if (BUILTIN_COMPONENTS.some((c) => c.id === id)) {
+    if (this.builtinItems.some((c) => c.id === id)) {
       throw new Error(`内置核心组件 "${id}" 受系统级保护，禁止删除`);
     }
     const existed = this.customItems.delete(id);
     if (existed) {
-      this.save();
+      if (this.sqliteStore) {
+        this.sqliteStore.deleteV4Component(id);
+      } else {
+        this.save();
+      }
     }
     return existed;
   }

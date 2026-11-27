@@ -4,7 +4,6 @@ import type {
   AggregationOperatorConfig,
   BsFamilyCatalogGroup,
   BsPathMetricItem,
-  BuiltinOperatorOverride,
   CatalogChannelSpec,
   CatalogEventField,
   CatalogEventSpec,
@@ -12,41 +11,34 @@ import type {
   CsvRunPresence,
   CsvTablePreview,
   CsvTableProfileEntry,
-  CustomOperatorDefinition,
   DatasetColumn,
   DerivedColumnConfig,
   EffectDefinition,
-  EvalSummaryV2,
   EvaluationDagOutput,
   EvaluationSystemDag,
   EvidenceRef,
   F1OutputCatalog,
   FieldDataType,
   FormulaOperatorConfig,
-  IndicatorDefinition,
-  IndicatorReduceMethod,
-  IndicatorSourceBinding,
-  IndicatorSystem,
-  MetricAtomMeta,
-  MetricAtomResult,
+  MetricDomainTag,
   MetricGraphDefinition,
+  MetricMilitaryLevel,
   OperatorCategory,
-  OperatorComparisonRow,
   OperatorDefaultParams,
   OperatorFieldContract,
   OperatorNodeExecutionResult,
   OperatorOutputType,
   OperatorSourceBinding,
-  OperatorSweepPoint,
   OptimalDirection,
+  ParameterPortSpec,
   PipelinePreviewResult,
   RunSourceProfile,
   ScoringRule,
   SourceBindingAgg,
   StructuredSimEvent,
-  SystemEvaluationOutput,
   TableDataset,
-  TacticalFeedbackPayload,
+  V4MetricSnapshotItem,
+  V4MetricTableSlice,
 } from '../core/types.ts';
 
 export type {
@@ -55,7 +47,6 @@ export type {
   AggregationOperatorConfig,
   BsFamilyCatalogGroup,
   BsPathMetricItem,
-  BuiltinOperatorOverride,
   CatalogChannelSpec,
   CatalogEventField,
   CatalogEventSpec,
@@ -63,68 +54,90 @@ export type {
   CsvRunPresence,
   CsvTablePreview,
   CsvTableProfileEntry,
-  CustomOperatorDefinition,
   DatasetColumn,
   DerivedColumnConfig,
   EffectDefinition,
-  EvalSummaryV2,
   EvaluationDagOutput,
   EvaluationSystemDag,
   EvidenceRef,
   F1OutputCatalog,
   FieldDataType,
   FormulaOperatorConfig,
-  IndicatorDefinition,
-  IndicatorReduceMethod,
-  IndicatorSourceBinding,
-  IndicatorSystem,
-  MetricAtomMeta,
-  MetricAtomResult,
+  MetricDomainTag,
   MetricGraphDefinition,
+  MetricMilitaryLevel,
   OperatorCategory,
-  OperatorComparisonRow,
   OperatorDefaultParams,
   OperatorFieldContract,
   OperatorNodeExecutionResult,
   OperatorOutputType,
   OperatorSourceBinding,
-  OperatorSweepPoint,
   OptimalDirection,
+  ParameterPortSpec,
   PipelinePreviewResult,
   RunSourceProfile,
   ScoringRule,
   SourceBindingAgg,
   StructuredSimEvent,
-  SystemEvaluationOutput,
   TableDataset,
-  TacticalFeedbackPayload,
+  V4MetricSnapshotItem,
+  V4MetricTableSlice,
 };
 
-export interface IndicatorBacktestRunItem {
-  runId: string;
-  scenarioName: string;
-  sourceKind: string;
-  status: 'valid' | 'degraded' | 'unavailable';
-  rawValue: number | boolean | null;
-  numericValue?: number | null;
-  displayValue: string;
-  score: number | null;
-  alarmTriggered: boolean;
-  missingDataReason?: string;
-  evidenceRefs: EvidenceRef[];
-  details?: Record<string, unknown>;
+export type V4OperatorLayer = 'fact' | 'legacy_aggregate';
+
+export type V4OperatorEngineKind =
+  | 'python_script'
+  | 'data_input'
+  | 'inline_calc'
+  | 'group_agg'
+  | 'spatial';
+
+/**
+ * V4 一库算子前端统一视图契约（对应 GET/POST/PUT /api/v4/operators 返回结构）
+ */
+export interface V4OperatorItem {
+  id: string;
+  name: string;
+  chapter: number;
+  category: OperatorCategory;
+  militaryLevel: MetricMilitaryLevel;
+  domainTag: MetricDomainTag;
+  description: string;
+  layer: V4OperatorLayer;
+  engineKind: V4OperatorEngineKind;
+  isBuiltin: boolean;
+  requiredTables: string[];
+  optionalTables?: string[];
+  upstreamOperatorId?: string;
+  tableColumns?: Record<string, string[]>;
+  parameterPorts: ParameterPortSpec[];
+  outputColumns: Array<{ name: string; type: string } | string>;
+  outputColumnNames: string[];
+  pythonCode: string;
+  updatedAt?: string;
 }
 
-export interface IndicatorBacktestSummary {
-  totalRuns: number;
-  validCount: number;
-  minValue: number | null;
-  maxValue: number | null;
-  avgValue: number | null;
-  minScore: number | null;
-  maxScore: number | null;
-  avgScore: number | null;
+export interface V4OperatorUpsertInput {
+  id: string;
+  name: string;
+  chapter?: number;
+  category?: OperatorCategory;
+  militaryLevel?: MetricMilitaryLevel;
+  domainTag?: MetricDomainTag;
+  description?: string;
+  layer?: V4OperatorLayer;
+  engineKind?: V4OperatorEngineKind;
+  requiredTables?: string[];
+  optionalTables?: string[];
+  upstreamOperatorId?: string;
+  tableColumns?: Record<string, string[]>;
+  parameterPorts?: ParameterPortSpec[];
+  outputColumns?: string[];
+  pythonCode?: string;
 }
+
+export type V4OperatorUpdatePatch = Partial<Omit<V4OperatorUpsertInput, 'id'>>;
 
 export interface DataSourceStatus {
   source: {
@@ -172,18 +185,6 @@ export interface StoredRunSummary {
   unitCount: number;
   eventCount: number;
   importedAt: string;
-}
-
-export interface StoredEvalSummary {
-  evalId: string;
-  runId: string;
-  systemId: string;
-  systemName: string;
-  systemVersion: string;
-  overallScore: number | null;
-  overallConfidence: string;
-  availableWeightRatio: number;
-  createdAt: string;
 }
 
 export interface RealtimeJudgementCard {
@@ -288,6 +289,52 @@ export interface ComponentManifest {
   configSchema: ComponentConfigSchema;
 }
 
+export interface StoredV4EvalSideSummary {
+  side: string;
+  overallScore: number | null;
+  rawOverallScore: number | null;
+  gateVerdict: 'PASS' | 'WARNING' | 'DISQUALIFIED';
+  availableWeightRatio: number;
+}
+
+export interface StoredV4EvalSummary {
+  evalId: string;
+  runId: string;
+  dataSourceId?: string;
+  systemId: string;
+  systemName: string;
+  systemVersion: string;
+  metricGraphId?: string;
+  sides: string[];
+  overallScore: number | null;
+  gateVerdict: 'PASS' | 'WARNING' | 'DISQUALIFIED';
+  availableWeightRatio: number;
+  sideSummaries: StoredV4EvalSideSummary[];
+  createdAt: string;
+}
+
+export interface StoredV4EvalRecord extends StoredV4EvalSummary {
+  overall: EvaluationDagOutput;
+  bySide: Record<string, EvaluationDagOutput>;
+  metricSnapshots?: V4MetricSnapshotItem[];
+}
+
+export interface V4CompareSidesResponse {
+  ok: boolean;
+  evalId?: string;
+  createdAt?: string;
+  systemId: string;
+  systemName?: string;
+  systemVersion?: string;
+  runId: string;
+  metricGraphId?: string;
+  sides: string[];
+  sideSummaries?: StoredV4EvalSideSummary[];
+  overall: EvaluationDagOutput;
+  bySide: Record<string, EvaluationDagOutput>;
+  metricSnapshots?: V4MetricSnapshotItem[];
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
@@ -301,6 +348,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const evalApi = {
+  // ─── 系统健康检查与字段规范目录 ───
   getHealth: () =>
     requestJson<{
       ok: boolean;
@@ -314,6 +362,15 @@ export const evalApi = {
     }>('/api/health'),
 
   getFieldsCatalog: () => requestJson<{ catalog: F1OutputCatalog }>('/api/fields-catalog'),
+
+  getSchemaCatalog: () =>
+    requestJson<{ ok: boolean; catalog: any }>('/api/schema/catalog'),
+
+  saveSchemaCatalog: (catalog: any) =>
+    requestJson<{ ok: boolean; message: string; totalTables: number }>('/api/schema/catalog', {
+      method: 'POST',
+      body: JSON.stringify(catalog),
+    }),
 
   // ─── 算子组件库与 JSON Schema 扩展插件注册接口 ───
   listComponents: () => requestJson<{ ok: boolean; components: ComponentManifest[] }>('/api/components'),
@@ -335,35 +392,7 @@ export const evalApi = {
       method: 'DELETE',
     }),
 
-  listOperators: () => requestJson<{ operators: MetricAtomMeta[] }>('/api/operators'),
-
-  upsertOperator: (def: CustomOperatorDefinition) =>
-    requestJson<{ operator: CustomOperatorDefinition; meta?: MetricAtomMeta }>('/api/operators', {
-      method: 'POST',
-      body: JSON.stringify(def),
-    }),
-
-  updateOperator: (
-    atomId: string,
-    payload: BuiltinOperatorOverride | CustomOperatorDefinition,
-  ) =>
-    requestJson<{ operator: MetricAtomMeta }>(`/api/operators/${encodeURIComponent(atomId)}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    }),
-
-  resetOperatorOverride: (atomId: string) =>
-    requestJson<{ reset: boolean; operator: MetricAtomMeta }>(
-      `/api/operators/${encodeURIComponent(atomId)}/override`,
-      { method: 'DELETE' },
-    ),
-
-  deleteOperator: (atomId: string) =>
-    requestJson<{ deleted: boolean }>(`/api/operators/${encodeURIComponent(atomId)}`, {
-      method: 'DELETE',
-    }),
-
-  // 获取持久化的算子专属流水线配置
+  // ─── 算子画布流水线 & 共享沙箱底座 ───
   getOperatorPipeline: (operatorId: string) =>
     requestJson<{
       ok: boolean;
@@ -380,7 +409,6 @@ export const evalApi = {
       };
     }>(`/api/operator-pipelines/${encodeURIComponent(operatorId)}`),
 
-  // 保存并持久化算子专属流水线配置至后端 JSON
   saveOperatorPipeline: (body: {
     operatorId: string;
     pipelineTitle: string;
@@ -393,24 +421,11 @@ export const evalApi = {
       message: string;
       saved: any;
       derivedContract?: any;
-      updatedMeta?: MetricAtomMeta;
+      updatedMeta?: V4OperatorItem;
     }>('/api/operator-pipelines', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-
-  previewOperatorFormula: (
-    definition: CustomOperatorDefinition,
-    runId: string,
-    customParams?: Record<string, unknown>,
-  ) =>
-    requestJson<{ valid: boolean; errors: string[]; result: MetricAtomResult }>(
-      '/api/operators/preview-formula',
-      {
-        method: 'POST',
-        body: JSON.stringify({ definition, runId, customParams }),
-      },
-    ),
 
   previewPipeline: (body: {
     nodeType: 'formula' | 'aggregation';
@@ -451,153 +466,7 @@ export const evalApi = {
       body: JSON.stringify(params),
     }),
 
-  getOperatorCategories: () =>
-    requestJson<{
-      categories: Array<{ id: string; name: string; description: string; badgeColor: string }>;
-    }>('/api/operators/categories'),
-
-  compareOperatorsRuns: (runIdA: string, runIdB: string, customParams?: Record<string, unknown>) =>
-    requestJson<{ runIdA: string; runIdB: string; rows: OperatorComparisonRow[] }>(
-      '/api/operators/compare-runs',
-      {
-        method: 'POST',
-        body: JSON.stringify({ runIdA, runIdB, customParams }),
-      },
-    ),
-
-  sweepOperator: (
-    atomId: string,
-    params: {
-      runId: string;
-      paramKey:
-        | 'safeRadiusNm'
-        | 'arrivalLineLon'
-        | 'expectedSpacingNm'
-        | 'minRangeNm'
-        | 'waveGapSeconds';
-      min: number;
-      max: number;
-      steps?: number;
-      customParams?: Record<string, unknown>;
-    },
-  ) =>
-    requestJson<{ atomId: string; paramKey: string; points: OperatorSweepPoint[] }>(
-      `/api/operators/${encodeURIComponent(atomId)}/sweep`,
-      {
-        method: 'POST',
-        body: JSON.stringify(params),
-      },
-    ),
-
-  evaluateOperator: (atomId: string, runId: string, customParams?: Record<string, unknown>) =>
-    requestJson<{ result: MetricAtomResult }>(`/api/operators/${encodeURIComponent(atomId)}/evaluate`, {
-      method: 'POST',
-      body: JSON.stringify({ runId, customParams }),
-    }),
-
-  evaluateAllOperators: (runId: string, customParams?: Record<string, unknown>) =>
-    requestJson<{ results: Record<string, MetricAtomResult> }>('/api/operators/evaluate-all', {
-      method: 'POST',
-      body: JSON.stringify({ runId, customParams }),
-    }),
-
-  listIndicators: () => requestJson<{ indicators: IndicatorDefinition[] }>('/api/indicators'),
-
-  previewIndicatorCurve: (scoring: ScoringRule, samples = 36) =>
-    requestJson<{ points: Array<{ x: number; score: number }> }>('/api/indicators/preview-curve', {
-      method: 'POST',
-      body: JSON.stringify({ scoring, samples }),
-    }),
-
-  upsertIndicator: (def: IndicatorDefinition) =>
-    requestJson<{ indicator: IndicatorDefinition }>('/api/indicators', {
-      method: 'POST',
-      body: JSON.stringify(def),
-    }),
-
-  backtestIndicator: (payload: {
-    indicator: IndicatorDefinition;
-    runIds?: string[];
-    targetSide?: string;
-  }) =>
-    requestJson<{
-      ok: boolean;
-      results: IndicatorBacktestRunItem[];
-      summary: IndicatorBacktestSummary;
-    }>('/api/indicators/backtest', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-
-  importIndicators: (indicators: IndicatorDefinition[]) =>
-    requestJson<{ ok: boolean; count: number; indicators: IndicatorDefinition[] }>('/api/indicators/import', {
-      method: 'POST',
-      body: JSON.stringify({ indicators }),
-    }),
-
-  deleteIndicator: (indicatorId: string) =>
-    requestJson<{ deleted: boolean }>(`/api/indicators/${encodeURIComponent(indicatorId)}`, {
-      method: 'DELETE',
-    }),
-
-  listSystems: () => requestJson<{ systems: IndicatorSystem[] }>('/api/systems'),
-
-  validateSystem: (system: IndicatorSystem, autoNormalize = false) =>
-    requestJson<{
-      system: IndicatorSystem;
-      validation: { valid: boolean; errors: string[]; warnings: string[] };
-    }>('/api/systems/validate', {
-      method: 'POST',
-      body: JSON.stringify({ system, autoNormalize }),
-    }),
-
-  upsertSystem: (system: IndicatorSystem) =>
-    requestJson<{ system: IndicatorSystem }>('/api/systems', {
-      method: 'POST',
-      body: JSON.stringify(system),
-    }),
-
-  deleteSystem: (systemId: string) =>
-    requestJson<{ deleted: boolean }>(`/api/systems/${encodeURIComponent(systemId)}`, {
-      method: 'DELETE',
-    }),
-
-  draftSystemNl: (prompt: string, name?: string) =>
-    requestJson<{
-      system: IndicatorSystem;
-      validation: { valid: boolean; errors: string[]; warnings: string[] };
-      mode: string;
-      matchedDomains: string[];
-      rationale: string;
-    }>('/api/systems/draft-nl', {
-      method: 'POST',
-      body: JSON.stringify({ prompt, name }),
-    }),
-
-  computeAhp: (matrix: number[][], names?: string[]) =>
-    requestJson<{
-      weights: number[];
-      namedWeights: Record<string, number> | null;
-      lambdaMax: number;
-      ci: number;
-      ri: number;
-      cr: number;
-      consistent: boolean;
-    }>('/api/mcda/ahp', {
-      method: 'POST',
-      body: JSON.stringify({ matrix, names }),
-    }),
-
-  computeEntropy: (
-    matrix: number[][],
-    directions: Array<'smaller_is_better' | 'larger_is_better'>,
-    criterionNames?: string[],
-  ) =>
-    requestJson<{ weights: number[]; entropies: number[] }>('/api/mcda/entropy', {
-      method: 'POST',
-      body: JSON.stringify({ matrix, directions, criterionNames }),
-    }),
-
+  // ─── MCDA 运筹学算法接口 ───
   computeTopsis: (params: {
     matrix: number[][];
     weights?: number[];
@@ -629,31 +498,7 @@ export const evalApi = {
       body: JSON.stringify(params),
     }),
 
-  computeObjectiveWeights: (params: {
-    systemId?: string;
-    system?: IndicatorSystem;
-    dimensionIds?: string[];
-    runIds?: string[];
-    method: 'entropy' | 'critic' | 'combined';
-    objectiveMethod?: 'entropy' | 'critic';
-    subjectiveWeights?: number[];
-    alpha?: number;
-  }) =>
-    requestJson<{
-      method: 'entropy' | 'critic' | 'combined';
-      targetIds: string[];
-      targetNames: string[];
-      runs: string[];
-      matrix: number[][];
-      weights: number[];
-      normalizedWeights: number[];
-      objectiveWeights: number[];
-      diagnostics: Record<string, unknown>;
-    }>('/api/systems/objective-weights', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    }),
-
+  // ─── 推演数据源与场次管理 ───
   listDataSources: () =>
     requestJson<{ activeSourceId: string; activeRunId: string; dataSources: DataSourceStatus[] }>(
       '/api/data-sources',
@@ -690,17 +535,6 @@ export const evalApi = {
   deleteDataSource: (id: string) =>
     requestJson<{ deleted: boolean }>(`/api/data-sources/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-    }),
-
-  importDataSource: (id: string) =>
-    requestJson<{
-      runId: string;
-      scenarioName: string;
-      unitCount: number;
-      eventCount: number;
-      sides: string[];
-    }>(`/api/data-sources/${encodeURIComponent(id)}/import`, {
-      method: 'POST',
     }),
 
   listRuns: () => requestJson<{ runs: StoredRunSummary[] }>('/api/runs'),
@@ -747,28 +581,6 @@ export const evalApi = {
       },
     ),
 
-  getRunDetail: (runId: string) =>
-    requestJson<{
-      runId: string;
-      scenarioName: string;
-      scenarioPath: string;
-      startGameClock: string;
-      endGameClock: string;
-      totalGameSeconds: number;
-      sides: string[];
-      coverage: Record<string, unknown>;
-      units: Array<{
-        unitId: string;
-        unitName: string;
-        side: string;
-        unitType?: string;
-        unitClass: string;
-        damageState: string;
-        ammoRemaining: number;
-        trackPointCount: number;
-      }>;
-    }>(`/api/runs/${encodeURIComponent(runId)}`),
-
   getRunEvents: (runId: string, params?: { kind?: string; side?: string; search?: string; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.kind) qs.set('kind', params.kind);
@@ -805,119 +617,7 @@ export const evalApi = {
     );
   },
 
-  runEvaluate: (body: {
-    runId: string;
-    systemId?: string;
-    system?: IndicatorSystem;
-    previewOnly?: boolean;
-    customParams?: Record<string, unknown>;
-    runPythonMetrics?: boolean;
-  }) =>
-    requestJson<{
-      evalId: string;
-      output: SystemEvaluationOutput;
-      reportMd: string;
-      feedback: TacticalFeedbackPayload;
-      pythonMetrics: Record<string, unknown> | null;
-    }>('/api/evaluate', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  runEvaluateStream: async (
-    body: {
-      runId: string;
-      systemId?: string;
-      system?: IndicatorSystem;
-      previewOnly?: boolean;
-      customParams?: Record<string, unknown>;
-      runPythonMetrics?: boolean;
-    },
-    onProgress: (info: { percent: number; stage: string; message: string; elapsedMs: number; log?: string }) => void,
-    signal?: AbortSignal,
-  ): Promise<{
-    evalId: string;
-    output: SystemEvaluationOutput;
-    reportMd: string;
-    feedback: TacticalFeedbackPayload;
-    pythonMetrics: Record<string, unknown> | null;
-  }> => {
-    const res = await fetch('/api/evaluate/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal,
-    });
-    if (!res.ok || !res.body) {
-      const txt = await res.text().catch(() => '');
-      throw new Error(txt || `HTTP ${res.status}`);
-    }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let finalResult: {
-      evalId: string;
-      output: SystemEvaluationOutput;
-      reportMd: string;
-      feedback: TacticalFeedbackPayload;
-      pythonMetrics: Record<string, unknown> | null;
-    } | null = null;
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split(/\r?\n\r?\n/);
-      buffer = blocks.pop() ?? '';
-      for (const block of blocks) {
-        if (!block.trim()) continue;
-        let eventName = 'message';
-        const dataLines: string[] = [];
-        for (const line of block.split(/\r?\n/)) {
-          if (line.startsWith('event:')) eventName = line.slice(6).trim();
-          else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
-        }
-        if (dataLines.length === 0) continue;
-        const parsed = JSON.parse(dataLines.join('\n')) as Record<string, unknown>;
-        if (eventName === 'progress') {
-          onProgress({
-            percent: Number(parsed.percent ?? 0),
-            stage: String(parsed.stage ?? ''),
-            message: String(parsed.message ?? ''),
-            elapsedMs: Number(parsed.elapsedMs ?? 0),
-            log: parsed.log ? String(parsed.log) : undefined,
-          });
-        } else if (eventName === 'error') {
-          throw new Error(String(parsed.error ?? '评估执行失败'));
-        } else if (eventName === 'done') {
-          finalResult = parsed as unknown as NonNullable<typeof finalResult>;
-        }
-      }
-    }
-    if (!finalResult) {
-      throw new Error('评估流式通道未返回最终结果');
-    }
-    return finalResult;
-  },
-
-  listEvaluations: (runId?: string) =>
-    requestJson<{ evaluations: StoredEvalSummary[] }>(
-      `/api/evaluations${runId ? `?runId=${encodeURIComponent(runId)}` : ''}`,
-    ),
-
-  getEvaluation: (evalId: string) =>
-    requestJson<{
-      output: SystemEvaluationOutput;
-      reportMd: string;
-      feedback: TacticalFeedbackPayload;
-    }>(`/api/evaluations/${encodeURIComponent(evalId)}`),
-
-  deleteEvaluation: (evalId: string) =>
-    requestJson<{ ok: boolean; evalId: string; message?: string }>(
-      `/api/evaluations/${encodeURIComponent(evalId)}`,
-      { method: 'DELETE' },
-    ),
-
+  // ─── 实时伴随研判监控 ───
   createRealtimeSession: (body: {
     runId?: string;
     source?: 'builtin_bs' | 'jsonl_text' | 'data_source';
@@ -951,15 +651,6 @@ export const evalApi = {
       },
     ),
 
-  getSchemaCatalog: () =>
-    requestJson<{ ok: boolean; catalog: any }>('/api/schema/catalog'),
-
-  saveSchemaCatalog: (catalog: any) =>
-    requestJson<{ ok: boolean; message: string; totalTables: number }>('/api/schema/catalog', {
-      method: 'POST',
-      body: JSON.stringify(catalog),
-    }),
-
   actOnRealtimeCard: (
     runId: string,
     cardId: string,
@@ -974,6 +665,7 @@ export const evalApi = {
       },
     ),
 
+  // ─── 数据库管理与内置样本加载 ───
   getCurrentDb: () =>
     requestJson<{
       ok: boolean;
@@ -1116,8 +808,53 @@ export const evalApi = {
     }),
 
   // ─── V4 全链路 DAG 评估中台接口 (/api/v4/*) ───
-  listV4Operators: () =>
-    requestJson<{ ok: boolean; operators: Array<Record<string, unknown>> }>('/api/v4/operators'),
+  listV4Operators: (params?: { layer?: 'fact' | 'all'; domain?: string; search?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.layer) qs.set('layer', params.layer);
+    if (params?.domain) qs.set('domain', params.domain);
+    if (params?.search) qs.set('search', params.search);
+    const q = qs.toString();
+    return requestJson<{ ok: boolean; operators: V4OperatorItem[]; components?: unknown[] }>(
+      `/api/v4/operators${q ? `?${q}` : ''}`,
+    );
+  },
+
+  getV4Operator: (operatorId: string) =>
+    requestJson<{ ok: boolean; operator: V4OperatorItem }>(
+      `/api/v4/operators/${encodeURIComponent(operatorId)}`,
+    ),
+
+  upsertV4Operator: (operator: V4OperatorUpsertInput) =>
+    requestJson<{ ok: boolean; operator: V4OperatorItem }>('/api/v4/operators', {
+      method: 'POST',
+      body: JSON.stringify({ operator }),
+    }),
+
+  updateV4Operator: (operatorId: string, patch: V4OperatorUpdatePatch) =>
+    requestJson<{ ok: boolean; operator: V4OperatorItem }>(
+      `/api/v4/operators/${encodeURIComponent(operatorId)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ operator: patch }),
+      },
+    ),
+
+  deleteV4Operator: (operatorId: string) =>
+    requestJson<{ ok: boolean; operatorId: string; deleted: boolean }>(
+      `/api/v4/operators/${encodeURIComponent(operatorId)}`,
+      { method: 'DELETE' },
+    ),
+
+  resetV4OperatorOverride: (operatorId: string) =>
+    requestJson<{ ok: boolean; operatorId: string; operator: V4OperatorItem }>(
+      `/api/v4/operators/${encodeURIComponent(operatorId)}/override`,
+      { method: 'DELETE' },
+    ),
+
+  resetAllV4OperatorOverrides: () =>
+    requestJson<{ ok: boolean; resetCount: number }>('/api/v4/operators/reset-all-overrides', {
+      method: 'POST',
+    }),
 
   runV4Operator: (body: {
     operatorId: string;
@@ -1145,6 +882,15 @@ export const evalApi = {
     requestJson<{ ok: boolean; effectId: string; deleted: boolean }>(
       `/api/v4/effects/${encodeURIComponent(effectId)}`,
       { method: 'DELETE' },
+    ),
+
+  previewV4EffectCurve: (scoringRule: ScoringRule, samples = 36) =>
+    requestJson<{ ok: boolean; points: Array<{ x: number; score: number }> }>(
+      '/api/v4/effects/preview-curve',
+      {
+        method: 'POST',
+        body: JSON.stringify({ scoringRule, samples }),
+      },
     ),
 
   listV4MetricGraphs: () =>
@@ -1200,6 +946,46 @@ export const evalApi = {
     requestJson<Record<string, unknown>>('/api/v4/system-dags/validate', {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+
+  draftV4SystemDagNl: (
+    prompt: string,
+    opts?: { name?: string; systemId?: string; metricGraphId?: string },
+  ) =>
+    requestJson<{
+      ok: boolean;
+      system: EvaluationSystemDag & { metricGraphId?: string };
+      validation: { valid: boolean; errors: string[]; warnings: string[] };
+      matchedDomains: string[];
+      rationale: string[];
+    }>('/api/v4/system-dags/draft-nl', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, ...opts }),
+    }),
+
+  computeV4ObjectiveWeights: (params: {
+    systemId?: string;
+    nodeId?: string;
+    runIds?: string[];
+    matrix?: number[][];
+    method: 'entropy' | 'critic' | 'combined';
+    objectiveMethod?: 'entropy' | 'critic';
+    subjectiveWeights?: number[];
+    alpha?: number;
+    directions?: Array<'smaller_is_better' | 'larger_is_better'>;
+    criterionNames?: string[];
+  }) =>
+    requestJson<{
+      ok: boolean;
+      method: string;
+      weights: number[];
+      normalizedWeights?: number[];
+      objectiveWeights?: number[];
+      criterionNames?: string[];
+      diagnostics?: Record<string, unknown>;
+    }>('/api/v4/system-dags/objective-weights', {
+      method: 'POST',
+      body: JSON.stringify(params),
     }),
 
   evaluateV4SystemDag: (body: {
@@ -1260,52 +1046,3 @@ export const evalApi = {
       { method: 'DELETE' },
     ),
 };
-
-export interface StoredV4EvalSideSummary {
-  side: string;
-  overallScore: number | null;
-  rawOverallScore: number | null;
-  gateVerdict: 'PASS' | 'WARNING' | 'DISQUALIFIED';
-  availableWeightRatio: number;
-}
-
-export interface StoredV4EvalSummary {
-  evalId: string;
-  runId: string;
-  dataSourceId?: string;
-  systemId: string;
-  systemName: string;
-  systemVersion: string;
-  metricGraphId?: string;
-  sides: string[];
-  overallScore: number | null;
-  gateVerdict: 'PASS' | 'WARNING' | 'DISQUALIFIED';
-  availableWeightRatio: number;
-  sideSummaries: StoredV4EvalSideSummary[];
-  createdAt: string;
-}
-
-export type { V4MetricSnapshotItem, V4MetricTableSlice } from '../core/types.ts';
-import type { V4MetricSnapshotItem } from '../core/types.ts';
-
-export interface StoredV4EvalRecord extends StoredV4EvalSummary {
-  overall: EvaluationDagOutput;
-  bySide: Record<string, EvaluationDagOutput>;
-  metricSnapshots?: V4MetricSnapshotItem[];
-}
-
-export interface V4CompareSidesResponse {
-  ok: boolean;
-  evalId?: string;
-  createdAt?: string;
-  systemId: string;
-  systemName?: string;
-  systemVersion?: string;
-  runId: string;
-  metricGraphId?: string;
-  sides: string[];
-  sideSummaries?: StoredV4EvalSideSummary[];
-  overall: EvaluationDagOutput;
-  bySide: Record<string, EvaluationDagOutput>;
-  metricSnapshots?: V4MetricSnapshotItem[];
-}

@@ -115,7 +115,7 @@ export function getNodeConsumedInputFields(
     case 'result_output':
       // 结果输出算子消费目标指标字段
       addField(cfg.targetField, '挂载评估指标值');
-      if (cfg.metricConfig?.targetField) {
+      if (typeof cfg.metricConfig?.targetField === 'string') {
         addField(cfg.metricConfig.targetField, '三库指标目标列');
       }
       break;
@@ -267,7 +267,7 @@ export function getNodeOutputColumns(
         for (const col of cfg.outputColumns) {
           if (typeof col === 'string' && col.trim()) {
             addCol(col.trim(), true);
-          } else if (col && typeof col.name === 'string' && col.name.trim()) {
+          } else if (typeof col === 'object' && col && typeof col.name === 'string' && col.name.trim()) {
             addCol(col.name.trim(), true);
           }
         }

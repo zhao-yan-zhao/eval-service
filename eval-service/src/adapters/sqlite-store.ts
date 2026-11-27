@@ -4,11 +4,14 @@ import { DatabaseSync } from 'node:sqlite';
 import type {
   BuiltinOperatorOverride,
   CustomOperatorDefinition,
+  EffectDefinition,
   EvaluationDagOutput,
+  EvaluationSystemDag,
   EvidenceRef,
   IndicatorDefinition,
   IndicatorSystem,
   MetricAtomMeta,
+  MetricGraphDefinition,
   SituationContact,
   SituationModel,
   SituationUnit,
@@ -17,9 +20,69 @@ import type {
   TacticalFeedbackPayload,
   V4MetricSnapshotItem,
 } from '../core/types.ts';
-import { OPERATORS_V2 } from '../operators/v2/index.ts';
+import { loadBuiltinEffectPresets } from '../effects/store.ts';
+import { BUILTIN_METRIC_GRAPHS } from '../indicators/metric-graph-store.ts';
+import { BUILTIN_COMPONENTS, type ComponentManifest } from '../operators/component-store.ts';
+import { ALL_V4_OPERATOR_SCRIPTS } from '../operators/v4/index.ts';
+import type { V4OperatorScriptSpec } from '../operators/v4/types.ts';
+import { BUILTIN_SYSTEM_DAGS } from '../systems/system-dag-store.ts';
 
 const DEFAULT_DB_PATH = path.resolve(import.meta.dirname, '..', '..', 'data', 'eval.db');
+export const CURRENT_SCHEMA_VERSION = '4.0.0';
+
+export interface V4ListFilter {
+  builtinOnly?: boolean;
+  customOnly?: boolean;
+}
+
+export type V4StoredOperator = V4OperatorScriptSpec & {
+  isBuiltin?: boolean;
+  updatedAt?: string;
+};
+
+export type V4StoredMetricGraph = MetricGraphDefinition & {
+  version?: string;
+  builtin?: boolean;
+};
+
+export type V4StoredSystemDag = EvaluationSystemDag & {
+  builtin?: boolean;
+  metricGraphId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export interface V4SeedLibrariesPayload {
+  operators?: V4StoredOperator[];
+  effects?: EffectDefinition[];
+  metricGraphs?: V4StoredMetricGraph[];
+  systemDags?: V4StoredSystemDag[];
+  components?: ComponentManifest[];
+  overwriteExisting?: boolean;
+}
+
+export interface V4SeedLibrariesResult {
+  skipped: boolean;
+  inserted: {
+    operators: number;
+    effects: number;
+    metricGraphs: number;
+    systemDags: number;
+    components: number;
+  };
+}
+
+function compareSemver(a: string, b: string): number {
+  const pa = a.split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const pb = b.split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length, 3);
+  for (let i = 0; i < len; i += 1) {
+    const da = pa[i] ?? 0;
+    const db = pb[i] ?? 0;
+    if (da !== db) return da < db ? -1 : 1;
+  }
+  return 0;
+}
 
 export interface StoredOperatorPipeline {
   operatorId: string;
@@ -137,21 +200,82 @@ export function deserializeSituationSnapshot(raw: string): SituationModel {
 export class EvalSqliteStore {
   readonly dbPath: string;
   private readonly db: DatabaseSync;
+  private lastBackupPath: string | null = null;
 
   constructor(dbPath = DEFAULT_DB_PATH, options?: { autoSeed?: boolean }) {
     this.dbPath = dbPath;
+    const existedOnDisk =
+      dbPath !== ':memory:' && fs.existsSync(dbPath) && fs.statSync(dbPath).size > 0;
     if (dbPath !== ':memory:') {
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     }
     this.db = new DatabaseSync(dbPath);
     this.db.exec('PRAGMA busy_timeout = 10000;');
+    this.backupLegacyDatabaseIfNeeded(existedOnDisk);
     this.initSchema();
+
+    const currentSchemaVersion = this.getMeta('schema_version');
+    if (
+      !currentSchemaVersion ||
+      compareSemver(currentSchemaVersion, CURRENT_SCHEMA_VERSION) < 0
+    ) {
+      this.setMeta('schema_version', CURRENT_SCHEMA_VERSION);
+    }
 
     // 如果库已标记为全新空白库（is_blank=1）或已完成初始化（is_initialized=1），绝不自动写入预置数据
     const isBlank = this.getMeta('is_blank') === '1';
     const isInitialized = this.getMeta('is_initialized') === '1';
     if (!isBlank && !isInitialized && options?.autoSeed !== false) {
       this.seedThreeLibraries();
+    }
+  }
+
+  getSchemaVersion(): string | null {
+    return this.getMeta('schema_version');
+  }
+
+  getLastBackupPath(): string | null {
+    return this.lastBackupPath;
+  }
+
+  private safeTableCount(sql: string): number {
+    try {
+      const row = this.db.prepare(sql).get() as { c?: number } | undefined;
+      return Number(row?.c ?? 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  private hasLegacyV2Data(): boolean {
+    return (
+      this.safeTableCount('SELECT COUNT(*) AS c FROM custom_operators') > 0 ||
+      this.safeTableCount('SELECT COUNT(*) AS c FROM operator_overrides') > 0 ||
+      this.safeTableCount('SELECT COUNT(*) AS c FROM indicator_definitions WHERE is_builtin = 0') > 0 ||
+      this.safeTableCount('SELECT COUNT(*) AS c FROM indicator_systems WHERE is_builtin = 0') > 0 ||
+      this.safeTableCount('SELECT COUNT(*) AS c FROM eval_results') > 0
+    );
+  }
+
+  private backupLegacyDatabaseIfNeeded(existedOnDisk: boolean): void {
+    if (!existedOnDisk || this.dbPath === ':memory:') return;
+    const currentVer = this.getMeta('schema_version');
+    if (currentVer && compareSemver(currentVer, CURRENT_SCHEMA_VERSION) >= 0) {
+      return;
+    }
+    if (!this.hasLegacyV2Data()) {
+      return;
+    }
+    try {
+      this.checkpoint();
+      const now = new Date();
+      const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+      const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${pad(now.getMilliseconds(), 3)}`;
+      const backupPath = `${this.dbPath}.v2-backup-${stamp}.bak`;
+      fs.copyFileSync(this.dbPath, backupPath);
+      this.lastBackupPath = backupPath;
+    } catch (err) {
+      console.warn('[sqlite-store] auto-backup legacy V2 database failed:', err);
     }
   }
 
@@ -365,6 +489,70 @@ export class EvalSqliteStore {
       );
       CREATE INDEX IF NOT EXISTS idx_v4_eval_results_run_created
         ON v4_eval_results (run_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS v4_operators (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        chapter INTEGER NOT NULL DEFAULT 0,
+        category TEXT NOT NULL,
+        military_level TEXT NOT NULL,
+        domain_tag TEXT NOT NULL,
+        layer TEXT NOT NULL DEFAULT 'fact',
+        engine_kind TEXT NOT NULL DEFAULT 'python_script',
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_v4_operators_builtin ON v4_operators (is_builtin);
+      CREATE INDEX IF NOT EXISTS idx_v4_operators_domain ON v4_operators (domain_tag);
+      CREATE INDEX IF NOT EXISTS idx_v4_operators_layer ON v4_operators (layer);
+
+      CREATE TABLE IF NOT EXISTS v4_effects (
+        effect_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        gate_mode TEXT,
+        domain_tag TEXT,
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_v4_effects_builtin ON v4_effects (is_builtin);
+      CREATE INDEX IF NOT EXISTS idx_v4_effects_role ON v4_effects (role);
+
+      CREATE TABLE IF NOT EXISTS v4_metric_graphs (
+        graph_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT '1.0.0',
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_v4_metric_graphs_builtin ON v4_metric_graphs (is_builtin);
+
+      CREATE TABLE IF NOT EXISTS v4_system_dags (
+        system_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT '1.0.0',
+        metric_graph_id TEXT,
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_v4_system_dags_builtin ON v4_system_dags (is_builtin);
+
+      CREATE TABLE IF NOT EXISTS v4_components (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        engine_type TEXT NOT NULL DEFAULT 'builtin',
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_v4_components_builtin ON v4_components (is_builtin);
     `);
 
     try {
@@ -375,103 +563,32 @@ export class EvalSqliteStore {
   }
 
   seedThreeLibraries(): void {
+    if (this.getMeta('is_blank') === '1') {
+      return;
+    }
+
     const now = new Date().toISOString();
+    const dataDir = path.resolve(import.meta.dirname, '..', '..', 'data');
 
-    // 0. operator_definitions (将 36 项核心物理算子全量种子持久化入库)
+    // 1. V4 一库算子 (v4_operators: 全部内置 V4 算子)
     try {
-      const opCount = Number(
-        (this.db.prepare('SELECT COUNT(*) AS c FROM operator_definitions WHERE is_builtin = 1').get() as { c: number }).c,
-      );
-      if (opCount === 0) {
-        const stmt = this.db.prepare(`
-          INSERT OR REPLACE INTO operator_definitions (
-            id, name, category, mode, is_builtin, pipeline_category, output_type, unit, data_json, updated_at
-          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
-        `);
-        for (const op of OPERATORS_V2) {
-          stmt.run(
-            op.meta.id,
-            op.meta.name,
-            op.meta.category,
-            op.meta.mode ?? 'builtin',
-            op.meta.pipelineCategory ?? null,
-            op.meta.outputType,
-            op.meta.unit ?? '',
-            JSON.stringify(op.meta),
-            now,
-          );
-        }
-      }
-    } catch (err) {
-      console.warn('[sqlite-store] seed operator_definitions failed:', err);
-    }
-
-    // 1. operator_overrides
-    try {
-      const overrideCount = Number(
-        (this.db.prepare('SELECT COUNT(*) AS c FROM operator_overrides').get() as { c: number }).c,
-      );
-      const overridesFile = path.resolve(import.meta.dirname, '..', '..', 'data', 'operator-overrides.json');
-      if (overrideCount === 0 && fs.existsSync(overridesFile)) {
-        const raw = fs.readFileSync(overridesFile, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const stmt = this.db.prepare(
-            'INSERT OR REPLACE INTO operator_overrides (operator_id, data_json, updated_at) VALUES (?, ?, ?)',
-          );
-          for (const item of parsed) {
-            if (item && item.id) {
-              stmt.run(item.id, JSON.stringify(item), now);
-            }
+      if (this.countV4Operators() === 0) {
+        for (const op of ALL_V4_OPERATOR_SCRIPTS) {
+          if (op?.id) {
+            this.upsertV4Operator({ ...op, isBuiltin: true, updatedAt: now }, true);
           }
         }
       }
     } catch (err) {
-      console.warn('[sqlite-store] seed operator_overrides failed:', err);
+      console.warn('[sqlite-store] seed v4_operators failed:', err);
     }
 
-    // 2. custom_operators
-    try {
-      const customOpsCount = Number(
-        (this.db.prepare('SELECT COUNT(*) AS c FROM custom_operators').get() as { c: number }).c,
-      );
-      const customOpsFile = path.resolve(import.meta.dirname, '..', '..', 'data', 'custom-operators.json');
-      if (customOpsCount === 0 && fs.existsSync(customOpsFile)) {
-        const raw = fs.readFileSync(customOpsFile, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const stmt = this.db.prepare(
-            `INSERT OR REPLACE INTO custom_operators (
-              id, name, category, mode, pipeline_category, output_type, unit, data_json, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          );
-          for (const def of parsed) {
-            if (def && def.id) {
-              stmt.run(
-                def.id,
-                def.name || '',
-                def.category || 'effectiveness',
-                def.mode || 'formula_pipeline',
-                def.pipelineCategory || null,
-                def.outputType || 'score',
-                def.unit || '',
-                JSON.stringify(def),
-                now,
-              );
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[sqlite-store] seed custom_operators failed:', err);
-    }
-
-    // 3. operator_pipelines
+    // 2. V4 一库算子画布流水线 (operator_pipelines)
     try {
       const pipelineCount = Number(
         (this.db.prepare('SELECT COUNT(*) AS c FROM operator_pipelines').get() as { c: number }).c,
       );
-      const pipelinesFile = path.resolve(import.meta.dirname, '..', '..', 'data', 'operator-pipelines.json');
+      const pipelinesFile = path.join(dataDir, 'operator-pipelines.json');
       if (pipelineCount === 0 && fs.existsSync(pipelinesFile)) {
         const raw = fs.readFileSync(pipelinesFile, 'utf-8');
         const parsed = JSON.parse(raw);
@@ -498,115 +615,104 @@ export class EvalSqliteStore {
       console.warn('[sqlite-store] seed operator_pipelines failed:', err);
     }
 
-    // 4. indicator_definitions (builtins + custom)
+    // 3. V4 效果库 (v4_effects: 内置预设 + 可选自定义导入)
     try {
-      const indCount = Number(
-        (this.db.prepare('SELECT COUNT(*) AS c FROM indicator_definitions').get() as { c: number }).c,
-      );
-      if (indCount === 0) {
-        const stmt = this.db.prepare(
-          `INSERT OR REPLACE INTO indicator_definitions (
-            id, name, category, atom_ref, is_builtin, data_json, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        );
-        const builtinCatalogFile = path.resolve(import.meta.dirname, '..', 'indicators', 'catalog.json');
-        if (fs.existsSync(builtinCatalogFile)) {
-          const raw = fs.readFileSync(builtinCatalogFile, 'utf-8');
-          const items = JSON.parse(raw);
-          if (Array.isArray(items)) {
-            for (const item of items) {
-              if (item && item.indicatorId) {
-                stmt.run(
-                  item.indicatorId,
-                  item.name || '',
-                  item.category || '',
-                  item.atomRef || '',
-                  1,
-                  JSON.stringify({ ...item, builtin: true }),
-                  now,
-                );
-              }
-            }
+      if (this.countV4Effects() === 0) {
+        for (const preset of loadBuiltinEffectPresets()) {
+          if (preset?.effectId) {
+            this.upsertV4Effect({ ...preset, isBuiltin: true }, true);
           }
         }
-        const customIndFile = path.resolve(import.meta.dirname, '..', '..', 'data', 'custom-indicators.json');
-        if (fs.existsSync(customIndFile)) {
-          const raw = fs.readFileSync(customIndFile, 'utf-8');
-          const items = JSON.parse(raw);
+        const customEffectsFile = path.join(dataDir, 'custom-effects.json');
+        if (fs.existsSync(customEffectsFile)) {
+          const items = JSON.parse(fs.readFileSync(customEffectsFile, 'utf-8'));
           if (Array.isArray(items)) {
             for (const item of items) {
-              if (item && item.indicatorId) {
-                stmt.run(
-                  item.indicatorId,
-                  item.name || '',
-                  item.category || '',
-                  item.atomRef || '',
-                  0,
-                  JSON.stringify({ ...item, builtin: false }),
-                  now,
-                );
+              if (item?.effectId && item.effectId !== 'eff_test_metric') {
+                this.upsertV4Effect({ ...item, isBuiltin: false }, false);
               }
             }
           }
         }
       }
     } catch (err) {
-      console.warn('[sqlite-store] seed indicator_definitions failed:', err);
+      console.warn('[sqlite-store] seed v4_effects failed:', err);
     }
 
-    // 5. indicator_systems (presets + custom)
+    // 4. V4 二库指标图 (v4_metric_graphs: 内置示范图 + 可选自定义导入)
     try {
-      const sysCount = Number(
-        (this.db.prepare('SELECT COUNT(*) AS c FROM indicator_systems').get() as { c: number }).c,
-      );
-      if (sysCount === 0) {
-        const stmt = this.db.prepare(
-          `INSERT OR REPLACE INTO indicator_systems (
-            system_id, name, version, is_builtin, tree_json, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?)`,
-        );
-        const presetsDir = path.resolve(import.meta.dirname, '..', 'systems', 'presets');
-        if (fs.existsSync(presetsDir)) {
-          const files = fs.readdirSync(presetsDir).filter((f) => f.endsWith('.json')).sort();
-          for (const f of files) {
-            const parsed = JSON.parse(fs.readFileSync(path.join(presetsDir, f), 'utf-8'));
-            if (parsed && parsed.systemId) {
-              stmt.run(
-                parsed.systemId,
-                parsed.name || '',
-                parsed.version || '1.0.0',
-                1,
-                JSON.stringify({ ...parsed, builtin: true }),
-                now,
-              );
-            }
+      if (this.countV4MetricGraphs() === 0) {
+        for (const graph of BUILTIN_METRIC_GRAPHS) {
+          if (graph?.graphId) {
+            this.upsertV4MetricGraph({ ...graph, builtin: true }, true);
           }
         }
-        const customSysFile = path.resolve(import.meta.dirname, '..', '..', 'data', 'custom-systems.json');
-        if (fs.existsSync(customSysFile)) {
-          const raw = fs.readFileSync(customSysFile, 'utf-8');
-          const items = JSON.parse(raw);
+        const customGraphsFile = path.join(dataDir, 'v4-metric-graphs.json');
+        if (fs.existsSync(customGraphsFile)) {
+          const items = JSON.parse(fs.readFileSync(customGraphsFile, 'utf-8'));
           if (Array.isArray(items)) {
-            for (const s of items) {
-              if (s && s.systemId) {
-                stmt.run(
-                  s.systemId,
-                  s.name || '',
-                  s.version || '1.0.0',
-                  0,
-                  JSON.stringify({ ...s, builtin: false }),
-                  now,
-                );
+            for (const item of items) {
+              if (item?.graphId && item.graphId !== 'mg_test_cockpit') {
+                this.upsertV4MetricGraph({ ...item, builtin: false }, false);
               }
             }
           }
         }
       }
     } catch (err) {
-      console.warn('[sqlite-store] seed indicator_systems failed:', err);
+      console.warn('[sqlite-store] seed v4_metric_graphs failed:', err);
+    }
+
+    // 5. V4 三库评估体系 DAG (v4_system_dags: 内置示范体系 + 可选自定义导入)
+    try {
+      if (this.countV4SystemDags() === 0) {
+        for (const dag of BUILTIN_SYSTEM_DAGS) {
+          if (dag?.systemId) {
+            this.upsertV4SystemDag({ ...dag, builtin: true }, true);
+          }
+        }
+        const customDagsFile = path.join(dataDir, 'v4-system-dags.json');
+        if (fs.existsSync(customDagsFile)) {
+          const items = JSON.parse(fs.readFileSync(customDagsFile, 'utf-8'));
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              if (item?.systemId) {
+                this.upsertV4SystemDag({ ...item, builtin: false }, false);
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[sqlite-store] seed v4_system_dags failed:', err);
+    }
+
+    // 6. V4 画布组件库 (v4_components: 内置核心组件 + 可选自定义导入)
+    try {
+      if (this.countV4Components() === 0) {
+        for (const comp of BUILTIN_COMPONENTS) {
+          if (comp?.id) {
+            this.upsertV4Component({ ...comp, isBuiltin: true, isCustom: false }, true);
+          }
+        }
+        const customCompFile = path.join(dataDir, 'custom-components.json');
+        if (fs.existsSync(customCompFile)) {
+          const items = JSON.parse(fs.readFileSync(customCompFile, 'utf-8'));
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              if (item?.id && !BUILTIN_COMPONENTS.some((b) => b.id === item.id)) {
+                this.upsertV4Component({ ...item, isBuiltin: false, isCustom: true }, false);
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[sqlite-store] seed v4_components failed:', err);
     }
 
     try {
+      this.setMeta('schema_version', CURRENT_SCHEMA_VERSION);
       this.setMeta('is_initialized', '1');
       this.setMeta('is_seeded', '1');
       this.setMeta('is_blank', '0');
@@ -1424,6 +1530,402 @@ export class EvalSqliteStore {
     return info.changes > 0;
   }
 
+  // ─── V4 一库：V4 算子库 (v4_operators) ───
+  listV4Operators(
+    filter?: V4ListFilter & { domainTag?: string; layer?: string },
+  ): V4StoredOperator[] {
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (filter?.builtinOnly) {
+      where.push('is_builtin = 1');
+    } else if (filter?.customOnly) {
+      where.push('is_builtin = 0');
+    }
+    if (filter?.domainTag) {
+      where.push('domain_tag = ?');
+      params.push(filter.domainTag);
+    }
+    if (filter?.layer) {
+      where.push('layer = ?');
+      params.push(filter.layer);
+    }
+    const sql =
+      'SELECT data_json FROM v4_operators' +
+      (where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '') +
+      ' ORDER BY chapter ASC, id ASC';
+    const rows = this.db.prepare(sql).all(...params) as Array<{ data_json: string }>;
+    return rows.map((r) => JSON.parse(r.data_json) as V4StoredOperator);
+  }
+
+  getV4Operator(id: string): V4StoredOperator | null {
+    const row = this.db
+      .prepare('SELECT data_json FROM v4_operators WHERE id = ?')
+      .get(id) as { data_json: string } | undefined;
+    if (!row?.data_json) return null;
+    return JSON.parse(row.data_json) as V4StoredOperator;
+  }
+
+  upsertV4Operator(spec: V4StoredOperator, isBuiltin?: boolean): void {
+    const now = spec.updatedAt ?? new Date().toISOString();
+    const builtinFlag = isBuiltin ?? Boolean(spec.isBuiltin);
+    const payload: V4StoredOperator = {
+      ...spec,
+      layer: spec.layer ?? 'fact',
+      engineKind: spec.engineKind ?? 'python_script',
+      isBuiltin: builtinFlag,
+      updatedAt: now,
+    };
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO v4_operators (
+          id, name, chapter, category, military_level, domain_tag,
+          layer, engine_kind, is_builtin, data_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        payload.id,
+        payload.name,
+        Number(payload.chapter ?? 0),
+        payload.category,
+        payload.militaryLevel,
+        payload.domainTag,
+        payload.layer ?? 'fact',
+        payload.engineKind ?? 'python_script',
+        builtinFlag ? 1 : 0,
+        JSON.stringify(payload),
+        now,
+      );
+  }
+
+  deleteV4Operator(id: string, opts?: { allowBuiltin?: boolean }): boolean {
+    const sql = opts?.allowBuiltin
+      ? 'DELETE FROM v4_operators WHERE id = ?'
+      : 'DELETE FROM v4_operators WHERE id = ? AND is_builtin = 0';
+    const info = this.db.prepare(sql).run(id);
+    return info.changes > 0;
+  }
+
+  countV4Operators(filter?: V4ListFilter): number {
+    let sql = 'SELECT COUNT(*) AS c FROM v4_operators';
+    if (filter?.builtinOnly) sql += ' WHERE is_builtin = 1';
+    else if (filter?.customOnly) sql += ' WHERE is_builtin = 0';
+    return Number((this.db.prepare(sql).get() as { c: number }).c);
+  }
+
+  // ─── V4 效果库 (v4_effects) ───
+  listV4Effects(filter?: V4ListFilter & { role?: 'effect' | 'gate' }): EffectDefinition[] {
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (filter?.builtinOnly) {
+      where.push('is_builtin = 1');
+    } else if (filter?.customOnly) {
+      where.push('is_builtin = 0');
+    }
+    if (filter?.role) {
+      where.push('role = ?');
+      params.push(filter.role);
+    }
+    const sql =
+      'SELECT data_json FROM v4_effects' +
+      (where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '') +
+      ' ORDER BY effect_id ASC';
+    const rows = this.db.prepare(sql).all(...params) as Array<{ data_json: string }>;
+    return rows.map((r) => JSON.parse(r.data_json) as EffectDefinition);
+  }
+
+  getV4Effect(effectId: string): EffectDefinition | null {
+    const row = this.db
+      .prepare('SELECT data_json FROM v4_effects WHERE effect_id = ?')
+      .get(effectId) as { data_json: string } | undefined;
+    if (!row?.data_json) return null;
+    return JSON.parse(row.data_json) as EffectDefinition;
+  }
+
+  upsertV4Effect(def: EffectDefinition, isBuiltin?: boolean): void {
+    const now = new Date().toISOString();
+    const builtinFlag = isBuiltin ?? Boolean(def.isBuiltin);
+    const payload: EffectDefinition = { ...def, isBuiltin: builtinFlag };
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO v4_effects (
+          effect_id, name, role, gate_mode, domain_tag, is_builtin, data_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        payload.effectId,
+        payload.name,
+        payload.role,
+        payload.gateMode ?? null,
+        payload.domainTag ?? null,
+        builtinFlag ? 1 : 0,
+        JSON.stringify(payload),
+        now,
+      );
+  }
+
+  deleteV4Effect(effectId: string, opts?: { allowBuiltin?: boolean }): boolean {
+    const sql = opts?.allowBuiltin
+      ? 'DELETE FROM v4_effects WHERE effect_id = ?'
+      : 'DELETE FROM v4_effects WHERE effect_id = ? AND is_builtin = 0';
+    const info = this.db.prepare(sql).run(effectId);
+    return info.changes > 0;
+  }
+
+  countV4Effects(filter?: V4ListFilter): number {
+    let sql = 'SELECT COUNT(*) AS c FROM v4_effects';
+    if (filter?.builtinOnly) sql += ' WHERE is_builtin = 1';
+    else if (filter?.customOnly) sql += ' WHERE is_builtin = 0';
+    return Number((this.db.prepare(sql).get() as { c: number }).c);
+  }
+
+  // ─── V4 二库：指标图 (v4_metric_graphs) ───
+  listV4MetricGraphs(filter?: V4ListFilter): V4StoredMetricGraph[] {
+    let sql = 'SELECT data_json FROM v4_metric_graphs';
+    if (filter?.builtinOnly) sql += ' WHERE is_builtin = 1';
+    else if (filter?.customOnly) sql += ' WHERE is_builtin = 0';
+    sql += ' ORDER BY graph_id ASC';
+    const rows = this.db.prepare(sql).all() as Array<{ data_json: string }>;
+    return rows.map((r) => JSON.parse(r.data_json) as V4StoredMetricGraph);
+  }
+
+  getV4MetricGraph(graphId: string): V4StoredMetricGraph | null {
+    const row = this.db
+      .prepare('SELECT data_json FROM v4_metric_graphs WHERE graph_id = ?')
+      .get(graphId) as { data_json: string } | undefined;
+    if (!row?.data_json) return null;
+    return JSON.parse(row.data_json) as V4StoredMetricGraph;
+  }
+
+  upsertV4MetricGraph(graph: V4StoredMetricGraph, isBuiltin?: boolean): void {
+    const now = new Date().toISOString();
+    const builtinFlag = isBuiltin ?? Boolean(graph.builtin);
+    const createdAt = graph.createdAt ?? now;
+    const updatedAt = graph.updatedAt ?? now;
+    const payload: V4StoredMetricGraph = {
+      ...graph,
+      graphKind: 'metric',
+      builtin: builtinFlag,
+      createdAt,
+      updatedAt,
+    };
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO v4_metric_graphs (
+          graph_id, name, version, is_builtin, data_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        payload.graphId,
+        payload.name,
+        payload.version ?? '1.0.0',
+        builtinFlag ? 1 : 0,
+        JSON.stringify(payload),
+        createdAt,
+        updatedAt,
+      );
+  }
+
+  deleteV4MetricGraph(graphId: string, opts?: { allowBuiltin?: boolean }): boolean {
+    const sql = opts?.allowBuiltin
+      ? 'DELETE FROM v4_metric_graphs WHERE graph_id = ?'
+      : 'DELETE FROM v4_metric_graphs WHERE graph_id = ? AND is_builtin = 0';
+    const info = this.db.prepare(sql).run(graphId);
+    return info.changes > 0;
+  }
+
+  countV4MetricGraphs(filter?: V4ListFilter): number {
+    let sql = 'SELECT COUNT(*) AS c FROM v4_metric_graphs';
+    if (filter?.builtinOnly) sql += ' WHERE is_builtin = 1';
+    else if (filter?.customOnly) sql += ' WHERE is_builtin = 0';
+    return Number((this.db.prepare(sql).get() as { c: number }).c);
+  }
+
+  // ─── V4 三库：评估体系 DAG (v4_system_dags) ───
+  listV4SystemDags(filter?: V4ListFilter): V4StoredSystemDag[] {
+    let sql = 'SELECT data_json FROM v4_system_dags';
+    if (filter?.builtinOnly) sql += ' WHERE is_builtin = 1';
+    else if (filter?.customOnly) sql += ' WHERE is_builtin = 0';
+    sql += ' ORDER BY system_id ASC';
+    const rows = this.db.prepare(sql).all() as Array<{ data_json: string }>;
+    return rows.map((r) => JSON.parse(r.data_json) as V4StoredSystemDag);
+  }
+
+  getV4SystemDag(systemId: string): V4StoredSystemDag | null {
+    const row = this.db
+      .prepare('SELECT data_json FROM v4_system_dags WHERE system_id = ?')
+      .get(systemId) as { data_json: string } | undefined;
+    if (!row?.data_json) return null;
+    return JSON.parse(row.data_json) as V4StoredSystemDag;
+  }
+
+  upsertV4SystemDag(dag: V4StoredSystemDag, isBuiltin?: boolean): void {
+    const now = new Date().toISOString();
+    const builtinFlag = isBuiltin ?? Boolean(dag.builtin);
+    const createdAt = dag.createdAt ?? now;
+    const updatedAt = dag.updatedAt ?? now;
+    const payload: V4StoredSystemDag = {
+      ...dag,
+      builtin: builtinFlag,
+      createdAt,
+      updatedAt,
+    };
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO v4_system_dags (
+          system_id, name, version, metric_graph_id, is_builtin, data_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        payload.systemId,
+        payload.name,
+        payload.version ?? '1.0.0',
+        payload.metricGraphId ?? null,
+        builtinFlag ? 1 : 0,
+        JSON.stringify(payload),
+        createdAt,
+        updatedAt,
+      );
+  }
+
+  deleteV4SystemDag(systemId: string, opts?: { allowBuiltin?: boolean }): boolean {
+    const sql = opts?.allowBuiltin
+      ? 'DELETE FROM v4_system_dags WHERE system_id = ?'
+      : 'DELETE FROM v4_system_dags WHERE system_id = ? AND is_builtin = 0';
+    const info = this.db.prepare(sql).run(systemId);
+    return info.changes > 0;
+  }
+
+  countV4SystemDags(filter?: V4ListFilter): number {
+    let sql = 'SELECT COUNT(*) AS c FROM v4_system_dags';
+    if (filter?.builtinOnly) sql += ' WHERE is_builtin = 1';
+    else if (filter?.customOnly) sql += ' WHERE is_builtin = 0';
+    return Number((this.db.prepare(sql).get() as { c: number }).c);
+  }
+
+  // ─── V4 画布组件库 (v4_components) ───
+  listV4Components(filter?: V4ListFilter): ComponentManifest[] {
+    let sql = 'SELECT data_json FROM v4_components';
+    if (filter?.builtinOnly) sql += ' WHERE is_builtin = 1';
+    else if (filter?.customOnly) sql += ' WHERE is_builtin = 0';
+    sql += ' ORDER BY id ASC';
+    const rows = this.db.prepare(sql).all() as Array<{ data_json: string }>;
+    return rows.map((r) => JSON.parse(r.data_json) as ComponentManifest);
+  }
+
+  getV4Component(id: string): ComponentManifest | null {
+    const row = this.db
+      .prepare('SELECT data_json FROM v4_components WHERE id = ?')
+      .get(id) as { data_json: string } | undefined;
+    if (!row?.data_json) return null;
+    return JSON.parse(row.data_json) as ComponentManifest;
+  }
+
+  upsertV4Component(manifest: ComponentManifest, isBuiltin?: boolean): void {
+    const now = new Date().toISOString();
+    const builtinFlag = isBuiltin ?? Boolean(manifest.isBuiltin);
+    const payload: ComponentManifest = {
+      ...manifest,
+      isBuiltin: builtinFlag,
+      isCustom: !builtinFlag,
+    };
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO v4_components (
+          id, name, category, engine_type, is_builtin, data_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        payload.id,
+        payload.name,
+        payload.category ?? 'custom',
+        payload.engineType ?? 'builtin',
+        builtinFlag ? 1 : 0,
+        JSON.stringify(payload),
+        now,
+      );
+  }
+
+  deleteV4Component(id: string, opts?: { allowBuiltin?: boolean }): boolean {
+    const sql = opts?.allowBuiltin
+      ? 'DELETE FROM v4_components WHERE id = ?'
+      : 'DELETE FROM v4_components WHERE id = ? AND is_builtin = 0';
+    const info = this.db.prepare(sql).run(id);
+    return info.changes > 0;
+  }
+
+  countV4Components(filter?: V4ListFilter): number {
+    let sql = 'SELECT COUNT(*) AS c FROM v4_components';
+    if (filter?.builtinOnly) sql += ' WHERE is_builtin = 1';
+    else if (filter?.customOnly) sql += ' WHERE is_builtin = 0';
+    return Number((this.db.prepare(sql).get() as { c: number }).c);
+  }
+
+  // ─── V4 三库统一种子装载（严格尊重 is_blank=1 空白库隔离） ───
+  seedV4Libraries(payload: V4SeedLibrariesPayload): V4SeedLibrariesResult {
+    const inserted = {
+      operators: 0,
+      effects: 0,
+      metricGraphs: 0,
+      systemDags: 0,
+      components: 0,
+    };
+    if (this.getMeta('is_blank') === '1') {
+      return { skipped: true, inserted };
+    }
+
+    const overwrite = Boolean(payload.overwriteExisting);
+    this.db.exec('BEGIN');
+    try {
+      if (payload.operators?.length && (overwrite || this.countV4Operators() === 0)) {
+        for (const op of payload.operators) {
+          if (op?.id) {
+            this.upsertV4Operator(op, op.isBuiltin ?? true);
+            inserted.operators += 1;
+          }
+        }
+      }
+      if (payload.effects?.length && (overwrite || this.countV4Effects() === 0)) {
+        for (const eff of payload.effects) {
+          if (eff?.effectId) {
+            this.upsertV4Effect(eff, eff.isBuiltin ?? true);
+            inserted.effects += 1;
+          }
+        }
+      }
+      if (payload.metricGraphs?.length && (overwrite || this.countV4MetricGraphs() === 0)) {
+        for (const graph of payload.metricGraphs) {
+          if (graph?.graphId) {
+            this.upsertV4MetricGraph(graph, graph.builtin ?? true);
+            inserted.metricGraphs += 1;
+          }
+        }
+      }
+      if (payload.systemDags?.length && (overwrite || this.countV4SystemDags() === 0)) {
+        for (const dag of payload.systemDags) {
+          if (dag?.systemId) {
+            this.upsertV4SystemDag(dag, dag.builtin ?? true);
+            inserted.systemDags += 1;
+          }
+        }
+      }
+      if (payload.components?.length && (overwrite || this.countV4Components() === 0)) {
+        for (const comp of payload.components) {
+          if (comp?.id) {
+            this.upsertV4Component(comp, comp.isBuiltin ?? true);
+            inserted.components += 1;
+          }
+        }
+      }
+      this.setMeta('schema_version', CURRENT_SCHEMA_VERSION);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+
+    return { skipped: false, inserted };
+  }
+
   getStats() {
     const counts = {
       runs: Number(
@@ -1437,6 +1939,9 @@ export class EvalSqliteStore {
       ),
       evaluations: Number(
         (this.db.prepare('SELECT COUNT(*) AS c FROM eval_results').get() as { c: number }).c,
+      ),
+      v4Evaluations: Number(
+        (this.db.prepare('SELECT COUNT(*) AS c FROM v4_eval_results').get() as { c: number }).c,
       ),
       realtimeCards: Number(
         (this.db.prepare('SELECT COUNT(*) AS c FROM realtime_cards').get() as { c: number }).c,
@@ -1462,6 +1967,11 @@ export class EvalSqliteStore {
       systems: Number(
         (this.db.prepare('SELECT COUNT(*) AS c FROM indicator_systems').get() as { c: number }).c,
       ),
+      v4Operators: this.countV4Operators(),
+      v4Effects: this.countV4Effects(),
+      v4MetricGraphs: this.countV4MetricGraphs(),
+      v4SystemDags: this.countV4SystemDags(),
+      v4Components: this.countV4Components(),
     };
     let dbBytes = 0;
     if (this.dbPath !== ':memory:' && fs.existsSync(this.dbPath)) {

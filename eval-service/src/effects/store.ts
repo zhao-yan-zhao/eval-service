@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { EvalSqliteStore } from '../adapters/sqlite-store.ts';
 import type {
   AggregationStrategy,
   AlarmThreshold,
@@ -10,6 +11,29 @@ import type {
   ScoringRule,
 } from '../core/types.ts';
 import { validateFormula } from '../operators/formula-engine.ts';
+
+function isSqliteStoreLike(v: unknown): v is EvalSqliteStore {
+  return (
+    Boolean(v) &&
+    typeof v === 'object' &&
+    typeof (v as EvalSqliteStore).listV4Effects === 'function' &&
+    typeof (v as EvalSqliteStore).getMeta === 'function'
+  );
+}
+
+export function loadBuiltinEffectPresets(): EffectDefinition[] {
+  if (!fs.existsSync(BUILTIN_PRESETS_PATH)) return [];
+  try {
+    const raw = fs.readFileSync(BUILTIN_PRESETS_PATH, 'utf-8');
+    const parsed = JSON.parse(raw) as EffectDefinition[];
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => ({ ...item, isBuiltin: true }));
+    }
+  } catch {
+    // 容错降级
+  }
+  return [];
+}
 
 const BUILTIN_PRESETS_PATH = path.resolve(import.meta.dirname, 'presets.json');
 const DEFAULT_CUSTOM_EFFECTS_PATH = path.resolve(
@@ -168,27 +192,77 @@ export interface EffectValidationResult {
 
 export class EffectStore {
   private readonly customFilePath: string;
+  private sqliteStore?: EvalSqliteStore;
   private builtins: EffectDefinition[] = [];
   private custom: Map<string, EffectDefinition> = new Map();
 
-  constructor(customFilePath = DEFAULT_CUSTOM_EFFECTS_PATH) {
-    this.customFilePath = customFilePath;
+  constructor(
+    customFilePathOrStore: string | EvalSqliteStore = DEFAULT_CUSTOM_EFFECTS_PATH,
+    sqliteStore?: EvalSqliteStore,
+  ) {
+    if (isSqliteStoreLike(customFilePathOrStore)) {
+      this.customFilePath = DEFAULT_CUSTOM_EFFECTS_PATH;
+      this.sqliteStore = customFilePathOrStore;
+    } else {
+      this.customFilePath = customFilePathOrStore;
+      this.sqliteStore = sqliteStore;
+    }
     this.load();
   }
 
-  private load(): void {
-    this.builtins = [];
-    if (fs.existsSync(BUILTIN_PRESETS_PATH)) {
-      try {
-        const raw = fs.readFileSync(BUILTIN_PRESETS_PATH, 'utf-8');
-        const parsed = JSON.parse(raw) as EffectDefinition[];
-        if (Array.isArray(parsed)) {
-          this.builtins = parsed.map((item) => ({ ...item, isBuiltin: true }));
+  getSqliteStore(): EvalSqliteStore | undefined {
+    return this.sqliteStore;
+  }
+
+  rebindSqliteStore(newStore: EvalSqliteStore): void {
+    this.sqliteStore = newStore;
+    this.load();
+  }
+
+  private loadFromSqlite(): void {
+    if (!this.sqliteStore) return;
+    const isBlank = this.sqliteStore.getMeta('is_blank') === '1';
+
+    if (!isBlank && this.sqliteStore.countV4Effects() === 0) {
+      const presets = loadBuiltinEffectPresets();
+      for (const item of presets) {
+        if (item?.effectId) {
+          this.sqliteStore.upsertV4Effect({ ...item, isBuiltin: true }, true);
         }
-      } catch {
-        this.builtins = [];
+      }
+      if (this.customFilePath && fs.existsSync(this.customFilePath)) {
+        try {
+          const customRaw = fs.readFileSync(this.customFilePath, 'utf-8');
+          const customItems = JSON.parse(customRaw) as EffectDefinition[];
+          if (Array.isArray(customItems)) {
+            for (const item of customItems) {
+              if (item && item.effectId) {
+                this.sqliteStore.upsertV4Effect({ ...item, isBuiltin: false }, false);
+              }
+            }
+          }
+        } catch {
+          // 忽略格式异常的旧 JSON 文件
+        }
       }
     }
+
+    this.builtins = this.sqliteStore.listV4Effects({ builtinOnly: true });
+    this.custom.clear();
+    for (const item of this.sqliteStore.listV4Effects({ customOnly: true })) {
+      if (item?.effectId) {
+        this.custom.set(item.effectId, { ...item, isBuiltin: false });
+      }
+    }
+  }
+
+  private load(): void {
+    if (this.sqliteStore) {
+      this.loadFromSqlite();
+      return;
+    }
+
+    this.builtins = loadBuiltinEffectPresets();
 
     this.custom.clear();
     if (this.customFilePath && fs.existsSync(this.customFilePath)) {
@@ -209,6 +283,7 @@ export class EffectStore {
   }
 
   private persistCustom(): void {
+    if (this.sqliteStore) return;
     if (!this.customFilePath) return;
     try {
       fs.mkdirSync(path.dirname(this.customFilePath), { recursive: true });
@@ -346,7 +421,11 @@ export class EffectStore {
     }
     const clean: EffectDefinition = { ...structuredClone(def), isBuiltin: false };
     this.custom.set(clean.effectId, clean);
-    this.persistCustom();
+    if (this.sqliteStore) {
+      this.sqliteStore.upsertV4Effect(clean, false);
+    } else {
+      this.persistCustom();
+    }
     return structuredClone(clean);
   }
 
@@ -358,7 +437,11 @@ export class EffectStore {
     }
     const deleted = this.custom.delete(effectId);
     if (deleted) {
-      this.persistCustom();
+      if (this.sqliteStore) {
+        this.sqliteStore.deleteV4Effect(effectId);
+      } else {
+        this.persistCustom();
+      }
     }
     return deleted;
   }

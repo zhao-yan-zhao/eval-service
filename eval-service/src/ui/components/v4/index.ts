@@ -3,10 +3,6 @@ export {
   type V4TablePivotPreviewProps,
 } from './V4TablePivotPreview.tsx';
 export {
-  OperatorDagStudioPanel,
-  type OperatorDagStudioPanelProps,
-} from './OperatorDagStudioPanel.tsx';
-export {
   MetricDagStudioPanel,
   type MetricDagStudioPanelProps,
 } from './MetricDagStudioPanel.tsx';

@@ -36,14 +36,6 @@
       "scenarioName": "BS 状态帧基准集群样例 (bs-frames-sample.jsonl)",
       "createdAt": "2026-11-17T13:28:31.551Z",
       "updatedAt": "2026-11-17T13:28:31.551Z"
-    },
-    {
-      "id": "ds_stage18_custom_jsonl",
-      "label": "Stage 18 自定义流",
-      "sourceKind": "jsonl_file",
-      "path": "C:\\Users\\zhaoyan\\AppData\\Local\\Temp\\f1-stage18-pGmZXh\\custom-stream.jsonl",
-      "createdAt": "2026-11-22T03:17:21.892Z",
-      "updatedAt": "2026-11-25T16:49:38.881Z"
     }
   ]
 }

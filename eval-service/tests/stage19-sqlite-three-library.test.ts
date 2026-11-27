@@ -1,284 +1,159 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EvalSqliteStore } from '../src/adapters/sqlite-store.ts';
-import { CustomOperatorStore } from '../src/operators/custom-store.ts';
-import { OperatorOverrideStore } from '../src/operators/override-store.ts';
-import { IndicatorStore } from '../src/indicators/store.ts';
-import { SystemStore } from '../src/systems/store.ts';
 import { createEvalApp } from '../src/server.ts';
-import type {
-  CustomOperatorDefinition,
-  IndicatorDefinition,
-  IndicatorSystem,
-} from '../src/core/types.ts';
 
-test('Stage 19.1 - EvalSqliteStore 初始化与三库表结构自动建表与自动种子迁移', () => {
+test('Stage 19.1 (V4) - EvalSqliteStore 初始化与 V4 三库表结构自动建表与种子装载', () => {
   const sqlite = new EvalSqliteStore(':memory:');
   const stats = sqlite.getStats();
 
   assert.equal(stats.dbPath, ':memory:');
-  assert.ok(stats.counts);
-  assert.equal(typeof stats.counts.runs, 'number');
-  assert.equal(typeof stats.counts.customOperators, 'number');
-  assert.equal(typeof stats.counts.operatorOverrides, 'number');
-  assert.equal(typeof stats.counts.operatorPipelines, 'number');
-  assert.equal(typeof stats.counts.indicators, 'number');
-  assert.equal(typeof stats.counts.systems, 'number');
-
-  // 内置指标和预设体系应该已由 catalog.json 与 presets/ 自动完成种子装载
-  assert.ok(stats.counts.indicators >= 1, `指标数量应至少包含1个内置项，实测: ${stats.counts.indicators}`);
-  assert.ok(stats.counts.systems >= 1, `体系数量应至少包含1个预置项，实测: ${stats.counts.systems}`);
+  assert.equal(sqlite.getSchemaVersion(), '4.0.0');
+  assert.ok(stats.counts.v4Operators >= 42, `V4 算子应至少包含 42 项，实测: ${stats.counts.v4Operators}`);
+  assert.ok(stats.counts.v4Effects >= 10, `V4 效果库应至少包含预置项，实测: ${stats.counts.v4Effects}`);
+  assert.ok(stats.counts.v4MetricGraphs >= 2, `V4 指标图应至少包含 2 个预置图，实测: ${stats.counts.v4MetricGraphs}`);
+  assert.ok(stats.counts.v4SystemDags >= 2, `V4 体系 DAG 应至少包含 2 个预置体系，实测: ${stats.counts.v4SystemDags}`);
+  assert.ok(stats.counts.operatorPipelines >= 42);
 
   sqlite.close();
 });
 
-test('Stage 19.2 - 一库：自定义算子、内置覆盖与专属流水线 SQLite 原生 CRUD 闭环', () => {
+test('Stage 19.2 (V4) - V4 一库/二库/三库 SQLite 原生 CRUD 与内置保护闭环', () => {
   const sqlite = new EvalSqliteStore(':memory:');
 
-  // 1. 自定义算子测试
-  const customOp: CustomOperatorDefinition = {
-    id: 'custom.sqlite_test_op',
-    name: 'SQLite 测试算子',
-    category: 'effectiveness',
-    mode: 'formula_pipeline',
-    pipelineCategory: 'inline_calc',
-    description: '验证 SQLite 存储算子',
-    expression: 'v1 * 2',
-    variables: [{ alias: 'v1', atomRef: 'roe.corridor_spatial_compliance' }],
-    outputType: 'score',
-    defaultOptimalDirection: 'larger_is_better',
-    unit: '分',
-  };
-  sqlite.saveCustomOperator(customOp);
-  const fetchedOp = sqlite.getCustomOperator('custom.sqlite_test_op');
+  // 1. V4 自定义算子 CRUD
+  sqlite.upsertV4Operator(
+    {
+      id: 'custom.sqlite_v4_op',
+      name: 'SQLite V4 测试算子',
+      chapter: 8,
+      category: 'effectiveness',
+      militaryLevel: 'MOP',
+      domainTag: 'firepower',
+      description: '验证 V4 SQLite 算子 CRUD',
+      requiredTables: ['WeaponFired'],
+      parameterPorts: [],
+      outputColumns: ['分方', 'val'],
+      pythonCode: 'import pandas as pd\noutput_df = pd.DataFrame([{"分方": "红方", "val": 1}])',
+    },
+    false,
+  );
+  const fetchedOp = sqlite.getV4Operator('custom.sqlite_v4_op');
   assert.ok(fetchedOp);
-  assert.equal(fetchedOp.id, 'custom.sqlite_test_op');
-  assert.equal(fetchedOp.name, 'SQLite 测试算子');
-  assert.equal(fetchedOp.unit, '分');
+  assert.equal(fetchedOp.name, 'SQLite V4 测试算子');
+  assert.equal(sqlite.deleteV4Operator('roe.corridor_spatial_compliance'), false, '内置算子默认不可删除');
+  assert.equal(sqlite.deleteV4Operator('custom.sqlite_v4_op'), true);
+  assert.equal(sqlite.getV4Operator('custom.sqlite_v4_op'), null);
 
-  const customList = sqlite.listCustomOperators();
-  assert.ok(customList.some((o) => o.id === 'custom.sqlite_test_op'));
+  // 2. V4 效果库 CRUD & 内置保护
+  sqlite.upsertV4Effect(
+    {
+      effectId: 'eff_custom_sqlite_v4',
+      name: 'SQLite V4 自定义效果',
+      role: 'effect',
+      domainTag: 'firepower',
+      metricBinding: {
+        metricId: 'isr.detection_rate',
+        reduce: 'mean',
+        scoringRule: { type: 'larger_is_better', optimal: 0.95, worst: 0.2 },
+      },
+      aggregation: { strategy: 'weighted_sum', missingPolicy: 'skip_renormalize' },
+    },
+    false,
+  );
+  assert.ok(sqlite.getV4Effect('eff_custom_sqlite_v4'));
+  assert.equal(sqlite.deleteV4Effect('eff_strike_mission'), false, '内置效果不可删除');
+  assert.equal(sqlite.deleteV4Effect('eff_custom_sqlite_v4'), true);
 
-  // 2. 算子覆盖配置测试
-  sqlite.saveOperatorOverride('time.first_detection', {
-    id: 'time.first_detection',
-    name: '首探时标覆写名称',
-    defaultParams: { thresholdLow: 100, thresholdHigh: 500 },
-  });
-  const fetchedOverride = sqlite.getOperatorOverride('time.first_detection');
-  assert.ok(fetchedOverride);
-  assert.equal(fetchedOverride.name, '首探时标覆写名称');
-  assert.equal((fetchedOverride.defaultParams as any)?.thresholdLow, 100);
-
-  // 3. 画布流水线持久化测试
+  // 3. 画布流水线 CRUD
   sqlite.saveOperatorPipeline({
-    operatorId: 'custom.sqlite_test_op',
-    pipelineTitle: '测试流水线',
+    operatorId: 'custom.sqlite_v4_op',
+    pipelineTitle: 'V4 测试流水线',
     nodes: [{ id: 'n1', type: 'data_input', title: '输入节点' }],
     edges: [],
   });
-  const fetchedPipeline = sqlite.getOperatorPipeline('custom.sqlite_test_op');
-  assert.ok(fetchedPipeline);
-  assert.equal(fetchedPipeline.pipelineTitle, '测试流水线');
-  assert.equal(fetchedPipeline.nodes.length, 1);
-
-  // 4. 删除测试
-  const deletedOp = sqlite.deleteCustomOperator('custom.sqlite_test_op');
-  assert.equal(deletedOp, true);
-  assert.equal(sqlite.getCustomOperator('custom.sqlite_test_op'), null);
-
-  const deletedOverride = sqlite.deleteOperatorOverride('time.first_detection');
-  assert.equal(deletedOverride, true);
-  assert.equal(sqlite.getOperatorOverride('time.first_detection'), null);
-
-  const deletedPipe = sqlite.deleteOperatorPipeline('custom.sqlite_test_op');
-  assert.equal(deletedPipe, true);
-  assert.equal(sqlite.getOperatorPipeline('custom.sqlite_test_op'), null);
+  const fetchedPipe = sqlite.getOperatorPipeline('custom.sqlite_v4_op');
+  assert.ok(fetchedPipe);
+  assert.equal(fetchedPipe.pipelineTitle, 'V4 测试流水线');
+  assert.equal(sqlite.deleteOperatorPipeline('custom.sqlite_v4_op'), true);
 
   sqlite.close();
 });
 
-test('Stage 19.3 - 二库 & 三库：指标定义与评估体系树内置隔离与自定义 CRUD', () => {
+test('Stage 19.3 (V4) - createEvalApp 全链路 V4 REST API 入库自闭环', async () => {
   const sqlite = new EvalSqliteStore(':memory:');
+  const app = await createEvalApp({ sqliteStore: sqlite, autoSeed: false });
 
-  // 1. 二库自定义指标保存与过滤测试
-  const customInd: IndicatorDefinition = {
-    indicatorId: 'ind_custom_sqlite_test',
-    name: 'SQLite 自定义指标',
-    atomRef: 'roe.corridor_spatial_compliance',
-    scoring: { type: 'larger_is_better', optimal: 100, worst: 0 },
-    builtin: false,
-    tags: ['合规', '测试'],
-  };
-  sqlite.saveIndicator(customInd, false);
-
-  const fetchedInd = sqlite.getIndicator('ind_custom_sqlite_test');
-  assert.ok(fetchedInd);
-  assert.equal(fetchedInd.name, 'SQLite 自定义指标');
-
-  const customOnly = sqlite.listIndicators({ customOnly: true });
-  assert.ok(customOnly.some((i) => i.indicatorId === 'ind_custom_sqlite_test'));
-  assert.ok(!customOnly.some((i) => i.builtin === true));
-
-  const builtinOnly = sqlite.listIndicators({ builtinOnly: true });
-  assert.ok(builtinOnly.length >= 1);
-  assert.ok(builtinOnly.every((i) => i.builtin === true));
-
-  // 尝试删除内置指标应被拦截 (返回 false)
-  const delBuiltinInd = sqlite.deleteIndicator('ind_roe_corridor_compliance');
-  assert.equal(delBuiltinInd, false);
-  assert.ok(sqlite.getIndicator('ind_roe_corridor_compliance') !== null);
-
-  // 删除自定义指标
-  const delCustomInd = sqlite.deleteIndicator('ind_custom_sqlite_test');
-  assert.equal(delCustomInd, true);
-  assert.equal(sqlite.getIndicator('ind_custom_sqlite_test'), null);
-
-  // 2. 三库体系树保存与过滤测试
-  const customSys: IndicatorSystem = {
-    systemId: 'sys_custom_sqlite_test',
-    name: 'SQLite 评估体系',
-    version: '1.0.0',
-    targetTags: ['sqlite_test'],
-    kpis: [],
-    root: {
-      name: '顶层评估',
-      weight: 1.0,
-      method: 'weighted_sum',
-      children: [
-        {
-          id: 'leaf_1',
-          indicatorRef: 'ind_roe_corridor_compliance',
-          weight: 1.0,
-        },
-      ],
-    },
-    builtin: false,
-  };
-  sqlite.saveSystem(customSys, false);
-
-  const fetchedSys = sqlite.getSystem('sys_custom_sqlite_test');
-  assert.ok(fetchedSys);
-  assert.equal(fetchedSys.name, 'SQLite 评估体系');
-  assert.equal(fetchedSys.version, '1.0.0');
-
-  const sysCustomOnly = sqlite.listSystems({ customOnly: true });
-  assert.ok(sysCustomOnly.some((s) => s.systemId === 'sys_custom_sqlite_test'));
-
-  // 尝试删除内置预设体系应被拦截
-  const delPreset = sqlite.deleteSystem('sys_corridor_compliance_v1');
-  assert.equal(delPreset, false);
-  assert.ok(sqlite.getSystem('sys_corridor_compliance_v1') !== null);
-
-  // 删除自定义体系
-  const delCustomSys = sqlite.deleteSystem('sys_custom_sqlite_test');
-  assert.equal(delCustomSys, true);
-  assert.equal(sqlite.getSystem('sys_custom_sqlite_test'), null);
-
-  sqlite.close();
-});
-
-test('Stage 19.4 - Store 适配器与 createEvalApp 全链路 REST API 入库自闭环', async () => {
-  const sqlite = new EvalSqliteStore(':memory:');
-
-  const app = await createEvalApp({
-    sqliteStore: sqlite,
-  });
-
-  const server = app.server;
-  await new Promise<void>((resolve) => server.listen(0, resolve));
-  const port = (server.address() as any).port;
+  await new Promise<void>((resolve) => app.server.listen(0, resolve));
+  const port = (app.server.address() as { port: number }).port;
   const baseUrl = `http://127.0.0.1:${port}`;
 
   try {
-    // 1. 验证 /api/health 包含 SQLite 三库统计计数
-    const healthRes = await fetch(`${baseUrl}/api/health`);
-    assert.equal(healthRes.status, 200);
-    const healthJson = await healthRes.json();
+    // 1. /api/health 返回 V4 三库计数
+    const healthJson = (await fetch(`${baseUrl}/api/health`).then((r) => r.json())) as {
+      ok: boolean;
+      db: { counts: { v4Operators: number; v4Effects: number; v4MetricGraphs: number; v4SystemDags: number } };
+    };
     assert.equal(healthJson.ok, true);
-    assert.ok(healthJson.db.counts.indicators >= 1);
-    assert.ok(healthJson.db.counts.systems >= 1);
+    assert.ok(healthJson.db.counts.v4Operators >= 42);
+    assert.ok(healthJson.db.counts.v4Effects >= 10);
+    assert.ok(healthJson.db.counts.v4MetricGraphs >= 2);
+    assert.ok(healthJson.db.counts.v4SystemDags >= 2);
 
-    // 2. 通过 REST API 新建自定义算子
-    const opRes = await fetch(`${baseUrl}/api/operators`, {
+    // 2. POST /api/v4/operators
+    const opRes = await fetch(`${baseUrl}/api/v4/operators`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        id: 'custom.api_sqlite_op',
-        name: 'API创建的SQLite算子',
+        id: 'custom.api_v4_sqlite_op',
+        name: 'API 创建的 V4 SQLite 算子',
+        chapter: 8,
         category: 'effectiveness',
-        mode: 'formula',
-        expression: 'v1 * 1.5',
-        variables: [{ alias: 'v1', atomRef: 'roe.corridor_spatial_compliance' }],
-        outputType: 'score',
-        defaultOptimalDirection: 'larger_is_better',
+        militaryLevel: 'MOP',
+        domainTag: 'firepower',
+        description: 'V4 REST 入库闭环测试',
+        requiredTables: ['WeaponFired'],
+        parameterPorts: [],
+        outputColumns: ['分方', 'score'],
+        pythonCode: 'import pandas as pd\noutput_df = pd.DataFrame([{"分方": "红方", "score": 0.9}])',
       }),
     });
     assert.equal(opRes.status, 200);
+    assert.ok(sqlite.getV4Operator('custom.api_v4_sqlite_op') !== null);
 
-    // 验证立即写入 SQLite 表中
-    assert.ok(sqlite.getCustomOperator('custom.api_sqlite_op') !== null);
-
-    // 3. 通过 REST API 保存专属画布流水线
+    // 3. POST /api/operator-pipelines
     const pipeRes = await fetch(`${baseUrl}/api/operator-pipelines`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        operatorId: 'custom.api_sqlite_op',
-        pipelineTitle: 'API保存的画布',
-        nodes: [{ id: 'n1', type: 'data_input', title: '数据节点' }],
+        operatorId: 'custom.api_v4_sqlite_op',
+        pipelineTitle: 'V4 API 保存画布',
+        nodes: [{ id: 'n1', type: 'data_input', title: '数据节点', config: { csvTable: 'WeaponFired' } }],
         edges: [],
       }),
     });
     assert.equal(pipeRes.status, 200);
+    assert.equal(sqlite.getOperatorPipeline('custom.api_v4_sqlite_op')?.pipelineTitle, 'V4 API 保存画布');
 
-    // 验证立即写入 SQLite operator_pipelines 表中
-    const pipeInDb = sqlite.getOperatorPipeline('custom.api_sqlite_op');
-    assert.ok(pipeInDb !== null);
-    assert.equal(pipeInDb.pipelineTitle, 'API保存的画布');
-
-    // 4. 通过 REST API 新建自定义指标
-    const indRes = await fetch(`${baseUrl}/api/indicators`, {
+    // 4. POST /api/v4/effects
+    const effRes = await fetch(`${baseUrl}/api/v4/effects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        indicatorId: 'ind_api_sqlite_ind',
-        name: 'API创建的SQLite指标',
-        atomRef: 'custom.api_sqlite_op',
-        scoring: { type: 'larger_is_better', optimal: 100, worst: 0 },
-      }),
-    });
-    assert.equal(indRes.status, 200);
-
-    // 验证立即写入 SQLite indicator_definitions 表中
-    assert.ok(sqlite.getIndicator('ind_api_sqlite_ind') !== null);
-
-    // 5. 通过 REST API 新建自定义体系
-    const sysRes = await fetch(`${baseUrl}/api/systems`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemId: 'sys_api_sqlite_sys',
-        name: 'API创建的SQLite体系',
-        version: '1.0.0',
-        root: {
-          id: 'root',
-          name: '顶层评估',
-          weight: 1.0,
-          children: [
-            {
-              id: 'leaf_ind',
-              indicatorRef: 'ind_api_sqlite_ind',
-              weight: 1.0,
-            },
-          ],
+        effectId: 'eff_api_v4_sqlite',
+        name: 'API 创建的 V4 效果',
+        role: 'effect',
+        domainTag: 'firepower',
+        metricBinding: {
+          metricId: 'isr.detection_rate',
+          reduce: 'mean',
+          scoringRule: { type: 'larger_is_better', optimal: 1, worst: 0 },
         },
+        aggregation: { strategy: 'weighted_sum', missingPolicy: 'skip_renormalize' },
       }),
     });
-    assert.equal(sysRes.status, 200);
-
-    // 验证立即写入 SQLite indicator_systems 表中
-    assert.ok(sqlite.getSystem('sys_api_sqlite_sys') !== null);
+    assert.equal(effRes.status, 200);
+    assert.ok(sqlite.getV4Effect('eff_api_v4_sqlite') !== null);
   } finally {
     await app.close();
   }

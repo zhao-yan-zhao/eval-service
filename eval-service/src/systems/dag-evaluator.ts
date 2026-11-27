@@ -18,7 +18,7 @@ import type {
   TableDataset,
 } from '../core/types.ts';
 import { defaultEffectStore, type EffectStore } from '../effects/store.ts';
-import { isAlarmThresholdTriggered, reduceNumericArray } from '../indicators/store.ts';
+import { isAlarmThresholdTriggered, reduceNumericArray } from '../core/metric-helpers.ts';
 import { validateFormula } from '../operators/formula-engine.ts';
 import { calculateNodeAggregation, type ChildNodeScoreInput } from './aggregation-strategies.ts';
 

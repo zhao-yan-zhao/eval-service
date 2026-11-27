@@ -9,7 +9,6 @@
     "start": "tsx src/server.ts",
     "dev:ui": "vite --host 127.0.0.1 --port 5280",
     "build:ui": "vite build",
-    "build:v3-db": "tsx src/operators/v3/db.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts"
   },

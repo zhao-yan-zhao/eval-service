@@ -7,8 +7,10 @@
 export interface CatalogFieldItem {
   name: string;
   cs_type: string;
+  type?: string;
   unit?: string;
   note?: string;
+  description?: string;
 }
 
 export interface CatalogTableSpec {

@@ -193,6 +193,7 @@ export function createMockDatasetForTable(
 
   return {
     id: `mock_${targetSpec.id || 'table'}_${Date.now()}`,
+    columns: schema,
     schema,
     rows: mockRows,
     totalRows: mockRows.length,
@@ -398,7 +399,7 @@ export function CanvasInspectorDrawer({
         stdout: res.stdout,
         stderr: res.stderr,
         latencyMs: latency,
-        errorLine: errLine,
+        errorLine: errLine ?? undefined,
       });
 
       if (res.status === 'success') {
@@ -462,7 +463,7 @@ export function CanvasInspectorDrawer({
         status: 'error',
         stderr: err.message,
         latencyMs: +(t1 - t0).toFixed(2),
-        errorLine: errLine,
+        errorLine: errLine ?? undefined,
       });
     } finally {
       setIsDrawerRunningPython(false);
@@ -1697,7 +1698,7 @@ export function CanvasInspectorDrawer({
               : 'static_param');
           const isDynamicGeom = geomSourceMode === 'dynamic_table';
 
-          const defaultBounds: Array<[number, number]> = config.corridorBounds || [
+          const defaultBounds: Array<[number, number]> = (config.corridorBounds as Array<[number, number]> | undefined) || [
             [121.2, 31.1],
             [122.2, 31.1],
             [122.5, 31.6],
@@ -2424,7 +2425,7 @@ export function CanvasInspectorDrawer({
               upstreamTables={upstreamTables}
               contextPayload={drawerContextPayload}
               isWideLayout={drawerWidth >= 760}
-              outputColumns={Array.isArray(config.outputColumns) ? config.outputColumns : []}
+              outputColumns={Array.isArray(config.outputColumns) ? config.outputColumns.map((c) => (typeof c === 'string' ? c : c.name)) : []}
               onUpdateOutputColumns={(cols) => updateConfig({ outputColumns: cols })}
               timeoutMs={config.timeoutMs || 5000}
               onUpdateTimeoutMs={(ms) => updateConfig({ timeoutMs: ms })}

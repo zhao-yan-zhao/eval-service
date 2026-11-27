@@ -219,9 +219,9 @@ test('v4-routes: compare-sides persists by default, skips with persist=false, an
   const dbPath = path.join(tmpDir, 'eval.db');
   const store = new EvalSqliteStore(dbPath);
   try {
-    const effectStore = new EffectStore();
-    const metricGraphStore = new MetricGraphStore();
-    const systemDagStore = new SystemDagStore(effectStore);
+    const effectStore = new EffectStore(store);
+    const metricGraphStore = new MetricGraphStore('', { sqliteStore: store });
+    const systemDagStore = new SystemDagStore(store, effectStore);
 
     effectStore.upsertCustom({
       effectId: 'eff_test_metric',
@@ -239,7 +239,6 @@ test('v4-routes: compare-sides persists by default, skips with persist=false, an
     metricGraphStore.upsert({
       graphId: 'mg_test_cockpit',
       name: '测试指标图',
-      version: '1.0.0',
       graphKind: 'metric',
       nodes: [
         {
@@ -250,6 +249,8 @@ test('v4-routes: compare-sides persists by default, skips with persist=false, an
           metricConfig: {
             metricId: 'm_hit_rate',
             name: '命中率',
+            militaryLevel: 'MOP',
+            domainTag: 'firepower',
             mode: 'from_operator',
             sourceRef: 'op_hit',
             targetField: 'rate',
@@ -297,7 +298,7 @@ test('v4-routes: compare-sides persists by default, skips with persist=false, an
       edges: [
         { id: 'e_mp_eff', sourceNodeId: 'mp_hit_rate', targetNodeId: 'eff_test_metric', weight: 1 },
       ],
-    });
+    } as Parameters<typeof systemDagStore.upsert>[0]);
 
     const deps: V4RouteDeps = {
       effectStore,
@@ -306,10 +307,16 @@ test('v4-routes: compare-sides persists by default, skips with persist=false, an
       getEvalStore: () => store,
       listOperators: () => [],
       runOperator: async () => ({
+        nodeId: 'op_hit',
         operatorId: 'op_hit',
         status: 'valid',
+        cacheKey: 'ck_op_hit',
         dataset: {
           id: 'ds_op_hit',
+          columns: [
+            { name: '分方', displayName: '分方', type: 'string' },
+            { name: 'rate', displayName: 'rate', type: 'number' },
+          ],
           schema: [
             { name: '分方', displayName: '分方', type: 'string' },
             { name: 'rate', displayName: 'rate', type: 'number' },
@@ -318,6 +325,7 @@ test('v4-routes: compare-sides persists by default, skips with persist=false, an
             { 分方: '红方', rate: 0.9 },
             { 分方: '蓝方', rate: 0.6 },
           ],
+          totalRows: 2,
         },
         evidenceRefs: [],
         latencyMs: 1,

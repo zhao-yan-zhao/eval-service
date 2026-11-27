@@ -928,7 +928,7 @@
             ],
             "rows": [
               {
-                "IndicatorID": "comp.corridor_compliance",
+                "IndicatorID": "roe.corridor_spatial_compliance",
                 "IndicatorName": "任务走廊空间遵从率",
                 "Side": "Blue (蓝方)",
                 "OverallComplianceRate": 0.95,
@@ -7772,6 +7772,146 @@
       "optimalDirection": "larger_is_better",
       "discrepancyNotes": [
         "与画布算法编排节点深度同步：自动接入 4 张事件底表 (EngagementCycle, WeaponEndgame, UnitCreated, SideCreated)，引用 4 个核心计算字段，经 Python 算法沙箱 [Python 算法内核：综合拦截概率] 输出指标。"
+      ]
+    }
+  },
+  "roe.fratricide_count": {
+    "operatorId": "roe.fratricide_count",
+    "pipelineTitle": "友军误伤事件数（安全红线）",
+    "nodes": [
+      {
+        "id": "node_in_roe_fratricide_count_WeaponEndgame",
+        "type": "data_input",
+        "title": "数据输入：WeaponEndgame",
+        "description": "从推演事件底表 WeaponEndgame.csv 提取武器终态命中与阵营字段",
+        "x": 120,
+        "y": 80,
+        "config": {
+          "sourceType": "csv",
+          "csvTable": "WeaponEndgame",
+          "selectedColumns": [
+            "WeaponID",
+            "WeaponName",
+            "WeaponSide",
+            "ParentFiringUnitID",
+            "TargetID",
+            "TargetSide",
+            "Result",
+            "EndgameMessage"
+          ]
+        },
+        "runtime": {
+          "status": "idle"
+        }
+      },
+      {
+        "id": "node_in_roe_fratricide_count_UnitCreated",
+        "type": "data_input",
+        "title": "数据输入：UnitCreated",
+        "description": "从推演事件底表 UnitCreated.csv 提取单元阵营与类型字段（过滤武器实体）",
+        "x": 120,
+        "y": 220,
+        "config": {
+          "sourceType": "csv",
+          "csvTable": "UnitCreated",
+          "selectedColumns": [
+            "UnitID",
+            "UnitName",
+            "UnitType",
+            "UnitSide",
+            "Side"
+          ]
+        },
+        "runtime": {
+          "status": "idle"
+        }
+      },
+      {
+        "id": "node_py_roe_fratricide_count",
+        "type": "python_script",
+        "title": "Python 算法内核：友军误伤事件数（安全红线）",
+        "description": "对 WeaponEndgame 按 WeaponID 去重并剔除虚构点防行，统计各分方命中/摧毁友方非武器单元的唯一事件数",
+        "x": 480,
+        "y": 150,
+        "config": {
+          "pythonScriptCode": "import pandas as pd\n\ndef T(name):\n    return input_df_dict.get(name, input_df_dict.get(name + '.csv', pd.DataFrame()))\n\ndef C(df, name, default=None):\n    return df[name] if name in df.columns else pd.Series(default, index=df.index, dtype=object)\n\nCOLS = ['分方', 'FratricideCount', '误伤事件数', '总终态命中数', '红线状态']\nendgame = T('WeaponEndgame')\nunits = T('UnitCreated')\nsides_df = T('SideCreated')\n\ndef _is_weapon(v):\n    return not pd.isna(v) and str(v).strip().lower() in ('武器', 'weapon', 'weapons', 'missile', 'munitions')\n\ndef _norm(v):\n    if pd.isna(v): return ''\n    s = str(v).strip().lower()\n    return 'red' if s in ('红方', 'red') else ('blue' if s in ('蓝方', 'blue') else s)\n\nif not endgame.empty and 'EndgameMessage' in endgame.columns:\n    endgame = endgame[~endgame['EndgameMessage'].fillna('').astype(str).str.lower().str.contains('no point defence systems employed', na=False)].copy()\nif not endgame.empty and 'WeaponID' in endgame.columns:\n    rk = {'KILL': 5, 'HIT': 4, 'POINTDEF:SUCCESS': 3, 'MISS': 2}\n    endgame['_rk'] = C(endgame, 'Result', '').astype(str).str.upper().map(rk).fillna(0)\n    endgame = endgame.sort_values('_rk', ascending=False).drop_duplicates('WeaponID', keep='first')\n\nu_side, u_type = {}, {}\nif not units.empty and 'UnitID' in units.columns:\n    ud = units.dropna(subset=['UnitID']).drop_duplicates('UnitID')\n    sc = 'UnitSide' if 'UnitSide' in ud.columns else ('Side' if 'Side' in ud.columns else None)\n    if sc: u_side = dict(zip(ud['UnitID'].astype(str), ud[sc].fillna('').astype(str)))\n    if 'UnitType' in ud.columns: u_type = dict(zip(ud['UnitID'].astype(str), ud['UnitType']))\n\nsides, seen = [], set()\nfor src in ([sides_df['SideName'].dropna().tolist()] if not sides_df.empty and 'SideName' in sides_df.columns else []) + [list(u_side.values())]:\n    for v in src:\n        s = str(v).strip()\n        ns = _norm(s)\n        if ns and ns not in seen:\n            seen.add(ns); sides.append((ns, s))\n\nfrat = {ns: 0 for ns, _ in sides}\nhits = {ns: 0 for ns, _ in sides}\nif not endgame.empty:\n    for _, r in endgame.iterrows():\n        res = str(r['Result']).strip().upper() if 'Result' in endgame.columns and pd.notna(r['Result']) else ''\n        if res not in ('HIT', 'KILL'): continue\n        fs = str(r['WeaponSide']).strip() if 'WeaponSide' in endgame.columns and pd.notna(r['WeaponSide']) else ''\n        fn = _norm(fs)\n        if not fn: continue\n        if fn not in hits:\n            sides.append((fn, fs)); frat[fn] = 0; hits[fn] = 0\n        hits[fn] += 1\n        tid = str(r['TargetID']) if 'TargetID' in endgame.columns and pd.notna(r['TargetID']) else ''\n        if not tid or (tid in u_type and _is_weapon(u_type[tid])): continue\n        ts = str(r['TargetSide']).strip() if 'TargetSide' in endgame.columns and pd.notna(r['TargetSide']) else u_side.get(tid, '')\n        if _norm(ts) == fn: frat[fn] += 1\n\noutput_df = pd.DataFrame([{'分方': ds, 'FratricideCount': frat[ns], '误伤事件数': frat[ns], '总终态命中数': hits[ns], '红线状态': '违规' if frat[ns] > 0 else '合格'} for ns, ds in sides], columns=COLS)",
+          "pythonTimeoutMs": 5000,
+          "outputColumns": [
+            "分方",
+            "FratricideCount",
+            "误伤事件数",
+            "总终态命中数",
+            "红线状态"
+          ]
+        },
+        "runtime": {
+          "status": "idle"
+        }
+      },
+      {
+        "id": "node_out_roe_fratricide_count",
+        "type": "result_output",
+        "title": "指标输出：友军误伤事件数（安全红线）",
+        "description": "输出计算结果 [FratricideCount] 至指标体系与硬红线门控",
+        "x": 860,
+        "y": 150,
+        "config": {
+          "targetField": "FratricideCount",
+          "indicatorName": "友军误伤事件数（安全红线）",
+          "indicatorUnit": "次",
+          "optimalDirection": "smaller_is_better"
+        },
+        "runtime": {
+          "status": "idle"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_in_WeaponEndgame_to_py_frat",
+        "sourceNodeId": "node_in_roe_fratricide_count_WeaponEndgame",
+        "targetNodeId": "node_py_roe_fratricide_count",
+        "label": "WeaponEndgame 数据流"
+      },
+      {
+        "id": "edge_in_UnitCreated_to_py_frat",
+        "sourceNodeId": "node_in_roe_fratricide_count_UnitCreated",
+        "targetNodeId": "node_py_roe_fratricide_count",
+        "label": "UnitCreated 数据流"
+      },
+      {
+        "id": "edge_py_to_out_frat",
+        "sourceNodeId": "node_py_roe_fratricide_count",
+        "targetNodeId": "node_out_roe_fratricide_count",
+        "label": "规范计算结果 [FratricideCount]"
+      }
+    ],
+    "dataset": null,
+    "updatedAt": "2026-11-27T02:10:00.000Z",
+    "f1FieldContract": {
+      "csvTables": [
+        "WeaponEndgame",
+        "UnitCreated"
+      ],
+      "csvColumns": [
+        "WeaponID",
+        "WeaponSide",
+        "ParentFiringUnitID",
+        "TargetID",
+        "TargetSide",
+        "Result",
+        "EndgameMessage",
+        "UnitID",
+        "UnitType",
+        "UnitSide"
+      ],
+      "defaultParams": {
+        "zeroTolerance": true
+      },
+      "unit": "次",
+      "optimalDirection": "smaller_is_better",
+      "discrepancyNotes": [
+        "与画布算法编排节点深度同步：自动接入 2 张事件底表 (WeaponEndgame, UnitCreated)，按 WeaponID 去重并过滤武器实体，输出 FratricideCount 供硬红线门控消费。"
       ]
     }
   }

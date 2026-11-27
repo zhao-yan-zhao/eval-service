@@ -764,7 +764,7 @@ export function MetricDagStudioPanel({
   const loadInitialData = useCallback(async () => {
     setLoadingInit(true);
     try {
-      // 1. 加载一库 V4 算子列表（优先 layer=fact，兼容回退 /api/operators）
+      // 1. 加载一库 V4 算子列表（优先 layer=fact，回退 /api/v4/operators）
       let loadedOps: V4OperatorOption[] = [];
       try {
         const res = await fetch('/api/v4/operators?layer=fact');
@@ -776,12 +776,6 @@ export function MetricDagStudioPanel({
           if (fbRes.ok) {
             const fbJson = (await fbRes.json()) as { operators?: unknown[] };
             loadedOps = normalizeOperatorList(fbJson.operators ?? []);
-          } else {
-            const oldRes = await fetch('/api/operators');
-            if (oldRes.ok) {
-              const oldJson = (await oldRes.json()) as { operators?: unknown[] };
-              loadedOps = normalizeOperatorList(oldJson.operators ?? []);
-            }
           }
         }
       } catch {

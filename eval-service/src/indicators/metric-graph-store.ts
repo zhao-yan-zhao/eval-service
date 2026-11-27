@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { EvalSqliteStore } from '../adapters/sqlite-store.ts';
 import type {
   DagEdge,
   DagNodeBase,
@@ -29,7 +30,7 @@ import {
   parseFormulaAST,
   validateFormula,
 } from '../operators/formula-engine.ts';
-import { reduceNumericArray } from './store.ts';
+import { reduceNumericArray } from '../core/metric-helpers.ts';
 import type { SystemDagEvaluationInputs, SystemDagMetricInput } from '../systems/dag-evaluator.ts';
 
 const DEFAULT_METRIC_GRAPHS_PATH = path.resolve(
@@ -118,7 +119,7 @@ export interface MetricGraphExecutionResult extends DagGraphExecutionResult {
 
 // ──────────────────── 内置示例二库指标 DAG ────────────────────
 
-const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
+export const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
   {
     graphId: 'mg_v4_metrics_guide_full',
     name: '全域作战效能指标图集',
@@ -792,8 +793,8 @@ const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
           domainTag: 'firepower',
           mode: 'from_metric_agg',
           sourceRef: 'mn_strike_single',
-          groupBy: ['Side'],
-          targetField: 'MissionCompletionRatio',
+          groupBy: ['分方'],
+          targetField: '完成比',
           reduce: 'mean',
           unit: 'ratio',
         },
@@ -810,7 +811,7 @@ const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
           domainTag: 'survivability',
           mode: 'from_operator',
           sourceRef: 'patrol.composite_mission_metrics',
-          targetField: 'MissionCompletionRatio',
+          targetField: '平均完成比',
           reduce: 'mean',
           unit: 'ratio',
         },
@@ -842,7 +843,7 @@ const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
           domainTag: 'isr',
           mode: 'from_operator',
           sourceRef: 'isr.detection_rate',
-          targetField: 'DetectionRate',
+          targetField: '发现率',
           reduce: 'mean',
           unit: 'ratio',
         },
@@ -859,7 +860,7 @@ const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
           domainTag: 'c2',
           mode: 'from_operator',
           sourceRef: 'c2.situational_completeness',
-          targetField: 'SituationalCompleteness',
+          targetField: '态势完整度',
           reduce: 'mean',
           unit: 'ratio',
         },
@@ -876,7 +877,7 @@ const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
           domainTag: 'synergy',
           mode: 'from_operator',
           sourceRef: 'fire_control.unit_kill_chain_closure',
-          targetField: 'KillChainDuration_s',
+          targetField: '杀伤闭环总时长',
           reduce: 'mean',
           unit: 's',
         },
@@ -893,7 +894,7 @@ const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
           domainTag: 'cost',
           mode: 'from_operator',
           sourceRef: 'cost.side_exchange_ratio',
-          targetField: 'ExchangeRatio',
+          targetField: '交换比',
           reduce: 'mean',
           unit: 'ratio',
         },
@@ -927,7 +928,7 @@ const BUILTIN_METRIC_GRAPHS: StoredMetricGraphDefinition[] = [
           domainTag: 'c2',
           mode: 'from_operator',
           sourceRef: 'roe.corridor_spatial_compliance',
-          targetField: 'ComplianceRate',
+          targetField: '遵从率',
           reduce: 'mean',
           unit: 'ratio',
         },
@@ -1167,20 +1168,75 @@ export function validateMetricGraph(graph: MetricGraphDefinition): MetricGraphVa
 
 // ──────────────────── 持久化存储 MetricGraphStore ────────────────────
 
+const IGNORED_TEST_GRAPH_IDS = new Set<string>(['mg_test_cockpit']);
+
 export class MetricGraphStore {
   private readonly filePath: string;
+  private readonly includeBuiltins: boolean;
+  private sqliteStore?: EvalSqliteStore;
   private builtins: StoredMetricGraphDefinition[] = [];
   private custom: Map<string, StoredMetricGraphDefinition> = new Map();
 
   constructor(
     filePath = DEFAULT_METRIC_GRAPHS_PATH,
-    options?: { includeBuiltins?: boolean },
+    options?: { includeBuiltins?: boolean; sqliteStore?: EvalSqliteStore },
   ) {
     this.filePath = filePath;
-    if (options?.includeBuiltins !== false) {
-      this.builtins = BUILTIN_METRIC_GRAPHS.map((g) => structuredClone(g));
+    this.includeBuiltins = options?.includeBuiltins !== false;
+    if (options?.sqliteStore) {
+      this.rebindSqliteStore(options.sqliteStore);
+    } else {
+      if (this.includeBuiltins) {
+        this.builtins = BUILTIN_METRIC_GRAPHS.map((g) => structuredClone(g));
+      }
+      this.load();
     }
-    this.load();
+  }
+
+  getSqliteStore(): EvalSqliteStore | undefined {
+    return this.sqliteStore;
+  }
+
+  rebindSqliteStore(newStore: EvalSqliteStore | null): void {
+    this.sqliteStore = newStore ?? undefined;
+    if (!this.sqliteStore) {
+      this.builtins = this.includeBuiltins
+        ? BUILTIN_METRIC_GRAPHS.map((g) => structuredClone(g))
+        : [];
+      this.load();
+      return;
+    }
+
+    // 空白库强隔离：is_blank === '1' 时绝不自动写入内置预置
+    const isBlank = this.sqliteStore.getMeta('is_blank') === '1';
+    if (isBlank) {
+      this.builtins = [];
+      this.custom.clear();
+      return;
+    }
+
+    // 非空库且 v4_metric_graphs 为空时，自动写入内置预置并一次性迁移 JSON 自定义图（跳过测试残留）
+    if (this.sqliteStore.countV4MetricGraphs() === 0) {
+      if (this.includeBuiltins) {
+        for (const b of BUILTIN_METRIC_GRAPHS) {
+          this.sqliteStore.upsertV4MetricGraph(structuredClone(b), true);
+        }
+      }
+      if (this.filePath && fs.existsSync(this.filePath)) {
+        try {
+          const raw = fs.readFileSync(this.filePath, 'utf-8');
+          const parsed = JSON.parse(raw) as StoredMetricGraphDefinition[];
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (!item || !item.graphId || IGNORED_TEST_GRAPH_IDS.has(item.graphId)) continue;
+              this.sqliteStore.upsertV4MetricGraph({ ...item, builtin: false }, false);
+            }
+          }
+        } catch {
+          // 忽略损坏的历史 JSON
+        }
+      }
+    }
   }
 
   private load(): void {
@@ -1202,7 +1258,7 @@ export class MetricGraphStore {
   }
 
   private persist(): void {
-    if (!this.filePath) return;
+    if (this.sqliteStore || !this.filePath) return;
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
       const list = [...this.custom.values()];
@@ -1217,6 +1273,9 @@ export class MetricGraphStore {
   }
 
   listAll(): StoredMetricGraphDefinition[] {
+    if (this.sqliteStore) {
+      return this.sqliteStore.listV4MetricGraphs().map((g) => structuredClone(g));
+    }
     const byId = new Map<string, StoredMetricGraphDefinition>();
     for (const b of this.builtins) byId.set(b.graphId, structuredClone(b));
     for (const c of this.custom.values()) byId.set(c.graphId, structuredClone(c));
@@ -1224,6 +1283,10 @@ export class MetricGraphStore {
   }
 
   get(graphId: string): StoredMetricGraphDefinition | undefined {
+    if (this.sqliteStore) {
+      const found = this.sqliteStore.getV4MetricGraph(graphId);
+      return found ? structuredClone(found) : undefined;
+    }
     const found =
       this.custom.get(graphId) ?? this.builtins.find((b) => b.graphId === graphId);
     return found ? structuredClone(found) : undefined;
@@ -1235,7 +1298,9 @@ export class MetricGraphStore {
       throw new Error(`指标 DAG 校验失败: ${validation.errors.join('; ')}`);
     }
     const now = new Date().toISOString();
-    const existing = this.custom.get(graph.graphId);
+    const existing = this.sqliteStore
+      ? this.sqliteStore.getV4MetricGraph(graph.graphId)
+      : this.custom.get(graph.graphId);
     const clean: StoredMetricGraphDefinition = {
       ...structuredClone(graph),
       graphKind: 'metric',
@@ -1243,12 +1308,24 @@ export class MetricGraphStore {
       createdAt: existing?.createdAt ?? graph.createdAt ?? now,
       updatedAt: now,
     };
+    if (this.sqliteStore) {
+      this.sqliteStore.upsertV4MetricGraph(clean, false);
+      return structuredClone(clean);
+    }
     this.custom.set(clean.graphId, clean);
     this.persist();
     return structuredClone(clean);
   }
 
   delete(graphId: string): boolean {
+    if (this.sqliteStore) {
+      const existing = this.sqliteStore.getV4MetricGraph(graphId);
+      if (!existing) return false;
+      if (existing.builtin === true) {
+        throw new Error(`不允许删除内置预置指标 DAG: ${graphId}`);
+      }
+      return this.sqliteStore.deleteV4MetricGraph(graphId);
+    }
     const isBuiltinOnly =
       this.builtins.some((b) => b.graphId === graphId) && !this.custom.has(graphId);
     if (isBuiltinOnly) {

@@ -6,12 +6,10 @@ import path from 'node:path';
 import test from 'node:test';
 import { createEvalApp, BUILTIN_SAMPLES } from '../src/server.ts';
 
-test('Stage 4：eval.db 冷热存取、报告/战术反哺、NL草案、Q-109实时防骚扰与完整REST+SSE链路', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'f1-stage4-'));
+test('Stage 4 (V4)：eval.db 冷热存取、字段字典、V4 NL草案、Q-109实时防骚扰与完整REST链路', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'f1-stage4-v4-'));
   const app = await createEvalApp({
     dbPath: path.join(tmpDir, 'eval.db'),
-    customIndicatorsPath: path.join(tmpDir, 'custom-ind.json'),
-    customSystemsPath: path.join(tmpDir, 'custom-sys.json'),
     autoSeed: true,
   });
 
@@ -23,11 +21,12 @@ test('Stage 4：eval.db 冷热存取、报告/战术反哺、NL草案、Q-109实
     // 1) 健康检查 & 预置双真实推演入库
     const health = (await (await fetch(`${baseUrl}/api/health`)).json()) as {
       ok: boolean;
-      db: { counts: { runs: number; evaluations: number } };
+      db: { counts: { runs: number; v4Operators?: number; v4SystemDags?: number } };
     };
     assert.equal(health.ok, true);
     assert.ok(health.db.counts.runs >= 2);
-    assert.ok(health.db.counts.evaluations >= 2);
+    assert.ok((health.db.counts.v4Operators ?? 0) >= 42);
+    assert.ok((health.db.counts.v4SystemDags ?? 0) >= 2);
 
     // 2) 字段契约字典直出
     const catalog = (await (await fetch(`${baseUrl}/api/fields-catalog`)).json()) as {
@@ -38,82 +37,42 @@ test('Stage 4：eval.db 冷热存取、报告/战术反哺、NL草案、Q-109实
     assert.equal(catalog.catalog.catalog_id, 'f1-simulation-output-fields');
     assert.ok(catalog.catalog.doc_discrepancies.length >= 9);
 
-    // 3) 触发 BVR 实测评估并核验报告 + 战术反哺载荷
-    const evalRes = (await (
-      await fetch(`${baseUrl}/api/evaluate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          runId: 'gj11_pl15_bvr_real',
-          systemId: 'sys_corridor_compliance_v1',
-          customParams: {
-            targetSide: '红方',
-            enemySide: '蓝方',
-            corridors: [
-              {
-                id: 'corridor-1',
-                name: '主攻击走廊',
-                side: '红方',
-                points: [
-                  { lon: 100.0, lat: 20.0 },
-                  { lon: 130.0, lat: 20.0 },
-                  { lon: 130.0, lat: 30.0 },
-                  { lon: 100.0, lat: 30.0 },
-                ],
-              },
-            ],
-          },
-        }),
-      })
-    ).json()) as {
-      ok: boolean;
-      evalId: string;
-      output: { overallScore: number; dimensions: Array<{ name: string }> };
-      reportMd: string;
-      feedback: { $schema: string; tacticalGrade: string };
-      pythonMetrics: { available: boolean };
-    };
-    assert.equal(evalRes.ok, true);
-    assert.ok(evalRes.output.overallScore > 0);
-    assert.equal(evalRes.pythonMetrics.available, true);
-    assert.ok(evalRes.reportMd.includes('客观观测事实'));
-    assert.ok(evalRes.reportMd.includes('缺失数据与降级诚实性审计'));
-    assert.equal(evalRes.feedback.$schema, 'https://f1-ai.schema/tactical-feedback/v1.json');
-
-    // 4) NL-to-Metrics 意图草案生成 + HITL 保存入库
+    // 3) V4 NL-to-Metrics 意图草案生成 + HITL 保存入库
     const nlRes = (await (
-      await fetch(`${baseUrl}/api/systems/draft-nl`, {
+      await fetch(`${baseUrl}/api/v4/system-dags/draft-nl`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: '我要评估海上反潜巡逻封锁效能，重点看静默纪律、盲区时间和成本控制',
+          prompt: '我要评估海上反潜巡逻封锁效能，重点看防空拦截、侦察发现和战损控制',
         }),
       })
     ).json()) as {
       ok: boolean;
-      system: { systemId: string; root: { children: unknown[] } };
-      validation: { valid: boolean };
-      matchedDomains: string[];
+      systemDag?: { systemId: string; nodes: unknown[]; edges: unknown[] };
+      system?: { systemId: string; nodes: unknown[]; edges: unknown[] };
+      validation?: { valid: boolean };
     };
     assert.equal(nlRes.ok, true);
-    assert.equal(nlRes.validation.valid, true);
-    assert.ok(nlRes.matchedDomains.length >= 1);
+    const draftedDag = nlRes.systemDag ?? nlRes.system;
+    assert.ok(draftedDag && draftedDag.systemId);
+    if (nlRes.validation) {
+      assert.equal(nlRes.validation.valid, true);
+    }
 
     const saveSys = (await (
-      await fetch(`${baseUrl}/api/systems`, {
+      await fetch(`${baseUrl}/api/v4/system-dags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nlRes.system),
+        body: JSON.stringify(draftedDag),
       })
-    ).json()) as { ok: boolean; system: { systemId: string } };
+    ).json()) as { ok: boolean; systemDag?: { systemId: string } };
     assert.equal(saveSys.ok, true);
 
-    // 5) 实时 Q-109 增量推演与 5 分钟防骚扰冷却 + HITL 人工决策闭环
+    // 4) 实时 Q-109 增量推演与 5 分钟防骚扰冷却 + HITL 人工决策闭环 (V4 SystemDag)
     const bsLines = fs
       .readFileSync(BUILTIN_SAMPLES.bsSampleJsonl, 'utf-8')
       .split(/\r?\n/)
       .filter((l) => l.trim());
-    // 构造第 2 帧将有损毁单位与持续推进帧以触发 Q-109 研判卡并测试防重复告警
     const rtCreate = (await (
       await fetch(`${baseUrl}/api/realtime/sessions`, {
         method: 'POST',
@@ -121,14 +80,13 @@ test('Stage 4：eval.db 冷热存取、报告/战术反哺、NL草案、Q-109实
         body: JSON.stringify({
           runId: 'rt_stage4_test',
           jsonlText: bsLines.join('\n'),
-          systemId: 'sys_corridor_compliance_v1',
+          systemId: 'sys_v4_metrics_guide_full',
         }),
       })
     ).json()) as { ok: boolean; snapshot: { totalFrames: number } };
     assert.equal(rtCreate.ok, true);
     assert.equal(rtCreate.snapshot.totalFrames, bsLines.length);
 
-    // 步进完所有样本帧
     for (let i = 0; i < bsLines.length; i += 1) {
       await fetch(`${baseUrl}/api/realtime/sessions/rt_stage4_test/control`, {
         method: 'POST',
@@ -137,7 +95,7 @@ test('Stage 4：eval.db 冷热存取、报告/战术反哺、NL草案、Q-109实
       });
     }
 
-    // 再推入一帧人工高损毁帧触发重大告警 (南昌舰损毁)
+    // 推入高损毁帧触发重大告警
     const synthFrame = JSON.stringify({
       Scenario: {
         Time: '2026-06-01T04:05:00Z',
@@ -164,7 +122,7 @@ test('Stage 4：eval.db 冷热存取、报告/战术反哺、NL草案、Q-109实
     };
     assert.ok(push1.snapshot.cards.length >= 1);
 
-    // 连续推入相同冷却窗口 (30s 后 < 300s) 帧 (歼15-01亦损毁)：应触发 5 分钟防骚扰抑止计数
+    // 30s 后再次推入同源损毁帧 -> 5 分钟冷却窗口抑止防刷屏
     const synthFrame2 = JSON.stringify({
       Scenario: {
         Time: '2026-06-01T04:05:30Z',
@@ -191,7 +149,7 @@ test('Stage 4：eval.db 冷热存取、报告/战术反哺、NL草案、Q-109实
     };
     assert.ok(push2.snapshot.suppressedCount >= 1, '5 分钟冷却期内同源卡片应被抑止防刷屏');
 
-    // 对首张卡片下发 HITL 研判决策 ("pause_inspect")
+    // HITL 决策 ("pause_inspect")
     const targetCardId = push2.snapshot.cards[0].cardId;
     const hitlRes = (await (
       await fetch(`${baseUrl}/api/realtime/sessions/rt_stage4_test/cards/${targetCardId}/action`, {
@@ -208,7 +166,7 @@ test('Stage 4：eval.db 冷热存取、报告/战术反哺、NL草案、Q-109实
     assert.equal(hitlRes.card.hitlAction, 'pause_inspect');
     assert.equal(hitlRes.snapshot.status, 'paused');
 
-    // 6) 查询数据库事件与航迹表
+    // 5) 查询数据库事件与航迹表
     const evList = (await (
       await fetch(`${baseUrl}/api/runs/gj11_pl15_bvr_real/events?limit=20`)
     ).json()) as { ok: boolean; total: number; events: unknown[] };

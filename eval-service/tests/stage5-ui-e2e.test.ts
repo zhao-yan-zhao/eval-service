@@ -35,10 +35,6 @@ test('Stage 5 & 6：全栈 UI 构建产物与六大工作台无头浏览器端�
 
   const app = await createEvalApp({
     dbPath: path.join(tmpDir, 'eval.db'),
-    customOperatorsPath: path.join(tmpDir, 'custom-op.json'),
-    operatorOverridesPath: path.join(tmpDir, 'operator-overrides.json'),
-    customIndicatorsPath: path.join(tmpDir, 'custom-ind.json'),
-    customSystemsPath: path.join(tmpDir, 'custom-sys.json'),
     autoSeed: true,
   });
 
@@ -145,7 +141,7 @@ test('Stage 5 & 6：全栈 UI 构建产物与六大工作台无头浏览器端�
     await page.locator('#tab-operators').click();
     await page.waitForSelector('#panel-operators:not([hidden])', { timeout: 5_000 });
     await page.waitForSelector('#op-panel-catalog:not([hidden])', { timeout: 5_000 });
-    await page.locator('#panel-operators').getByText('全部算子 · 41').first().waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#panel-operators').getByText('全部算子 · 42').first().waitFor({ state: 'visible', timeout: 5_000 });
     await assertNoHorizontalOverflow('1440-operators-catalog');
     await page.locator('#panel-operators th button', { hasText: '就绪门控' }).click();
 

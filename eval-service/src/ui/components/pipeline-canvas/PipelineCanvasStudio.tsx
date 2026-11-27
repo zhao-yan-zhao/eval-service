@@ -47,10 +47,9 @@ import { CanvasPreviewTable } from './CanvasPreviewTable.tsx';
 import { SchemaDictionaryModal } from './SchemaDictionaryModal.tsx';
 import { ALL_SPEC_EVENTS, findCatalogTable, type CatalogTableSpec } from './schema-catalog.ts';
 import { getNodeOutputColumns } from './lineage-analyzer.ts';
-import { evalApi, type MetricAtomMeta } from '../../api.ts';
+import { evalApi, type StoredRunSummary, type V4OperatorItem } from '../../api.ts';
 import { UnifiedAssetSelector, type UnifiedAssetOption } from '../v4/index.ts';
 import type { TableDataset } from '../../../core/types.ts';
-import { getOperatorPipelineBlueprint } from '../../../operators/blueprints.ts';
 import { executeFormulaOrAggPreview } from '../../../operators/pipeline-engine.ts';
 import { getSampleDatasetForTable } from '../../../operators/table-sample-catalog.ts';
 import { OperatorInlineEditor } from '../OperatorInlineEditor.tsx';
@@ -77,8 +76,8 @@ export interface InjectedAlgorithmData {
 interface PipelineCanvasStudioProps {
   isOpen?: boolean;
   embedded?: boolean;
-  initialOperator?: MetricAtomMeta | null;
-  allOperators?: MetricAtomMeta[];
+  initialOperator?: V4OperatorItem | null;
+  allOperators?: V4OperatorItem[];
   injectedAlgorithm?: InjectedAlgorithmData | null;
   runs?: StoredRunSummary[];
   selectedRunId?: string;
@@ -138,62 +137,108 @@ function mergeTwoDatasets(ds1: TableDataset, ds2: TableDataset): TableDataset {
   };
 }
 
-// 辅助函数：根据算子蓝图构建画布初始节点与连线
-function buildCanvasFromBlueprint(operatorId: string, opName?: string): {
+// 辅助函数：根据算子元数据构建浏览器端初始画布骨架（真实蓝图与已存流水线由 /api/operator-pipelines/:id 异步加载）
+function buildCanvasFromBlueprint(
+  operatorId: string,
+  opName?: string,
+  opMeta?: V4OperatorItem | null,
+): {
   title: string;
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   dataset: TableDataset;
 } {
-  const bp = getOperatorPipelineBlueprint(operatorId, opName);
-  if (bp && bp.nodes && bp.nodes.length > 0) {
-    const loadedNodes: CanvasNode[] = bp.nodes.map((bn) => ({
-      id: bn.id,
-      type: bn.type,
-      title: bn.title,
-      description: bn.description,
-      x: bn.x,
-      y: bn.y,
-      config: bn.config ? JSON.parse(JSON.stringify(bn.config)) : {},
-      runtime: bn.runtime ? JSON.parse(JSON.stringify(bn.runtime)) : { status: 'idle' },
-    }));
-    const loadedEdges: CanvasEdge[] = bp.edges.map((be) => ({
-      id: be.id,
-      sourceNodeId: be.sourceNodeId,
-      targetNodeId: be.targetNodeId,
-      label: be.label,
-    }));
-    const layoutedNodes = ensureNonOverlappingLayout(loadedNodes, loadedEdges);
-    const firstTable = layoutedNodes[0]?.config?.csvTable;
-    const tableDataset = firstTable ? getSampleDatasetForTable(firstTable) : null;
-    return {
-      title: `【${bp.category === 'compliance' ? '合规域' : bp.category}】${bp.name} · 算法流水线 (${bp.algorithmLabel})`,
-      nodes: layoutedNodes,
-      edges: loadedEdges,
-      dataset: bp.defaultDataset || tableDataset || DEFAULT_SAMPLE_DATASET,
-    };
-  }
+  const firstTable = opMeta?.requiredTables?.[0] || 'WeaponFired';
+  const tableDataset = getSampleDatasetForTable(firstTable);
+  const baseNodes: CanvasNode[] = opMeta
+    ? [
+        {
+          id: `node_in_${operatorId}`,
+          type: 'data_input',
+          title: `表输入：${firstTable}`,
+          description: `从 ${firstTable} 读取实证事件记录`,
+          x: 60,
+          y: 160,
+          config: {
+            sourceType: 'csv',
+            csvTable: firstTable,
+          },
+          runtime: { status: 'idle' },
+        },
+        {
+          id: `node_core_${operatorId}`,
+          type:
+            opMeta.engineKind === 'spatial'
+              ? 'spatial'
+              : opMeta.engineKind === 'group_agg'
+              ? 'group_agg'
+              : opMeta.engineKind === 'inline_calc'
+              ? 'inline_calc'
+              : 'python_script',
+          title: `${opMeta.name} · 核心计算`,
+          description: opMeta.description,
+          x: 460,
+          y: 160,
+          config:
+            opMeta.pythonCode
+              ? { pythonScriptCode: opMeta.pythonCode, pythonCode: opMeta.pythonCode }
+              : {},
+          runtime: { status: 'idle' },
+        },
+        {
+          id: `node_out_${operatorId}`,
+          type: 'result_output',
+          title: `二维表输出：${opMeta.name}`,
+          description: `输出列: ${(opMeta.outputColumnNames ?? []).join(', ') || 'TableDataset'}`,
+          x: 880,
+          y: 160,
+          config: {
+            targetField: opMeta.outputColumnNames?.[opMeta.outputColumnNames.length - 1] ?? 'Side',
+          },
+          runtime: { status: 'idle' },
+        },
+      ]
+    : INITIAL_NODES;
+  const baseEdges: CanvasEdge[] = opMeta
+    ? [
+        {
+          id: `edge_1_${operatorId}`,
+          sourceNodeId: baseNodes[0].id,
+          targetNodeId: baseNodes[1].id,
+          label: '底表输入流',
+        },
+        {
+          id: `edge_2_${operatorId}`,
+          sourceNodeId: baseNodes[1].id,
+          targetNodeId: baseNodes[2].id,
+          label: '二维表输出流',
+        },
+      ]
+    : INITIAL_EDGES;
+  const layoutedNodes = ensureNonOverlappingLayout(baseNodes, baseEdges);
   return {
-    title: `超视距空战 (BVR) 协同杀伤效能计算流水线`,
-    nodes: INITIAL_NODES,
-    edges: INITIAL_EDGES,
-    dataset: DEFAULT_SAMPLE_DATASET,
+    title: `${opName || opMeta?.name || operatorId} · V4 算法流水线`,
+    nodes: layoutedNodes,
+    edges: baseEdges,
+    dataset: (tableDataset as TableDataset | null) || DEFAULT_SAMPLE_DATASET,
   };
 }
 
 // 仿真 GJ11-PL15 样例数据输入基础 Dataset
+const DEFAULT_SAMPLE_COLS = [
+  { name: 'weapon_id', displayName: '武器编号', type: 'string' as const },
+  { name: 'shooter_id', displayName: '发射平台', type: 'string' as const },
+  { name: 'target_id', displayName: '目标平台', type: 'string' as const },
+  { name: 'firing_range_nm', displayName: '开火距离 (Nm)', type: 'number' as const },
+  { name: 'flight_time_sec', displayName: '飞行耗时 (s)', type: 'number' as const },
+  { name: 'target_speed_kts', displayName: '目标航速 (kts)', type: 'number' as const },
+  { name: 'damage_percent', displayName: '毁伤百分比 (%)', type: 'number' as const },
+  { name: 'is_hit', displayName: '是否命中 (1/0)', type: 'number' as const },
+];
 const DEFAULT_SAMPLE_DATASET: TableDataset = {
   id: 'bvr_sample_run_01',
-  schema: [
-    { name: 'weapon_id', displayName: '武器编号', type: 'string' },
-    { name: 'shooter_id', displayName: '发射平台', type: 'string' },
-    { name: 'target_id', displayName: '目标平台', type: 'string' },
-    { name: 'firing_range_nm', displayName: '开火距离 (Nm)', type: 'number' },
-    { name: 'flight_time_sec', displayName: '飞行耗时 (s)', type: 'number' },
-    { name: 'target_speed_kts', displayName: '目标航速 (kts)', type: 'number' },
-    { name: 'damage_percent', displayName: '毁伤百分比 (%)', type: 'number' },
-    { name: 'is_hit', displayName: '是否命中 (1/0)', type: 'number' },
-  ],
+  columns: DEFAULT_SAMPLE_COLS,
+  schema: DEFAULT_SAMPLE_COLS,
   rows: [
     { weapon_id: 'PL15_001', shooter_id: 'GJ11_LEAD', target_id: 'F35_01', firing_range_nm: 48.5, flight_time_sec: 42.1, target_speed_kts: 520, damage_percent: 100, is_hit: 1 },
     { weapon_id: 'PL15_002', shooter_id: 'GJ11_LEAD', target_id: 'F35_01', firing_range_nm: 46.2, flight_time_sec: 39.8, target_speed_kts: 490, damage_percent: 85, is_hit: 1 },
@@ -438,23 +483,23 @@ export function PipelineCanvasStudio({
 
   // 删除当前自定义算子
   const handleDeleteCurrentOperator = async () => {
-    if (!currentOpMeta?.isCustom) {
-      alert('内置标准算子受保护，不可删除；支持参数修改与恢复默认');
+    if (!currentOpMeta || currentOpMeta.isBuiltin) {
+      alert('内置标准 V4 算子受保护，不可删除；支持参数修改与恢复默认');
       return;
     }
     const confirmed = window.confirm(
-      `确定要彻底删除当前自定义算子 [${currentOpMeta.name} (${currentOpMeta.id})] 吗？\n删除后该算子的流水线也将一并移除。`
+      `确定要彻底删除当前自定义 V4 算子 [${currentOpMeta.name} (${currentOpMeta.id})] 吗？\n删除后该算子的流水线也将一并移除。`
     );
     if (!confirmed) return;
 
     try {
-      const res = await evalApi.deleteOperator(currentOpMeta.id);
+      const res = await evalApi.deleteV4Operator(currentOpMeta.id);
       if (res?.deleted) {
         setToastMessage(`自定义算子 [${currentOpMeta.name}] 已成功删除！已切回标准算子。`);
         onSaved?.();
         handleSwitchOperator('roe.corridor_spatial_compliance');
       } else {
-        setToastMessage('删除操作未成功执行，请检查是否有二库指标引用');
+        setToastMessage('删除操作未成功执行，请检查是否有二库指标图引用');
       }
     } catch (err: any) {
       setToastMessage(`删除失败: ${err?.message || String(err)}`);
@@ -512,14 +557,25 @@ export function PipelineCanvasStudio({
     evalApi
       .getOperatorPipeline(opId)
       .then(async (res) => {
-        if (res?.ok && res.pipeline && res.pipeline.nodes?.length > 0) {
-          const loadedEdges = res.pipeline.edges || [];
-          const loadedNodes = ensureNonOverlappingLayout(res.pipeline.nodes, loadedEdges);
+        const loadedSpec =
+          res?.ok && res.pipeline && res.pipeline.nodes?.length > 0
+            ? res.pipeline
+            : res?.ok && res.blueprint && res.blueprint.nodes?.length > 0
+            ? {
+                pipelineTitle: `【${res.blueprint.category || 'V4'}】${res.blueprint.name || op?.name || opId} · 算法流水线`,
+                nodes: res.blueprint.nodes,
+                edges: res.blueprint.edges || [],
+                dataset: res.blueprint.defaultDataset,
+              }
+            : null;
+        if (loadedSpec) {
+          const loadedEdges = loadedSpec.edges || [];
+          const loadedNodes = ensureNonOverlappingLayout(loadedSpec.nodes, loadedEdges);
           setEdges(loadedEdges);
-          setPipelineTitle(res.pipeline.pipelineTitle || `算子 [${op?.name || opId}] 流水线`);
+          setPipelineTitle(loadedSpec.pipelineTitle || `算子 [${op?.name || opId}] 流水线`);
           const firstTable = loadedNodes[0]?.config?.csvTable;
           const tableDataset = firstTable ? getSampleDatasetForTable(firstTable) : null;
-          const chosenDataset = res.pipeline.dataset || tableDataset || DEFAULT_SAMPLE_DATASET;
+          const chosenDataset = loadedSpec.dataset || tableDataset || DEFAULT_SAMPLE_DATASET;
           setActiveDataset(chosenDataset);
           setSelectedNodeId(loadedNodes[0]?.id ?? null);
 
@@ -530,9 +586,13 @@ export function PipelineCanvasStudio({
           } else {
             setNodes(loadedNodes);
           }
-          setToastMessage(`已从存储库载入算子 [${op?.name || opId}] 最新已保存流水线！`);
+          setToastMessage(
+            res.pipeline?.nodes?.length > 0
+              ? `已从存储库载入算子 [${op?.name || opId}] 最新已保存流水线！`
+              : `已载入算子 [${op?.name || opId}] 官方标准算法蓝图！`,
+          );
         } else {
-          const built = buildCanvasFromBlueprint(opId, op?.name);
+          const built = buildCanvasFromBlueprint(opId, op?.name, op);
           setEdges(built.edges);
           setPipelineTitle(built.title);
           setActiveDataset(built.dataset);
@@ -545,11 +605,11 @@ export function PipelineCanvasStudio({
           } else {
             setNodes(built.nodes);
           }
-          setToastMessage(`已载入算子 [${op?.name || opId}] 预设算法编排流水线！`);
+          setToastMessage(`已载入算子 [${op?.name || opId}] 默认算法编排流水线！`);
         }
       })
       .catch(async () => {
-        const built = buildCanvasFromBlueprint(opId, op?.name);
+        const built = buildCanvasFromBlueprint(opId, op?.name, op);
         setEdges(built.edges);
         setPipelineTitle(built.title);
         setActiveDataset(built.dataset);
@@ -684,13 +744,13 @@ export function PipelineCanvasStudio({
         x: 380 + (nodes.length % 4) * 60,
         y: 190 + (nodes.length % 3) * 60,
         config: {
-          ...(injectedAlgorithm.type === 'data_input' ? { sourceType: 'csv', csvTable: 'gj11_weapon_fires.csv' } : {}),
-          ...(injectedAlgorithm.type === 'inline_calc' ? { derivedColumns: [{ name: 'derived_metric', expression: 'ROUND(firing_range_nm * 1.852, 2)', outputType: 'numeric' }] } : {}),
-          ...(injectedAlgorithm.type === 'group_agg' ? { aggregations: [{ op: 'AVERAGE', sourceField: 'damage_percent', targetField: 'avg_damage' }] } : {}),
+          ...(injectedAlgorithm.type === 'data_input' ? { sourceType: 'csv' as const, csvTable: 'gj11_weapon_fires.csv' } : {}),
+          ...(injectedAlgorithm.type === 'inline_calc' ? { derivedColumns: [{ name: 'derived_metric', columnName: 'derived_metric', expression: 'ROUND(firing_range_nm * 1.852, 2)', dataType: 'number' as const }] } : {}),
+          ...(injectedAlgorithm.type === 'group_agg' ? { aggregations: [{ method: 'AVERAGE' as const, sourceColumn: 'damage_percent', outputName: 'avg_damage', sourceField: 'damage_percent', outputField: 'avg_damage' }] } : {}),
           ...(injectedAlgorithm.type === 'result_output' ? { targetField: 'computed_bvr_index' } : {}),
           ...(injectedAlgorithm.type === 'spatial' ? { spatialRule: 'corridor_check', minSafeMarginKm: 15 } : {}),
           ...(injectedAlgorithm.type === 'python_script' ? { pythonScriptCode: '# Python 3.12 算法代码\ndef evaluate(context):\n    return {"status": "computed", "score": 1.0}\n' } : {}),
-        },
+        } as CanvasNode['config'],
         runtime: { status: 'idle' },
       };
       setNodes((prev) => [...prev, newNode]);
@@ -827,8 +887,8 @@ export function PipelineCanvasStudio({
           }
           return {
             name: c.name,
-            type: c.type || 'number',
-            desc: c.desc || (findCatalogTable(rawTableName)?.fields?.find((f) => f.name === c.name)?.description),
+            type: (c as any).type || 'number',
+            desc: (c as any).desc || (findCatalogTable(rawTableName)?.fields?.find((f) => f.name === c.name)?.description),
             sampleValues: samples,
           };
         }),
@@ -931,9 +991,9 @@ export function PipelineCanvasStudio({
 
       if (node.type === 'data_input') {
         const tableSample = node.config?.csvTable ? getSampleDatasetForTable(node.config.csvTable) : null;
-        const nodeData = (node.runtime?.outputDataset as any)?.isRealData
-          ? node.runtime.outputDataset
-          : inputDataset || tableSample;
+        const nodeData = ((node.runtime?.outputDataset as any)?.isRealData
+          ? node.runtime?.outputDataset
+          : inputDataset || tableSample) || DEFAULT_SAMPLE_DATASET;
         const cols = nodeData.columns || nodeData.schema || [];
         nodeMap.set(nodeId, {
           ...node,
@@ -970,7 +1030,7 @@ export function PipelineCanvasStudio({
             runtime: {
               status: 'success',
               rowCount: outData.rows.length,
-              columnCount: outData.schema.length,
+              columnCount: outData.columns.length,
               latencyMs: latency,
               outputDataset: outData,
               diffCols: ['cohesion_index'],
@@ -998,7 +1058,7 @@ export function PipelineCanvasStudio({
             runtime: {
               status: 'success',
               rowCount: outData.rows.length,
-              columnCount: outData.schema.length,
+              columnCount: outData.columns.length,
               latencyMs: latency,
               outputDataset: outData,
               diffCols: ['in_polygon_ratio'],
@@ -1061,7 +1121,7 @@ export function PipelineCanvasStudio({
           runtime: {
             status: 'success',
             rowCount: outData.rows.length,
-            columnCount: outData.schema.length,
+            columnCount: outData.columns.length,
             latencyMs: latency,
             outputDataset: outData,
             diffCols: ['UnitComplianceRate', 'MinMargin_km', 'ComplianceStatus'],
@@ -1109,7 +1169,7 @@ export function PipelineCanvasStudio({
           runtime: {
             status: preview?.success ? 'success' : 'error',
             rowCount: outData.rows.length,
-            columnCount: outData.schema.length,
+            columnCount: outData.columns.length,
             latencyMs: latency,
             outputDataset: outData,
             diffCols: preview?.diffCols || [],
@@ -1151,7 +1211,7 @@ export function PipelineCanvasStudio({
             nodeType: 'aggregation',
             aggregationConfig: {
               groupKeys: rawGroupKeys,
-              aggregations: rawAggs,
+              metrics: rawAggs,
             },
             sampleDataset: inputDataset,
           });
@@ -1160,7 +1220,7 @@ export function PipelineCanvasStudio({
             type: 'aggregation',
             aggregationConfig: {
               groupKeys: rawGroupKeys,
-              aggregations: rawAggs,
+              metrics: rawAggs,
             },
           });
         }
@@ -1169,7 +1229,7 @@ export function PipelineCanvasStudio({
             type: 'aggregation',
             aggregationConfig: {
               groupKeys: rawGroupKeys,
-              aggregations: rawAggs,
+              metrics: rawAggs,
             },
           });
         }
@@ -1188,7 +1248,7 @@ export function PipelineCanvasStudio({
             runtime: {
               status: 'success',
               rowCount: outData.rows.length,
-              columnCount: outData.schema.length,
+              columnCount: outData.columns.length,
               latencyMs: latency,
               outputDataset: outData,
               diffCols: preview.diffCols || [],
@@ -1273,7 +1333,7 @@ export function PipelineCanvasStudio({
               runtime: {
                 status: 'success',
                 rowCount: outData.rows.length,
-                columnCount: outData.schema.length,
+                columnCount: outData.columns.length,
                 latencyMs: runResult.latencyMs ?? latency,
                 outputDataset: outData,
                 diffCols: dfCols.map((c: any) => c.name),
@@ -1327,7 +1387,7 @@ export function PipelineCanvasStudio({
               runtime: {
                 status: 'success',
                 rowCount: outData.rows.length,
-                columnCount: outData.schema.length,
+                columnCount: outData.columns.length,
                 latencyMs: runResult.latencyMs ?? latency,
                 outputDataset: outData,
                 diffCols: newFields.map((f) => f.name),
@@ -1997,7 +2057,7 @@ export function PipelineCanvasStudio({
                   <span>重置为官方蓝图</span>
                 </button>
 
-                {currentOpMeta?.isCustom && (
+                {currentOpMeta && !currentOpMeta.isBuiltin && (
                   <>
                     <div className="my-1 h-px bg-slate-800" />
                     <button
