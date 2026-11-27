@@ -557,7 +557,9 @@ export function SystemDagStudioPanel({
   const [effectDomainFilter, setEffectDomainFilter] = useState<string>('all');
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
 
-  const [loadingInit, setLoadingInit] = useState(false);
+  const [loadingInit, setLoadingInit] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [coldStartBannerDismissed, setColdStartBannerDismissed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingSystemId, setDeletingSystemId] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
@@ -664,6 +666,7 @@ export function SystemDagStudioPanel({
       }
     } finally {
       setLoadingInit(false);
+      setHasLoadedOnce(true);
     }
   }, [resolveDefaultMetricGraphId]);
 
@@ -2259,33 +2262,79 @@ export function SystemDagStudioPanel({
 
       {viewMode === 'list' ? (
         /* ── 视图 0：评估体系列表（第一层默认入口，响应式限高内滚动） ── */
-        <div className="flex flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22]">
-          <div
-            ref={listScrollRef}
-            onScroll={(e) => {
-              savedListScrollTopRef.current = e.currentTarget.scrollTop;
-            }}
-            className="max-h-[calc(100dvh-200px)] min-h-[380px] overflow-auto"
-          >
-            <table className="w-full border-collapse text-left text-xs">
-              <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#0d1117] text-[11px] text-slate-400">
-                <tr>
-                  <th className="px-4 py-2.5 font-medium">体系名称与标识</th>
-                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">类型</th>
-                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">构成规模</th>
-                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">关联指标图</th>
-                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">评估结论</th>
-                  <th className="px-4 py-2.5 font-medium whitespace-nowrap text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#30363d]/70">
-                {loadingInit && systems.length === 0 ? (
+        <div className="flex flex-col gap-3">
+          {hasLoadedOnce &&
+            systems.length > 0 &&
+            Object.keys(recentEvalBySystem).length === 0 &&
+            !sideComparison &&
+            !coldStartBannerDismissed && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-indigo-500/35 bg-gradient-to-r from-indigo-950/40 via-[#161b22] to-violet-950/30 px-3.5 py-2 text-xs text-indigo-200">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 shrink-0 text-indigo-400 animate-pulse" />
+                  <span>
+                    三库评估体系库已就绪（共 {systems.length} 套评估体系）。点击列表中任意体系进入设计器，或点击行内操作进入多维效能树与门控裁决。
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setColdStartBannerDismissed(true)}
+                  className="text-slate-400 hover:text-slate-200 cursor-pointer text-xs"
+                  title="隐藏提示"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+          <div className="flex flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#161b22]">
+            <div
+              ref={listScrollRef}
+              onScroll={(e) => {
+                savedListScrollTopRef.current = e.currentTarget.scrollTop;
+              }}
+              className="max-h-[calc(100dvh-200px)] min-h-[380px] overflow-auto"
+            >
+              <table className="w-full border-collapse text-left text-xs">
+                <thead className="sticky top-0 z-10 border-b border-[#30363d] bg-[#0d1117] text-[11px] text-slate-400">
                   <tr>
-                    <td colSpan={6} className="px-4 py-14 text-center text-xs text-slate-400">
-                      加载评估体系...
-                    </td>
+                    <th className="px-4 py-2.5 font-medium">体系名称与标识</th>
+                    <th className="px-3 py-2.5 font-medium whitespace-nowrap">类型</th>
+                    <th className="px-3 py-2.5 font-medium whitespace-nowrap">构成规模</th>
+                    <th className="px-3 py-2.5 font-medium whitespace-nowrap">关联指标图</th>
+                    <th className="px-3 py-2.5 font-medium whitespace-nowrap">评估结论</th>
+                    <th className="px-4 py-2.5 font-medium whitespace-nowrap text-right">操作</th>
                   </tr>
-                ) : filteredSystems.length === 0 ? (
+                </thead>
+                <tbody className="divide-y divide-[#30363d]/70">
+                  {!hasLoadedOnce && loadingInit ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={`sys-skeleton-${i}`} className="animate-pulse">
+                        <td className="px-4 py-3.5">
+                          <div className="h-3.5 w-44 rounded bg-slate-700/60 mb-1.5" />
+                          <div className="h-2.5 w-28 rounded bg-slate-800/80" />
+                        </td>
+                        <td className="px-3 py-3.5">
+                          <div className="h-4 w-12 rounded bg-slate-800" />
+                        </td>
+                        <td className="px-3 py-3.5">
+                          <div className="inline-flex gap-1.5">
+                            <div className="h-4 w-12 rounded bg-slate-800" />
+                            <div className="h-4 w-12 rounded bg-slate-800" />
+                            <div className="h-4 w-12 rounded bg-slate-800" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-3.5">
+                          <div className="h-3.5 w-32 rounded bg-slate-800" />
+                        </td>
+                        <td className="px-3 py-3.5">
+                          <div className="h-4 w-16 rounded bg-slate-800" />
+                        </td>
+                        <td className="px-4 py-3.5 text-right">
+                          <div className="inline-block h-6 w-20 rounded bg-slate-800" />
+                        </td>
+                      </tr>
+                    ))
+                  ) : filteredSystems.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-14 text-center text-xs text-slate-500">
                       <div className="flex flex-col items-center gap-2.5">
@@ -2505,6 +2554,7 @@ export function SystemDagStudioPanel({
             </table>
           </div>
         </div>
+      </div>
       ) : viewMode === 'overview' ? (
         /* ── 视图 1：体系总览表（体系详情页） ── */
         <div className="flex flex-1 flex-col gap-3 overflow-hidden">

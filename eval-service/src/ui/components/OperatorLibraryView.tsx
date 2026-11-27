@@ -277,7 +277,8 @@ export function getOperatorPipelineCategory(op: MetricAtomMeta): {
   return { id: 'inline_calc', label: '公式 (行内计算)', badgeBg: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
 }
 
-interface OperatorLibraryViewProps {
+export interface OperatorLibraryViewProps {
+  loading?: boolean;
   operators: MetricAtomMeta[];
   indicators?: IndicatorDefinition[];
   systems?: IndicatorSystem[];
@@ -295,6 +296,7 @@ type SortField = 'id' | 'category' | 'readiness' | 'outputType';
 type SortDir = 'asc' | 'desc';
 
 export function OperatorLibraryView({
+  loading = false,
   operators,
   indicators = [],
   systems = [],
@@ -625,6 +627,18 @@ export function OperatorLibraryView({
             </div>
           </div>
 
+          {/* 冷启动 / 场次关联就绪引导 */}
+          {operators.length > 0 && !selectedRunId && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-[#161b22] to-blue-950/30 px-3.5 py-2 text-xs text-cyan-200">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 shrink-0 text-cyan-400" />
+                <span>
+                  一库算子库已就绪（共 {operators.length} 个算子）。各算子的数据源投影与就绪门控依赖真实推演事件日志，请在右上角选择推演场次进行完整门控验证。
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* ═════════════════ 2. 响应式限高内滚动算子列表 ═════════════════ */}
           <section
             id="op-panel-catalog"
@@ -662,10 +676,51 @@ export function OperatorLibraryView({
                   </tr>
                 </thead>
             <tbody className="divide-y divide-slate-800/60 font-sans">
-              {filteredOperators.length === 0 ? (
+              {loading && operators.length === 0 ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={`op-skeleton-${i}`} className="animate-pulse">
+                    <td className="px-4 py-3 text-center">
+                      <div className="mx-auto h-3 w-5 rounded bg-slate-800" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-3 w-32 rounded bg-slate-700/60 mb-1.5" />
+                      <div className="h-3.5 w-48 rounded bg-slate-800/80" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-4 w-14 rounded bg-slate-800" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-4 w-16 rounded bg-slate-800" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-4 w-12 rounded bg-slate-800" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-3.5 w-64 rounded bg-slate-800/70" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-4 w-20 rounded bg-slate-800" />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-block h-6 w-16 rounded bg-slate-800" />
+                    </td>
+                  </tr>
+                ))
+              ) : filteredOperators.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-500">
-                    未检索到符合条件的算子
+                    <div className="flex flex-col items-center gap-2">
+                      <span>未检索到符合条件的算子</span>
+                      {operators.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void onRefresh()}
+                          className="mt-1 rounded-md border border-cyan-500/40 bg-cyan-500/15 px-3 py-1 text-xs text-cyan-200 hover:bg-cyan-500/25 cursor-pointer"
+                        >
+                          刷新算子库
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (

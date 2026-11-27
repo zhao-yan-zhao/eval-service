@@ -259,6 +259,7 @@ export function App() {
             >
               <ErrorBoundary fallbackTitle="算子工坊渲染异常">
                 <OperatorLibraryView
+                  loading={loadingInit}
                   operators={operators}
                   indicators={indicators}
                   systems={systems}

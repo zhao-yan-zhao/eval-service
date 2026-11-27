@@ -730,7 +730,9 @@ export function MetricDagStudioPanel({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
-  const [loadingInit, setLoadingInit] = useState(false);
+  const [loadingInit, setLoadingInit] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [coldStartBannerDismissed, setColdStartBannerDismissed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [comparingSides, setComparingSides] = useState(false);
@@ -837,6 +839,7 @@ export function MetricDagStudioPanel({
       }
     } finally {
       setLoadingInit(false);
+      setHasLoadedOnce(true);
     }
   }, []);
 
@@ -1987,13 +1990,49 @@ export function MetricDagStudioPanel({
                 <Layers className="h-3.5 w-3.5" />
                 <span>指标清单</span>
               </div>
+
+              {graphs.length > 1 ? (
+                <div className="flex items-center gap-1.5">
+                  <select
+                    aria-label="指标图集选择"
+                    value={activeGraph.graphId}
+                    onChange={(e) => {
+                      const found = graphs.find((g) => g.graphId === e.target.value);
+                      if (found) handleSelectGraph(found);
+                    }}
+                    className="h-8 max-w-[210px] truncate rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 text-xs font-medium text-emerald-300 focus:border-emerald-500 focus:outline-none cursor-pointer"
+                    title={`当前指标图集：${activeGraph.name} (${activeGraph.graphId})`}
+                  >
+                    {graphs.map((g) => (
+                      <option key={g.graphId} value={g.graphId}>
+                        {g.name} ({g.nodes.length} 项){g.builtin ? ' [官方]' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <span
+                  title={`当前图集：${activeGraph.name} (${activeGraph.graphId})`}
+                  className="rounded-md border border-[#30363d] bg-[#0d1117] px-2.5 py-1 text-xs font-medium text-slate-200"
+                >
+                  {activeGraph.name}
+                </span>
+              )}
+
+              {isLocalDraftMode && (
+                <span className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                  本地草案
+                </span>
+              )}
+
               <span
-                title={`当前图集：${activeGraph.name} (${activeGraph.graphId})`}
-                className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-0.5 font-mono text-[11px] text-slate-300 tabular-nums"
+                className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1 font-mono text-[11px] text-slate-300 tabular-nums"
               >
-                {filteredSortedNodes.length === activeGraph.nodes.length
-                  ? `共 ${activeGraph.nodes.length} 项`
-                  : `${filteredSortedNodes.length} / ${activeGraph.nodes.length} 项`}
+                {!hasLoadedOnce && loadingInit
+                  ? '加载中...'
+                  : filteredSortedNodes.length === activeGraph.nodes.length
+                    ? `共 ${activeGraph.nodes.length} 项`
+                    : `${filteredSortedNodes.length} / ${activeGraph.nodes.length} 项`}
               </span>
 
               <UnifiedAssetSelector
@@ -2160,6 +2199,39 @@ export function MetricDagStudioPanel({
             </div>
           </div>
 
+          {hasLoadedOnce &&
+            Object.keys(execResults).length === 0 &&
+            !sideComparison &&
+            activeGraph.nodes.length > 0 &&
+            !coldStartBannerDismissed && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-[#161b22] to-emerald-950/30 px-3.5 py-2 text-xs text-cyan-200">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 shrink-0 text-cyan-400 animate-pulse" />
+                  <span>
+                    指标图集「<strong>{activeGraph.name}</strong>」已就绪（共 {activeGraph.nodes.length} 项）。尚未执行试算，点击右侧
+                    <button
+                      type="button"
+                      onClick={() => void handleExecuteMetricDag()}
+                      disabled={executing}
+                      className="mx-1.5 inline-flex items-center gap-1 rounded border border-emerald-500/60 bg-emerald-600/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-600/70 transition cursor-pointer"
+                    >
+                      <Play className="h-2.5 w-2.5" />
+                      <span>立即试算</span>
+                    </button>
+                    即可基于当前推演日志计算各指标实测值。
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setColdStartBannerDismissed(true)}
+                  className="text-slate-400 hover:text-slate-200 cursor-pointer text-xs"
+                  title="隐藏提示"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
           {banner && (
             <div
               className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-xs ${
@@ -2209,10 +2281,45 @@ export function MetricDagStudioPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#30363d]/60">
-                {filteredSortedNodes.length === 0 ? (
+                {!hasLoadedOnce && loadingInit ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={`metric-skeleton-${i}`} className="animate-pulse">
+                      <td className="px-3 py-3">
+                        <div className="h-3.5 w-36 rounded bg-slate-700/60 mb-1.5" />
+                        <div className="h-2.5 w-24 rounded bg-slate-800/80" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="inline-flex gap-1.5">
+                          <div className="h-4 w-10 rounded bg-slate-700/50" />
+                          <div className="h-4 w-14 rounded bg-slate-800/60" />
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="h-4 w-28 rounded bg-slate-700/40" />
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="inline-block h-4 w-16 rounded bg-slate-800/70" />
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="inline-block h-6 w-16 rounded bg-slate-800/50" />
+                      </td>
+                    </tr>
+                  ))
+                ) : filteredSortedNodes.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-xs text-slate-500">
-                      当前过滤条件下无匹配指标节点
+                    <td colSpan={5} className="px-4 py-12 text-center text-xs text-slate-500">
+                      <div className="flex flex-col items-center gap-2">
+                        <span>当前过滤条件下无匹配指标节点</span>
+                        {activeGraph.nodes.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => void loadInitialData()}
+                            className="mt-1 rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-200 hover:bg-emerald-500/25 cursor-pointer"
+                          >
+                            重新载入官方预置图集
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -2369,6 +2476,19 @@ export function MetricDagStudioPanel({
                                 >
                                   缺数
                                 </span>
+                              ) : !latestExec ? (
+                                <span
+                                  title="尚未试算：点击右上角【试算】即可基于当前仿真推演日志计算"
+                                  className="inline-flex items-center gap-1 rounded border border-slate-700/80 bg-slate-800/60 px-2 py-0.5 text-[11px] text-slate-400 font-sans"
+                                >
+                                  <Play className="h-2.5 w-2.5 text-slate-500" />
+                                  <span>待试算</span>
+                                  {cfg?.unit && (
+                                    <span className="font-mono text-[10px] text-slate-500">
+                                      ({cfg.unit})
+                                    </span>
+                                  )}
+                                </span>
                               ) : (
                                 <span
                                   title={latestExec?.missingDataReason}
@@ -2379,7 +2499,7 @@ export function MetricDagStudioPanel({
                                     <span className="ml-1 text-[11px] font-normal text-slate-400">
                                       {cfg.unit}
                                     </span>
-                                  ) : !latestExec && cfg?.unit ? (
+                                  ) : cfg?.unit ? (
                                     <span className="ml-1 text-[10px] font-normal text-slate-500">
                                       ({cfg.unit})
                                     </span>
@@ -2566,6 +2686,39 @@ export function MetricDagStudioPanel({
               </div>
             </div>
           </div>
+
+          {hasLoadedOnce &&
+            Object.keys(execResults).length === 0 &&
+            !sideComparison &&
+            activeGraph.nodes.length > 0 &&
+            !coldStartBannerDismissed && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-[#161b22] to-emerald-950/30 px-3.5 py-2 text-xs text-cyan-200">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 shrink-0 text-cyan-400 animate-pulse" />
+                  <span>
+                    指标图集「<strong>{activeGraph.name}</strong>」已就绪（共 {activeGraph.nodes.length} 项）。尚未执行试算，点击右侧
+                    <button
+                      type="button"
+                      onClick={() => void handleExecuteMetricDag()}
+                      disabled={executing}
+                      className="mx-1.5 inline-flex items-center gap-1 rounded border border-emerald-500/60 bg-emerald-600/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-600/70 transition cursor-pointer"
+                    >
+                      <Play className="h-2.5 w-2.5" />
+                      <span>立即试算</span>
+                    </button>
+                    即可基于当前推演日志计算各指标实测值。
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setColdStartBannerDismissed(true)}
+                  className="text-slate-400 hover:text-slate-200 cursor-pointer text-xs"
+                  title="隐藏提示"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
 
           {banner && (
             <div
